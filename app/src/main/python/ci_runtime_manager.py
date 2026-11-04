@@ -127,6 +127,7 @@ def _load_engine(root: Path) -> tuple[ModuleType, str]:
     try:
         _read_manifest(version_dir)
         engine = _module_from_file(version_dir / "runtime.py", active)
+        _validate_runtime_module(engine, active)
         return engine, active
     except Exception:
         # Broken/incompatible active updates are switched back to the bundled engine.
@@ -136,7 +137,8 @@ def _load_engine(root: Path) -> tuple[ModuleType, str]:
             try:
                 candidate_dir = root / "versions" / fallback
                 _read_manifest(candidate_dir)
-                _module_from_file(candidate_dir / "runtime.py", fallback)
+                candidate_engine = _module_from_file(candidate_dir / "runtime.py", fallback)
+                _validate_runtime_module(candidate_engine, fallback)
             except Exception:
                 fallback = "bundled"
         remaining = [item for item in previous if item != fallback]
@@ -147,6 +149,7 @@ def _load_engine(root: Path) -> tuple[ModuleType, str]:
         if fallback == "bundled":
             return importlib.import_module("ci_runtime_engine"), BUNDLED_VERSION
         engine = _module_from_file(root / "versions" / fallback / "runtime.py", fallback)
+        _validate_runtime_module(engine, fallback)
         return engine, fallback
 
 
@@ -202,14 +205,16 @@ def install_update(package_path: str, runtime_root: str) -> str:
             raise RuntimeError("Runtime update package exceeds the 4 MiB limit")
 
         with zipfile.ZipFile(archive_path, "r") as archive:
-            names = archive.namelist()
-            if sorted(names) != ["manifest.json", "runtime.py"]:
+            entries = archive.infolist()
+            names = [item.filename for item in entries]
+            if len(names) != 2 or sorted(names) != ["manifest.json", "runtime.py"]:
                 raise RuntimeError("Package must contain only manifest.json and runtime.py")
+            sizes = {item.filename: item.file_size for item in entries}
+            if sizes["manifest.json"] > 64 * 1024 or sizes["runtime.py"] > 2 * 1024 * 1024:
+                raise RuntimeError("Runtime update contains an oversized file")
             manifest_bytes = archive.read("manifest.json")
             runtime_bytes = archive.read("runtime.py")
 
-        if len(manifest_bytes) > 64 * 1024 or len(runtime_bytes) > 2 * 1024 * 1024:
-            raise RuntimeError("Runtime update contains an oversized file")
         manifest = json.loads(manifest_bytes.decode("utf-8"))
         version = str(manifest.get("version", ""))
         if manifest.get("name") != "CI Runtime":
