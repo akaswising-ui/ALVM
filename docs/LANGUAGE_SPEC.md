@@ -1,4 +1,4 @@
-# AL Language Specification: Stage 14
+# AL Language Specification: Stage 15
 
 ## Control-flow syntax
 
@@ -46,13 +46,13 @@ Stage 8 keeps the previous stages' supported scalar and array types, functions a
 
 The current C++17 pipeline is:
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v8 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v9 -> verifier -> ALVM`
 
 Switch and loop control lower to existing jump instructions. Stage 14 separately adds the `NewArraySized` instruction to `.room` v8.
 
 ## Not implemented
 
-`foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, method overloading, constructors with explicit `super(arguments)`, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, full standard library modules, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android APK integration are future features.
+`foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, full standard library modules, editable text fields, richer layout containers, touch/gesture APIs, graphics/game/audio APIs, `.AL` packaging and building a user AL program into an Android APK are future features.
 
 
 ## Foreach array iteration
@@ -148,3 +148,27 @@ boolean[] flags = new boolean[3];
 - The compiler emits `NewArraySized`; the VM does not execute source text.
 - The opcode is serialized in `.room` version 8. Version 7 files are rejected with an explicit version error and must be recompiled.
 - Object arrays, multidimensional arrays, array literals of length zero, and collection types remain unsupported.
+
+## AL-native UI API (Stage 15)
+
+The native Android runtime supports a declarative screen API:
+
+```al
+UI.screen("AL App");
+UI.text("display", "0");
+UI.button("one", "1", "onButton");
+
+void onButton(string buttonId) {
+    UI.setText("display", buttonId);
+}
+```
+
+- `UI.screen(string title)` sets the screen title.
+- `UI.text(string id, string value)` creates or replaces a text view.
+- `UI.button(string id, string label, string callbackName)` creates a button. The callback must be a global `void` function with one `string` parameter.
+- `UI.setText(string id, stringOrInt value)` updates an existing text view.
+- `UI.setInt(string key, int value)` stores integer state; `UI.getInt(string key, int defaultValue)` reads it.
+- `UI.clear()` removes all current components and integer state.
+- Button clicks pass the button ID to the AL callback. The C++ VM executes the callback, while the Android Java host creates and updates native Android Views.
+
+The `.room` format is version 9. The `UiCall` opcode carries UI commands to the VM. `examples/calculator.al` is a complete AL-authored calculator sample; neither its layout nor arithmetic is preloaded in the Android host.
