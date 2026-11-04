@@ -1,5 +1,12 @@
 # ALVM Studio
 
+## AL language identity
+
+AL uses Python-inspired keyword vocabulary, Java/C++-inspired source formatting (classes, braces, semicolons and typed declarations), and C++-inspired strict language rules. These are design influences only: AL has its own compiler, .room bytecode, ALVM and runtime. The VM executes verified bytecode, not source text.
+
+The Library Store has 12 module cards. Existing compiler/VM, standard, file, network, UI, graphics, game and database entries were preserved; only the missing AL.Audio and AL.System catalog entries were added. Catalog entries marked Planned are not executable runtime APIs.
+
+
 ## Development roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the implemented-feature matrix and staged plan for native GUI, runtime APIs, OOP, collections and Android project packaging.
