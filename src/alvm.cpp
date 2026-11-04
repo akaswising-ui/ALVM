@@ -170,6 +170,7 @@ public:
     }
     for(const auto& cls:p.classes){
       auto& info=classes.at(cls.name);
+      if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
       for(const auto& method:cls.methods){
         if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
         Signature sig=signature(method);info.methods.emplace(method.name,sig);
