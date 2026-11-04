@@ -148,7 +148,7 @@ public:
   void analyze(Program& p){
     if(p.functions.empty()||p.functions[0].name!="main")throw Error("Missing main() entry function");
     if(p.functions[0].returnType!=Type::Void||!p.functions[0].params.empty())throw Error("main() must be declared as void main() with no parameters");
-    for(const auto& cls:p.classes){ClassInfo info;info.type=userTypeMap.at(cls.name);for(size_t i=0;i<cls.fields.size();++i){if(cls.fields[i].type==Type::Void||isArray(cls.fields[i].type))throw Error("Class fields currently support scalar types only");info.fieldSlots[cls.fields[i].name]=(int)i;info.fieldTypes.push_back(cls.fields[i].type);}classes.emplace(cls.name,std::move(info));}
+    for(const auto& cls:p.classes){ClassInfo info;info.type=userTypeMap.at(cls.name);for(size_t i=0;i<cls.fields.size();++i){if(cls.fields[i].type==Type::Void||isArray(cls.fields[i].type))throw Error("Class fields currently support scalar types only");info.fieldSlots[cls.fields[i].name]=(int)i;info.fieldTypes.push_back(cls.fields[i].type);}if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);}
     for(const auto& cls:p.classes){auto& info=classes.at(cls.name);for(const auto& method:cls.methods){if(info.methods.count(method.name))throw Error("Duplicate method: "+method.name);Signature sig=signature(method);info.methods.emplace(method.name,sig);std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));}}
     for(const auto& fn:p.functions){if(signatures.count(fn.name))throw Error("Duplicate function name: "+fn.name);signatures.emplace(fn.name,signature(fn));}
     for(auto& fn:p.functions)analyzeFunction(fn);
@@ -267,7 +267,7 @@ static BytecodeProgram loadRoom(const std::string& path){
   for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v5");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
   uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
   for(uint32_t j=0;j<n;++j){
-    FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>255)throw Error("Invalid function return type");fn.returnType=(Type)ty;
+    FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;
     fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
     uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
     for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::SetField)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
@@ -292,7 +292,7 @@ static void verify(const BytecodeProgram& program){
   if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
   std::map<std::string,bool> names;
   for(const auto& cls:program.classes)if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");else names["class:"+cls.name]=true;
-  for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size())throw Error("Invalid method owner class");}
+  for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId < -1 || (fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size()))throw Error("Invalid method owner class");}
   for(size_t fi=0;fi<functions.size();++fi){
     const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
     if(fn.ownerClassId>=0&&fn.localCount<fn.parameterCount+1)throw Error("Method does not have room for its this parameter");
