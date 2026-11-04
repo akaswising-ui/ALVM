@@ -98,7 +98,7 @@ public:
 };
 
 class SemanticAnalyzer {
-  struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; };
+  struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; std::string symbol; };
   struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; Signature constructor; bool hasConstructor=false; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,std::vector<Signature>> functionOverloads;
