@@ -6,6 +6,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -41,17 +42,19 @@ static bool isArray(Type t){return t==Type::IntArray||t==Type::StringArray||t==T
 static Type arrayOf(Type t){if(t==Type::Int)return Type::IntArray;if(t==Type::String)return Type::StringArray;if(t==Type::Bool)return Type::BoolArray;return Type::Unknown;}
 static Type elementOf(Type t){if(t==Type::IntArray)return Type::Int;if(t==Type::StringArray)return Type::String;if(t==Type::BoolArray)return Type::Bool;return Type::Unknown;}
 struct Expr {
-  enum Kind { Integer, String, Boolean, Variable, Unary, Binary, ArrayLiteral, Index, Length } kind;
+  enum Kind { Integer, String, Boolean, Variable, Unary, Binary, ArrayLiteral, Index, Length, Call } kind;
   Token token; int64_t number=0; bool boolean=false; std::string text; std::unique_ptr<Expr> left,right; std::vector<std::unique_ptr<Expr>> elements; Type inferred=Type::Unknown;
 };
 struct Stmt {
-  enum Kind { Block, Declare, Assign, ArrayAssign, Print, Return, If, While, For } kind;
+  enum Kind { Block, Declare, Assign, ArrayAssign, ExprStatement, Print, Return, If, While, For } kind;
   Token token; std::string name; Type declared=Type::Unknown;
   std::unique_ptr<Expr> expr, condition, incrementExpr;
   std::unique_ptr<Stmt> first, second, third;
   std::vector<std::unique_ptr<Stmt>> children;
 };
-struct Program { std::string name; std::unique_ptr<Stmt> body; };
+struct Parameter { std::string name; Type type=Type::Unknown; };
+struct Function { std::string name; Type returnType=Type::Void; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
+struct Program { std::string name; std::vector<Function> functions; };
 
 class Parser {
   std::vector<Token> t; size_t p=0;
@@ -62,7 +65,7 @@ class Parser {
   std::unique_ptr<Expr> node(Expr::Kind k,Token tk){auto x=std::make_unique<Expr>();x->kind=k;x->token=std::move(tk);return x;}
   std::unique_ptr<Stmt> stmtNode(Stmt::Kind k,Token tk){auto x=std::make_unique<Stmt>();x->kind=k;x->token=std::move(tk);return x;}
   Type parseType(){Type t;if(eat("int"))t=Type::Int;else if(eat("string"))t=Type::String;else if(eat("boolean"))t=Type::Bool;else if(eat("void"))t=Type::Void;else throw Error("Unknown type at "+std::to_string(tok().line)+":"+std::to_string(tok().col));if(eat("[")){need("]");t=arrayOf(t);if(t==Type::Unknown)throw Error("Unsupported array element type");}return t;}
-  std::unique_ptr<Expr> primary(){Token tk=tok();std::unique_ptr<Expr> x;if(cur().size()&&std::isdigit(static_cast<unsigned char>(cur()[0]))){take();x=node(Expr::Integer,tk);try{x->number=std::stoll(tk.text);}catch(...){throw Error("Integer literal out of range at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}}else if(cur().size()&&cur()[0]=='\x01'){take();x=node(Expr::String,tk);x->text=tk.text.substr(1);}else if(eat("true")||eat("false")){x=node(Expr::Boolean,tk);x->boolean=tk.text=="true";}else if(eat("(")){x=expression();need(")");}else if(eat("[")){x=node(Expr::ArrayLiteral,tk);if(cur()!="]"){do{x->elements.push_back(expression());}while(eat(","));}need("]");}else if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){take();x=node(Expr::Variable,tk);x->text=tk.text;}else throw Error("Expected expression at "+std::to_string(tok().line)+":"+std::to_string(tok().col));while(true){if(eat("[")){Token it=tok();auto idx=node(Expr::Index,it);idx->left=std::move(x);idx->right=expression();need("]");x=std::move(idx);}else if(eat(".")){Token it=tok();need("length");auto len=node(Expr::Length,it);len->left=std::move(x);x=std::move(len);}else break;}return x;}
+  std::unique_ptr<Expr> primary(){Token tk=tok();std::unique_ptr<Expr> x;if(cur().size()&&std::isdigit(static_cast<unsigned char>(cur()[0]))){take();x=node(Expr::Integer,tk);try{x->number=std::stoll(tk.text);}catch(...){throw Error("Integer literal out of range at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}}else if(cur().size()&&cur()[0]=='\x01'){take();x=node(Expr::String,tk);x->text=tk.text.substr(1);}else if(eat("true")||eat("false")){x=node(Expr::Boolean,tk);x->boolean=tk.text=="true";}else if(eat("(")){x=expression();need(")");}else if(eat("[")){x=node(Expr::ArrayLiteral,tk);if(cur()!="]"){do{x->elements.push_back(expression());}while(eat(","));}need("]");}else if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){take();if(eat("(")){x=node(Expr::Call,tk);x->text=tk.text;if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}else{x=node(Expr::Variable,tk);x->text=tk.text;}}else throw Error("Expected expression at "+std::to_string(tok().line)+":"+std::to_string(tok().col));while(true){if(eat("[")){Token it=tok();auto idx=node(Expr::Index,it);idx->left=std::move(x);idx->right=expression();need("]");x=std::move(idx);}else if(eat(".")){Token it=tok();need("length");auto len=node(Expr::Length,it);len->left=std::move(x);x=std::move(len);}else break;}return x;}
   std::unique_ptr<Expr> unary(){if(cur()=="!"||cur()=="-"){Token tk=take();auto x=node(Expr::Unary,tk);x->text=tk.text;x->left=unary();return x;}return primary();}
   template<class Next> std::unique_ptr<Expr> binary(Next next,const std::vector<std::string>& ops){auto x=(this->*next)();while(std::find(ops.begin(),ops.end(),cur())!=ops.end()){Token tk=take();auto n=node(Expr::Binary,tk);n->text=tk.text;n->left=std::move(x);n->right=(this->*next)();x=std::move(n);}return x;}
   std::unique_ptr<Expr> factor(){return binary(&Parser::unary,{"*","/","%"});}
@@ -76,43 +79,277 @@ class Parser {
   std::unique_ptr<Stmt> block(){Token tk=tok();need("{");auto b=stmtNode(Stmt::Block,tk);while(cur()!="}"&&cur()!="<eof>")b->children.push_back(statement());need("}");return b;}
   std::unique_ptr<Stmt> declaration(bool semicolon=true){Token tk=tok();Type ty=Type::Unknown;if(eat("var"))ty=Type::Unknown;else ty=parseType();auto s=stmtNode(Stmt::Declare,tk);s->declared=ty;s->name=take().text;if(s->name=="<eof>")throw Error("Expected variable name");need("=");s->expr=expression();if(semicolon)need(";");return s;}
   std::unique_ptr<Stmt> assignment(bool semicolon=true){Token tk=tok();auto s=stmtNode(Stmt::Assign,tk);s->name=take().text;if(eat("[")){s->kind=Stmt::ArrayAssign;s->condition=expression();need("]");}need("=");s->expr=expression();if(semicolon)need(";");return s;}
-  std::unique_ptr<Stmt> statement(){Token tk=tok();if(cur()=="{")return block();if(isType())return declaration();if(eat("AL")){auto s=stmtNode(Stmt::Print,tk);need(".");need("print");need("(");s->expr=expression();need(")");need(";");return s;}if(eat("return")){auto s=stmtNode(Stmt::Return,tk);if(!eat(";")){s->expr=expression();need(";");}return s;}if(eat("if")){auto s=stmtNode(Stmt::If,tk);need("(");s->condition=expression();need(")");s->first=block();if(eat("else"))s->second=block();return s;}if(eat("while")){auto s=stmtNode(Stmt::While,tk);need("(");s->condition=expression();need(")");s->first=block();return s;}if(eat("for")){auto s=stmtNode(Stmt::For,tk);need("(");if(isType())s->first=declaration(false);else s->first=assignment(false);need(";");s->condition=expression();need(";");s->second=assignment(false);need(")");s->third=block();return s;}if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_')return assignment();throw Error("Unsupported statement at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
+  bool assignmentAhead()const{if(p+1<t.size()&&t[p+1].text=="=")return true;if(p+1<t.size()&&t[p+1].text=="["){int depth=0;for(size_t q=p+1;q<t.size();++q){if(t[q].text=="[")++depth;else if(t[q].text=="]"&&--depth==0)return q+1<t.size()&&t[q+1].text=="=";}}return false;}
+  std::unique_ptr<Stmt> statement(){Token tk=tok();if(cur()=="{")return block();if(isType())return declaration();if(eat("AL")){auto s=stmtNode(Stmt::Print,tk);need(".");need("print");need("(");s->expr=expression();need(")");need(";");return s;}if(eat("return")){auto s=stmtNode(Stmt::Return,tk);if(!eat(";")){s->expr=expression();need(";");}return s;}if(eat("if")){auto s=stmtNode(Stmt::If,tk);need("(");s->condition=expression();need(")");s->first=block();if(eat("else"))s->second=block();return s;}if(eat("while")){auto s=stmtNode(Stmt::While,tk);need("(");s->condition=expression();need(")");s->first=block();return s;}if(eat("for")){auto s=stmtNode(Stmt::For,tk);need("(");if(isType())s->first=declaration(false);else s->first=assignment(false);need(";");s->condition=expression();need(";");s->second=assignment(false);need(")");s->third=block();return s;}if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){if(assignmentAhead())return assignment();auto s=stmtNode(Stmt::ExprStatement,tk);s->expr=expression();need(";");return s;}throw Error("Unsupported statement at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
 public:
   explicit Parser(const std::string& src):t(lex(src)){}
-  Program parse(){if(!(eat("room")||eat("class")))throw Error("Program must start with room");Program out;out.name=take().text;need("{");eat("public");eat("static");if(!(eat("void")||eat("int")))throw Error("Expected main return type");need("main");need("(");need(")");out.body=block();need("}");if(cur()!="<eof>")throw Error("Unexpected token after program end: "+cur());return out;}
+  Program parse(){if(!(eat("room")||eat("class")))throw Error("Program must start with room");Program out;out.name=take().text;need("{");while(cur()!="}"&&cur()!="<eof>"){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Type result=parseType();std::string name=take().text;if(name=="<eof>")throw Error("Expected method name");need("(");Function fn;fn.name=name;fn.returnType=result;if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;if(param.name=="<eof>")throw Error("Expected parameter name");fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();out.functions.push_back(std::move(fn));}need("}");if(cur()!="<eof>")throw Error("Unexpected token after program end: "+cur());auto mainIt=std::find_if(out.functions.begin(),out.functions.end(),[](const Function& f){return f.name=="main";});if(mainIt==out.functions.end())throw Error("Program must declare main()");if(mainIt!=out.functions.begin())std::iter_swap(out.functions.begin(),mainIt);return out;}
 };
 
 class SemanticAnalyzer {
+  struct Signature { Type result; std::vector<Type> params; };
+  std::map<std::string,Signature> signatures;
   std::vector<std::map<std::string,Type>> scopes;
-  void push(){scopes.emplace_back();}void pop(){scopes.pop_back();}
+  Type currentReturn=Type::Void;
+  void push(){scopes.emplace_back();}
+  void pop(){scopes.pop_back();}
   Type lookup(const std::string& n){for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto f=i->find(n);if(f!=i->end())return f->second;}throw Error("Unknown variable: "+n);}
-  void declare(const std::string& n,Type t){auto& s=scopes.back();if(s.count(n))throw Error("Duplicate variable in scope: "+n);s[n]=t;}
-  Type checkExpr(Expr& e){switch(e.kind){case Expr::Integer:e.inferred=Type::Int;break;case Expr::String:e.inferred=Type::String;break;case Expr::Boolean:e.inferred=Type::Bool;break;case Expr::Variable:e.inferred=lookup(e.text);break;case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}case Expr::Index:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error("Indexing requires an array");if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");e.inferred=elementOf(base);break;}case Expr::Length:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error(".length requires an array");e.inferred=Type::Int;break;}case Expr::Unary:{Type a=checkExpr(*e.left);if(e.text=="-"&&a!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&a!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}case Expr::Binary:{Type a=checkExpr(*e.left),b=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&a==Type::String&&b==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(a!=Type::Int||b!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(a!=Type::Int||b!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(a!=b)throw Error("Equality operands must have the same type");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(a!=Type::Bool||b!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}}return e.inferred;}
-  void checkStmt(Stmt& s){switch(s.kind){case Stmt::Block:push();for(auto& c:s.children)checkStmt(*c);pop();break;case Stmt::Declare:{Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;if(actual!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");declare(s.name,actual);break;}case Stmt::Assign:{Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);if(lhs!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");break;}case Stmt::ArrayAssign:{Type arr=lookup(s.name);if(!isArray(arr))throw Error("Indexed assignment requires an array variable: "+s.name);if(checkExpr(*s.condition)!=Type::Int)throw Error("Array index must be int");Type rhs=checkExpr(*s.expr);if(rhs!=elementOf(arr))throw Error("Cannot store "+typeName(rhs)+" in "+typeName(arr));break;}case Stmt::Print:checkExpr(*s.expr);break;case Stmt::Return:if(s.expr)throw Error("main is void and cannot return a value");break;case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;}}
+  void declare(const std::string& n,Type t){auto& scope=scopes.back();if(scope.count(n))throw Error("Duplicate variable in scope: "+n);scope[n]=t;}
+  Type checkExpr(Expr& e){
+    switch(e.kind){
+      case Expr::Integer:e.inferred=Type::Int;break;
+      case Expr::String:e.inferred=Type::String;break;
+      case Expr::Boolean:e.inferred=Type::Bool;break;
+      case Expr::Variable:e.inferred=lookup(e.text);break;
+      case Expr::Call:{
+        if(e.text=="main")throw Error("main() cannot be called as a normal function");
+        auto fn=signatures.find(e.text);
+        if(fn==signatures.end())throw Error("Unknown function: "+e.text);
+        if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);
+        for(size_t i=0;i<e.elements.size();++i){
+          Type actual=checkExpr(*e.elements[i]);
+          if(actual!=fn->second.params[i])throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));
+        }
+        e.inferred=fn->second.result;break;
+      }
+      case Expr::ArrayLiteral:{
+        if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");
+        Type item=checkExpr(*e.elements[0]);
+        if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");
+        for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");
+        e.inferred=arrayOf(item);break;
+      }
+      case Expr::Index:{
+        Type base=checkExpr(*e.left);
+        if(!isArray(base))throw Error("Indexing requires an array");
+        if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");
+        e.inferred=elementOf(base);break;
+      }
+      case Expr::Length:{
+        Type base=checkExpr(*e.left);
+        if(!isArray(base))throw Error(".length requires an array");
+        e.inferred=Type::Int;break;
+      }
+      case Expr::Unary:{
+        Type a=checkExpr(*e.left);
+        if(e.text=="-"&&a!=Type::Int)throw Error("Unary '-' requires int");
+        if(e.text=="!"&&a!=Type::Bool)throw Error("Unary '!' requires boolean");
+        e.inferred=e.text=="-"?Type::Int:Type::Bool;break;
+      }
+      case Expr::Binary:{
+        Type a=checkExpr(*e.left),b=checkExpr(*e.right);const auto& op=e.text;
+        if(op=="+"&&a==Type::String&&b==Type::String)e.inferred=Type::String;
+        else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){
+          if(a!=Type::Int||b!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;
+        }else if(op=="<"||op==">"||op=="<="||op==">="){
+          if(a!=Type::Int||b!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;
+        }else if(op=="=="||op=="!="){
+          if(a!=b)throw Error("Equality operands must have the same type");e.inferred=Type::Bool;
+        }else if(op=="&&"||op=="||"){
+          if(a!=Type::Bool||b!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;
+        }else throw Error("Unsupported operator: "+op);
+        break;
+      }
+    }
+    return e.inferred;
+  }
+  void checkStmt(Stmt& s){
+    switch(s.kind){
+      case Stmt::Block:push();for(auto& child:s.children)checkStmt(*child);pop();break;
+      case Stmt::Declare:{
+        Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;
+        if(actual!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");
+        declare(s.name,actual);break;
+      }
+      case Stmt::Assign:{
+        Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);
+        if(lhs!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");
+        break;
+      }
+      case Stmt::ArrayAssign:{
+        Type arr=lookup(s.name);if(!isArray(arr))throw Error("Indexed assignment requires an array variable: "+s.name);
+        if(checkExpr(*s.condition)!=Type::Int)throw Error("Array index must be int");
+        Type rhs=checkExpr(*s.expr);if(rhs!=elementOf(arr))throw Error("Cannot store "+typeName(rhs)+" in "+typeName(arr));
+        break;
+      }
+      case Stmt::ExprStatement:checkExpr(*s.expr);break;
+      case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
+      case Stmt::Return:{
+        if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}
+        else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(actual!=currentReturn)throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}
+        break;
+      }
+      case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
+      case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;
+      case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;
+    }
+  }
+  bool alwaysReturns(const Stmt& s)const{
+    if(s.kind==Stmt::Return)return true;
+    if(s.kind==Stmt::Block){for(const auto& child:s.children)if(alwaysReturns(*child))return true;return false;}
+    if(s.kind==Stmt::If&&s.second)return alwaysReturns(*s.first)&&alwaysReturns(*s.second);
+    return false;
+  }
 public:
-  void analyze(Program& p){(void)p;push();checkStmt(*p.body);pop();}
+  void analyze(Program& p){
+    if(p.functions.empty()||p.functions[0].name!="main")throw Error("Missing main() entry function");
+    if(p.functions[0].returnType!=Type::Void||!p.functions[0].params.empty())throw Error("main() must be declared as void main() with no parameters");
+    for(const auto& fn:p.functions){
+      if(signatures.count(fn.name))throw Error("Duplicate function name: "+fn.name);
+      Signature sig;sig.result=fn.returnType;for(const auto& param:fn.params)sig.params.push_back(param.type);
+      signatures.emplace(fn.name,std::move(sig));
+    }
+    for(auto& fn:p.functions){
+      currentReturn=fn.returnType;push();
+      for(const auto& param:fn.params)declare(param.name,param.type);
+      checkStmt(*fn.body);pop();
+      if(fn.returnType!=Type::Void&&!alwaysReturns(*fn.body))throw Error("Non-void function may finish without returning a value: "+fn.name);
+    }
+  }
 };
-
-enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength };
+enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret };
 struct IR { Op op; int64_t arg=0; std::string text; };
+struct FunctionIR { std::string name; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
 class IRGenerator {
-  std::vector<IR> code; std::map<std::string,int> slots; int next=0;
+  std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds; int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
-  void expression(const Expr& e){switch(e.kind){case Expr::Integer:emit(Op::PushInt,e.number);break;case Expr::String:emit(Op::PushString,0,e.text);break;case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;case Expr::Variable:emit(Op::Load,slots.at(e.text));break;case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;case Expr::Length:expression(*e.left);emit(Op::ArrayLength);break;case Expr::Unary:expression(*e.left);emit(e.text=="-"?Op::Neg:Op::Not);break;case Expr::Binary:{if(e.text=="&&"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);expression(*e.right);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();emit(Op::PushBool,0);code[j].arg=(int64_t)code.size();break;}if(e.text=="||"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);emit(Op::PushBool,1);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();expression(*e.right);code[j].arg=(int64_t)code.size();break;}expression(*e.left);expression(*e.right);if(e.text=="+")emit(Op::Add);else if(e.text=="-")emit(Op::Sub);else if(e.text=="*")emit(Op::Mul);else if(e.text=="/")emit(Op::Div);else if(e.text=="%")emit(Op::Mod);else if(e.text=="==")emit(Op::Eq);else if(e.text=="!=")emit(Op::Ne);else if(e.text=="<")emit(Op::Lt);else if(e.text==">")emit(Op::Gt);else if(e.text=="<=")emit(Op::Le);else if(e.text==">=")emit(Op::Ge);break;}}}
-  void statement(const Stmt& s){switch(s.kind){case Stmt::Block:{auto saved=slots;for(const auto& c:s.children)statement(*c);slots=std::move(saved);break;}case Stmt::Declare:{int slot=next++;slots[s.name]=slot;expression(*s.expr);emit(Op::Store,slot);break;}case Stmt::Assign:expression(*s.expr);emit(Op::Store,slots.at(s.name));break;case Stmt::ArrayAssign:emit(Op::Load,slots.at(s.name));expression(*s.condition);expression(*s.expr);emit(Op::ArraySet);break;case Stmt::Print:expression(*s.expr);emit(Op::Print);break;case Stmt::Return:emit(Op::Halt);break;case Stmt::If:{expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);if(s.second){int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();statement(*s.second);code[j].arg=(int64_t)code.size();}else code[jf].arg=(int64_t)code.size();break;}case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();break;}case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}}}
+  void expression(const Expr& e){
+    switch(e.kind){
+      case Expr::Integer:emit(Op::PushInt,e.number);break;
+      case Expr::String:emit(Op::PushString,0,e.text);break;
+      case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;
+      case Expr::Variable:emit(Op::Load,slots.at(e.text));break;
+      case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.text));break;
+      case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;
+      case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;
+      case Expr::Length:expression(*e.left);emit(Op::ArrayLength);break;
+      case Expr::Unary:expression(*e.left);emit(e.text=="-"?Op::Neg:Op::Not);break;
+      case Expr::Binary:{
+        if(e.text=="&&"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);expression(*e.right);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();emit(Op::PushBool,0);code[j].arg=(int64_t)code.size();break;}
+        if(e.text=="||"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);emit(Op::PushBool,1);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();expression(*e.right);code[j].arg=(int64_t)code.size();break;}
+        expression(*e.left);expression(*e.right);
+        if(e.text=="+")emit(Op::Add);else if(e.text=="-")emit(Op::Sub);else if(e.text=="*")emit(Op::Mul);else if(e.text=="/")emit(Op::Div);else if(e.text=="%")emit(Op::Mod);else if(e.text=="==")emit(Op::Eq);else if(e.text=="!=")emit(Op::Ne);else if(e.text=="<")emit(Op::Lt);else if(e.text==">")emit(Op::Gt);else if(e.text=="<=")emit(Op::Le);else if(e.text==">=")emit(Op::Ge);
+        break;
+      }
+    }
+  }
+  void statement(const Stmt& s){
+    switch(s.kind){
+      case Stmt::Block:{auto saved=slots;for(const auto& child:s.children)statement(*child);slots=std::move(saved);break;}
+      case Stmt::Declare:{int slot=next++;slots[s.name]=slot;expression(*s.expr);emit(Op::Store,slot);break;}
+      case Stmt::Assign:expression(*s.expr);emit(Op::Store,slots.at(s.name));break;
+      case Stmt::ArrayAssign:emit(Op::Load,slots.at(s.name));expression(*s.condition);expression(*s.expr);emit(Op::ArraySet);break;
+      case Stmt::ExprStatement:expression(*s.expr);if(s.expr->inferred!=Type::Void)emit(Op::Pop);break;
+      case Stmt::Print:expression(*s.expr);emit(Op::Print);break;
+      case Stmt::Return:if(s.expr)expression(*s.expr);emit(Op::Ret);break;
+      case Stmt::If:{expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);if(s.second){int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();statement(*s.second);code[j].arg=(int64_t)code.size();}else code[jf].arg=(int64_t)code.size();break;}
+      case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();break;}
+      case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}
+    }
+  }
 public:
-  std::vector<IR> generate(const Program& p){statement(*p.body);if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);return code;}
+  std::vector<FunctionIR> generate(const Program& p){
+    for(size_t i=0;i<p.functions.size();++i)functionIds[p.functions[i].name]=(int)i;
+    std::vector<FunctionIR> out;
+    for(const auto& fn:p.functions){
+      code.clear();slots.clear();next=0;
+      for(size_t i=0;i<fn.params.size();++i){slots[fn.params[i].name]=(int)i;++next;}
+      statement(*fn.body);
+      if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
+      else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
+      FunctionIR item;item.name=fn.name;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.push_back(std::move(item));
+    }
+    return out;
+  }
+};struct Bytecode { Op op; int64_t arg=0; std::string text; };
+struct FunctionBC { std::string name; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
+class BytecodeLowerer {
+public:
+  std::vector<FunctionBC> lower(const std::vector<FunctionIR>& ir){
+    std::vector<FunctionBC> out;
+    for(const auto& fn:ir){
+      FunctionBC b;b.name=fn.name;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
+      for(const auto& i:fn.code)b.code.push_back({i.op,i.arg,i.text});
+      out.push_back(std::move(b));
+    }
+    return out;
+  }
 };
-struct Bytecode { Op op; int64_t arg=0; std::string text; };
-class BytecodeLowerer { public: std::vector<Bytecode> lower(const std::vector<IR>& ir){std::vector<Bytecode> out;out.reserve(ir.size());for(const auto& i:ir)out.push_back({i.op,i.arg,i.text});return out;} };
 static void writeU32(std::ofstream& f,uint32_t x){for(int i=0;i<4;++i)f.put((char)(x>>(8*i)));}
 static uint32_t readU32(std::ifstream& f){uint32_t x=0;for(int i=0;i<4;++i){int c=f.get();if(c==EOF)throw Error("Truncated .room file");x|=(uint32_t)(uint8_t)c<<(8*i);}return x;}
 static void writeU64(std::ofstream& f,uint64_t x){for(int i=0;i<8;++i)f.put((char)(x>>(8*i)));}
 static uint64_t readU64(std::ifstream& f){uint64_t x=0;for(int i=0;i<8;++i){int c=f.get();if(c==EOF)throw Error("Truncated .room file");x|=(uint64_t)(uint8_t)c<<(8*i);}return x;}
-static void saveRoom(const std::string& path,const std::vector<Bytecode>& code){std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");f.write("ALRM",4);writeU32(f,3);writeU32(f,(uint32_t)code.size());for(const auto& i:code){f.put((char)i.op);writeU64(f,(uint64_t)i.arg);if(i.text.size()>1000000)throw Error("String constant too large");writeU32(f,(uint32_t)i.text.size());f.write(i.text.data(),(std::streamsize)i.text.size());}if(!f)throw Error("Failed writing .room file");}
-static std::vector<Bytecode> loadRoom(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");if(readU32(f)!=3)throw Error("Unsupported .room version (expected 3)");uint32_t n=readU32(f);if(n==0||n>1000000)throw Error("Invalid instruction count");std::vector<Bytecode> code;code.reserve(n);for(uint32_t k=0;k<n;++k){int op=f.get();if(op<1||op>(int)Op::ArrayLength)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);uint32_t len=readU32(f);if(len>1000000)throw Error("Constant length limit exceeded");std::string text(len,'\0');if(len){f.read(text.data(),len);if((uint32_t)f.gcount()!=len)throw Error("Truncated string constant");}code.push_back({(Op)op,arg,std::move(text)});}if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");return code;}
-static int stackDelta(Op op){switch(op){case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:return 1;case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;case Op::ArraySet:return -3;default:return 0;}}
-static void verify(const std::vector<Bytecode>& c){if(c.empty()||c.back().op!=Op::Halt)throw Error("Bytecode must end with HALT");std::vector<int> depth(c.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);while(!q.empty()){size_t pc=q.front();q.pop();const auto& i=c[pc];int before=depth[pc],need=0,delta=stackDelta(i.op);switch(i.op){case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:need=1;break;case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:need=2;break;case Op::ArraySet:need=3;break;case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;default:break;}if(before<need)throw Error("Bytecode stack underflow at instruction "+std::to_string(pc));int after=before+delta;auto visit=[&](int64_t dest){if(dest<0||(uint64_t)dest>=c.size())throw Error("Invalid jump target");size_t d=(size_t)dest;if(depth[d]==-1){depth[d]=after;q.push(d);}else if(depth[d]!=after)throw Error("Inconsistent stack depth at control-flow join");};if(i.op==Op::Jump)visit(i.arg);else if(i.op==Op::JumpFalse){visit(i.arg);if(pc+1<c.size())visit((int64_t)pc+1);}else if(i.op!=Op::Halt){if(pc+1>=c.size())throw Error("Execution can fall off end of bytecode");visit((int64_t)pc+1);}}}
+static void writeString(std::ofstream& f,const std::string& value){if(value.size()>1000000)throw Error("String too long for .room file");writeU32(f,(uint32_t)value.size());f.write(value.data(),(std::streamsize)value.size());}
+static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
+static void saveRoom(const std::string& path,const std::vector<FunctionBC>& functions){
+  std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
+  f.write("ALRM",4);writeU32(f,4);writeU32(f,(uint32_t)functions.size());
+  for(const auto& fn:functions){
+    writeString(f,fn.name);f.put((char)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
+    for(const auto& i:fn.code){f.put((char)i.op);writeU64(f,(uint64_t)i.arg);writeString(f,i.text);}
+  }
+  if(!f)throw Error("Failed writing .room file");
+}
+static std::vector<FunctionBC> loadRoom(const std::string& path){
+  std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
+  char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
+  if(readU32(f)!=4)throw Error("Unsupported .room version (expected 4)");
+  uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");
+  std::vector<FunctionBC> functions;functions.reserve(n);
+  for(uint32_t j=0;j<n;++j){
+    FunctionBC fn;fn.name=readString(f);int ty=f.get();if(ty<0||ty>(int)Type::Unknown)throw Error("Invalid function return type");fn.returnType=(Type)ty;
+    fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
+    uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
+    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::Ret)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
+    functions.push_back(std::move(fn));
+  }
+  if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");
+  return functions;
+}
+static int stackDelta(Op op){
+  switch(op){
+    case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:return 1;
+    case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;
+    case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;
+    case Op::ArraySet:return -3;
+    default:return 0;
+  }
+}
+static void verify(const std::vector<FunctionBC>& functions){
+  if(functions.empty()||functions[0].name!="main")throw Error(".room must start with main function");
+  if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
+  std::map<std::string,bool> names;
+  for(const auto& fn:functions){if(fn.name.empty()||names.count(fn.name))throw Error("Empty or duplicate function name");names[fn.name]=true;}
+  for(size_t fi=0;fi<functions.size();++fi){
+    const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
+    std::vector<int> depth(fn.code.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);
+    while(!q.empty()){
+      size_t pc=q.front();q.pop();const auto& i=fn.code[pc];
+      if((i.op==Op::Load||i.op==Op::Store)&&(i.arg<0||(uint64_t)i.arg>=fn.localCount))throw Error("Invalid local slot");
+      int before=depth[pc],need=0,delta=stackDelta(i.op);
+      switch(i.op){
+        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:need=1;break;
+        case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:need=2;break;
+        case Op::ArraySet:need=3;break;
+        case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
+        case Op::Call:{
+          if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
+          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount;delta=(target.returnType==Type::Void?0:1)-(int)target.parameterCount;break;
+        }
+        case Op::Ret:need=fn.returnType==Type::Void?0:1;break;
+        default:break;
+      }
+      if(before<need)throw Error("Bytecode stack underflow at "+fn.name+" instruction "+std::to_string(pc));
+      if(i.op==Op::Ret){if(before!=need)throw Error("Invalid stack at RET in function "+fn.name);continue;}
+      if(i.op==Op::Halt){if(fn.name!="main"||before!=0)throw Error("Invalid HALT in bytecode");continue;}
+      int after=before+delta;
+      auto visit=[&](int64_t dest){if(dest<0||(uint64_t)dest>=fn.code.size())throw Error("Invalid jump target");size_t d=(size_t)dest;if(depth[d]==-1){depth[d]=after;q.push(d);}else if(depth[d]!=after)throw Error("Inconsistent stack depth at control-flow join");};
+      if(i.op==Op::Jump)visit(i.arg);
+      else if(i.op==Op::JumpFalse){visit(i.arg);if(pc+1<fn.code.size())visit((int64_t)pc+1);}
+      else if(i.op!=Op::Halt){if(pc+1>=fn.code.size())throw Error("Execution can fall off end of function "+fn.name);visit((int64_t)pc+1);}
+    }
+  }
+}
 struct Array;
 using ArrayPtr=std::shared_ptr<Array>;
 using Value=std::variant<int64_t,std::string,bool,ArrayPtr>;
@@ -123,7 +360,53 @@ static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;th
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
-static void execute(const std::vector<Bytecode>& c){verify(c);std::vector<Value> stack;std::map<int64_t,Value> locals;auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};size_t pc=0;while(pc<c.size()){const auto& i=c[pc];switch(i.op){case Op::PushInt:stack.emplace_back(i.arg);break;case Op::PushString:stack.emplace_back(i.text);break;case Op::PushBool:stack.emplace_back(i.arg!=0);break;case Op::Load:{auto f=locals.find(i.arg);if(f==locals.end())throw Error("Read of uninitialized local variable");stack.push_back(f->second);break;}case Op::Store:locals[i.arg]=pop();break;case Op::Print:std::cout<<show(pop())<<'\n';break;case Op::Pop:pop();break;case Op::Neg:{auto a=integer(pop());if(a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-a);break;}case Op::Not:stack.emplace_back(!boolean(pop()));break;case Op::Add:{Value b=pop(),a=pop();if(std::holds_alternative<std::string>(a)&&std::holds_alternative<std::string>(b))stack.emplace_back(std::get<std::string>(a)+std::get<std::string>(b));else stack.emplace_back(checkedAdd(integer(a),integer(b)));break;}case Op::Sub:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedSub(a,b));break;}case Op::Mul:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedMul(a,b));break;}case Op::Div:case Op::Mod:{auto b=integer(pop()),a=integer(pop());if(b==0)throw Error("Division by zero");if(a==std::numeric_limits<int64_t>::min()&&b==-1)throw Error("Integer overflow");stack.emplace_back(i.op==Op::Div?a/b:a%b);break;}case Op::Eq:case Op::Ne:{Value b=pop(),a=pop();bool same=a.index()==b.index()&&a==b;stack.emplace_back(i.op==Op::Eq?same:!same);break;}case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:{auto b=integer(pop()),a=integer(pop());bool r=i.op==Op::Lt?a<b:i.op==Op::Gt?a>b:i.op==Op::Le?a<=b:a>=b;stack.emplace_back(r);break;}case Op::And:case Op::Or:{bool b=boolean(pop()),a=boolean(pop());stack.emplace_back(i.op==Op::And?(a&&b):(a||b));break;}case Op::NewArray:{if(i.arg<0||(uint64_t)i.arg>stack.size())throw Error("Invalid array construction");auto a=std::make_shared<Array>();a->items.resize((size_t)i.arg);for(size_t k=(size_t)i.arg;k>0;--k)a->items[k-1]=pop();if(!a->items.empty()){a->elementKind=a->items[0].index();for(const auto& v:a->items)if(v.index()!=a->elementKind)throw Error("Array element type mismatch in bytecode");}stack.emplace_back(a);break;}case Op::ArrayGet:{auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array access on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");stack.push_back((*a)->items[(size_t)index]);break;}case Op::ArraySet:{Value value=pop();auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array assignment on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");if((*a)->elementKind==std::numeric_limits<size_t>::max())(*a)->elementKind=value.index();if(value.index()!=(*a)->elementKind)throw Error("Array element type mismatch");(*a)->items[(size_t)index]=std::move(value);break;}case Op::ArrayLength:{Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error(".length on non-array value");stack.emplace_back((int64_t)(*a)->items.size());break;}case Op::Jump:pc=(size_t)i.arg;continue;case Op::JumpFalse:{bool cond=boolean(pop());if(!cond){pc=(size_t)i.arg;continue;}break;}case Op::Halt:return;}++pc;}}
+static void execute(const std::vector<FunctionBC>& functions){
+  verify(functions);
+  struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
+  std::vector<Value> stack;
+  auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
+  Frame entry;entry.function=0;entry.locals.resize(functions[0].localCount);std::vector<Frame> frames;frames.push_back(std::move(entry));
+  while(!frames.empty()){
+    Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");
+    const auto& i=fn.code[frame.pc++];
+    switch(i.op){
+      case Op::PushInt:stack.emplace_back(i.arg);break;
+      case Op::PushString:stack.emplace_back(i.text);break;
+      case Op::PushBool:stack.emplace_back(i.arg!=0);break;
+      case Op::Load:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size()||!frame.locals[(size_t)i.arg])throw Error("Read of uninitialized local variable");stack.push_back(*frame.locals[(size_t)i.arg]);break;}
+      case Op::Store:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size())throw Error("Invalid local slot");frame.locals[(size_t)i.arg]=pop();break;}
+      case Op::Print:std::cout<<show(pop())<<'\n';break;
+      case Op::Pop:pop();break;
+      case Op::Neg:{auto a=integer(pop());if(a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-a);break;}
+      case Op::Not:stack.emplace_back(!boolean(pop()));break;
+      case Op::Add:{Value b=pop(),a=pop();if(std::holds_alternative<std::string>(a)&&std::holds_alternative<std::string>(b))stack.emplace_back(std::get<std::string>(a)+std::get<std::string>(b));else stack.emplace_back(checkedAdd(integer(a),integer(b)));break;}
+      case Op::Sub:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedSub(a,b));break;}
+      case Op::Mul:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedMul(a,b));break;}
+      case Op::Div:case Op::Mod:{auto b=integer(pop()),a=integer(pop());if(b==0)throw Error("Division by zero");if(a==std::numeric_limits<int64_t>::min()&&b==-1)throw Error("Integer overflow");stack.emplace_back(i.op==Op::Div?a/b:a%b);break;}
+      case Op::Eq:case Op::Ne:{Value b=pop(),a=pop();bool same=a.index()==b.index()&&a==b;stack.emplace_back(i.op==Op::Eq?same:!same);break;}
+      case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:{auto b=integer(pop()),a=integer(pop());bool r=i.op==Op::Lt?a<b:i.op==Op::Gt?a>b:i.op==Op::Le?a<=b:a>=b;stack.emplace_back(r);break;}
+      case Op::And:case Op::Or:{bool b=boolean(pop()),a=boolean(pop());stack.emplace_back(i.op==Op::And?(a&&b):(a||b));break;}
+      case Op::NewArray:{if(i.arg<0||(uint64_t)i.arg>stack.size())throw Error("Invalid array construction");auto a=std::make_shared<Array>();a->items.resize((size_t)i.arg);for(size_t k=(size_t)i.arg;k>0;--k)a->items[k-1]=pop();if(!a->items.empty()){a->elementKind=a->items[0].index();for(const auto& v:a->items)if(v.index()!=a->elementKind)throw Error("Array element type mismatch in bytecode");}stack.emplace_back(a);break;}
+      case Op::ArrayGet:{auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array access on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");stack.push_back((*a)->items[(size_t)index]);break;}
+      case Op::ArraySet:{Value value=pop();auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array assignment on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");if((*a)->elementKind==std::numeric_limits<size_t>::max())(*a)->elementKind=value.index();if(value.index()!=(*a)->elementKind)throw Error("Array element type mismatch");(*a)->items[(size_t)index]=std::move(value);break;}
+      case Op::ArrayLength:{Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error(".length on non-array value");stack.emplace_back((int64_t)(*a)->items.size());break;}
+      case Op::Call:{
+        size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
+        std::vector<Value> args(callee.parameterCount);for(size_t k=callee.parameterCount;k>0;--k)args[k-1]=pop();
+        Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);
+        frames.push_back(std::move(next));break;
+      }
+      case Op::Ret:{
+        bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;
+        frames.pop_back();if(frames.empty())return;
+        if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;
+      }
+      case Op::Jump:frame.pc=(size_t)i.arg;break;
+      case Op::JumpFalse:{bool cond=boolean(pop());if(!cond)frame.pc=(size_t)i.arg;break;}
+      case Op::Halt:return;
+    }
+  }
+}
 } // namespace al
 
-int main(int argc,char** argv){try{if(argc<3){std::cerr<<"Usage: alvm compile <file.al> [-o file.room] | run <file.room> | disasm <file.room>\n";return 2;}std::string command=argv[1],input=argv[2];if(command=="compile"){std::ifstream f(input);if(!f)throw al::Error("Cannot open source file");std::string source((std::istreambuf_iterator<char>(f)),{});al::Program program=al::Parser(source).parse();al::SemanticAnalyzer().analyze(program);auto ir=al::IRGenerator().generate(program);auto bc=al::BytecodeLowerer().lower(ir);std::string output=input;auto dot=output.find_last_of('.');if(dot!=std::string::npos)output.resize(dot);output+=".room";for(int i=3;i+1<argc;++i)if(std::string(argv[i])=="-o")output=argv[i+1];al::saveRoom(output,bc);std::cout<<"Compiled "<<output<<" ("<<bc.size()<<" instructions)\n";}else if(command=="run"){al::execute(al::loadRoom(input));}else if(command=="disasm"){auto bc=al::loadRoom(input);al::verify(bc);for(size_t i=0;i<bc.size();++i)std::cout<<i<<": op="<<(int)bc[i].op<<" arg="<<bc[i].arg<<(bc[i].text.empty()?"":" text=\""+bc[i].text+"\"")<<'\n';}else throw al::Error("Unknown command: "+command);return 0;}catch(const std::exception& e){std::cerr<<"AL error: "<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{if(argc<3){std::cerr<<"Usage: alvm compile <file.al> [-o file.room] | run <file.room> | disasm <file.room>\n";return 2;}std::string command=argv[1],input=argv[2];if(command=="compile"){std::ifstream f(input);if(!f)throw al::Error("Cannot open source file");std::string source((std::istreambuf_iterator<char>(f)),{});al::Program program=al::Parser(source).parse();al::SemanticAnalyzer().analyze(program);auto ir=al::IRGenerator().generate(program);auto bc=al::BytecodeLowerer().lower(ir);std::string output=input;auto dot=output.find_last_of('.');if(dot!=std::string::npos)output.resize(dot);output+=".room";for(int i=3;i+1<argc;++i)if(std::string(argv[i])=="-o")output=argv[i+1];al::saveRoom(output,bc);std::cout<<"Compiled "<<output<<" ("<<bc.size()<<" functions)\n";}else if(command=="run"){al::execute(al::loadRoom(input));}else if(command=="disasm"){auto bc=al::loadRoom(input);al::verify(bc);for(const auto& fn:bc){std::cout<<"function "<<fn.name<<" locals="<<fn.localCount<<" params="<<fn.parameterCount<<'\n';for(size_t i=0;i<fn.code.size();++i)std::cout<<i<<": op="<<(int)fn.code[i].op<<" arg="<<fn.code[i].arg<<(fn.code[i].text.empty()?"":" text=\""+fn.code[i].text+"\"")<<'\n';}}else throw al::Error("Unknown command: "+command);return 0;}catch(const std::exception& e){std::cerr<<"AL error: "<<e.what()<<'\n';return 1;}}
