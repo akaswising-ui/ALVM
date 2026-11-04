@@ -21,6 +21,7 @@ import android.webkit.ValueCallback;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.GridLayout;
 import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -645,6 +646,10 @@ public class MainActivity extends Activity {
             content.setPadding(dp(18), dp(16), dp(18), dp(18));
             content.setBackground(roundDrawable(Color.rgb(15, 23, 38), dp(20)));
 
+            GridLayout buttonGrid = new GridLayout(this);
+            buttonGrid.setColumnCount(4);
+            buttonGrid.setUseDefaultMargins(true);
+
             TextView heading = new TextView(this);
             heading.setText(root.optString("title", "AL Application"));
             heading.setTextColor(Color.WHITE);
@@ -678,10 +683,13 @@ public class MainActivity extends Activity {
                     button.setTextColor(Color.WHITE);
                     button.setTextSize(18);
                     button.setBackground(roundDrawable(Color.rgb(55, 68, 103), dp(12)));
-                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
-                    params.topMargin = dp(7);
-                    content.addView(button, params);
+                    GridLayout.LayoutParams params = new GridLayout.LayoutParams(
+                            GridLayout.spec(GridLayout.UNDEFINED, 1f),
+                            GridLayout.spec(GridLayout.UNDEFINED));
+                    params.width = 0;
+                    params.height = dp(56);
+                    params.setMargins(dp(3), dp(3), dp(3), dp(3));
+                    buttonGrid.addView(button, params);
                     button.setOnClickListener(view -> {
                         try {
                             String result = nativeRunUiEvent(roomPath(), callback, id);
@@ -695,6 +703,13 @@ public class MainActivity extends Activity {
                         }
                     });
                 }
+            }
+
+            if (buttonGrid.getChildCount() > 0) {
+                LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                gridParams.topMargin = dp(8);
+                content.addView(buttonGrid, gridParams);
             }
 
             ScrollView scroll = new ScrollView(this);
