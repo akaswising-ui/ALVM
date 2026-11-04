@@ -8,51 +8,57 @@ AL is an independent language and runtime project:
 
 The native top-level declaration is `room Main`. `class Main` remains an early compatibility spelling.
 
-## Stage 4 implementation
+## Stage 5 implementation
 
-The current engine is a C++17 command-line compiler and VM:
+Current engine: C++17 compiler and bytecode VM.
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowering -> binary .room v4 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowering -> binary .room v5 -> verifier -> ALVM`
 
 Implemented:
 - Line/column lexer diagnostics, comments, escaped strings, integer/string/boolean literals and multi-character operators.
-- AST and type checks for `int`, `string`, `boolean`, their array forms, and inferred `var`.
-- Arithmetic, string concatenation, comparisons, equality, logical operators, unary operators and short-circuit evaluation.
+- Scalar and array type checks: `int`, `string`, `boolean`, `int[]`, `string[]`, `boolean[]`, plus inferred `var`.
+- Arithmetic, string concatenation, comparisons, equality, logical operators and short-circuit evaluation.
 - `if/else`, `while`, `for`.
-- Typed arrays: literals, indexing, mutation, `.length`, aliasing, compile-time element checks and runtime bounds checks.
-- User-defined functions in a room, typed parameters, argument type checks, scalar/array return values, direct calls and recursion.
-- Per-function local slots, call frames, and a 1024-frame recursion limit.
-- Function signature/return analysis and separate AST, semantic, IR and bytecode-lowering passes.
-- Binary `.room` v4 function table; verifier checks control flow, locals, call targets and stack depths.
-- Runtime integer overflow/division-by-zero guards and CLI commands `compile`, `run`, `disasm`.
-- End-to-end tests for control flow, arrays, calls, recursion, type errors, missing returns and bounds failures.
+- Typed arrays with literals, indexing, mutation, `.length`, aliasing and bounds checks.
+- User-defined functions, typed parameters, return values, direct calls and recursion.
+- Class declarations inside a room, scalar instance fields, object creation with `new ClassName()`, field reads/writes, `this`, instance method calls and object references.
+- Compile-time validation of field names, field types, method names, method argument counts and method argument types.
+- Per-function local slots and VM call frames. Recursive call depth is limited to 1024.
+- Binary `.room` v5 class/function tables, verifier control-flow checks, call target/local checks and runtime object-field guards.
+- CLI commands: `compile`, `run`, `disasm`.
+- End-to-end tests for control flow, arrays, functions, recursion, object state, aliasing and invalid types.
 
-## Function syntax
+## Object example
 
 ```al
 room Main {
     public static void main() {
-        AL.print(add(10, 20));
-        AL.print(factorial(5));
+        Player player = new Player();
+        player.addHealth(25);
+        AL.print(player.health);
     }
-    public static int add(int a, int b) {
-        return a + b;
-    }
-    public static int factorial(int n) {
-        if (n <= 1) { return 1; }
-        else { return n * factorial(n - 1); }
+
+    class Player {
+        int health;
+
+        public void addHealth(int amount) {
+            this.health = this.health + amount;
+        }
     }
 }
 ```
 
-Function names must be unique. Overloading is not implemented. Calls are direct calls within the same room. `public`, `private`, `protected` and `static` are currently accepted syntactically, but access control and instance-method semantics are not implemented.
+Class fields currently support scalar `int`, `string` and `boolean` types. Fields receive defaults of `0`, empty string and `false`. There are no custom constructors yet. Object assignment copies the reference, so aliases share field changes. Instance methods use a hidden `this` local.
+
+Access modifiers (`public`, `private`, `protected`) and `static` are accepted syntactically but are not enforced. All class methods currently use instance-call semantics.
 
 ## Not implemented yet
 
 This is not a complete language, IDE or Android app. Pending features include:
-- Function overloading, lambdas, closures and named/default arguments.
-- Classes/objects with fields, constructors, instance methods, inheritance, interfaces, polymorphism and enforced access control.
-- Generics, enums, exceptions, modules/imports.
+- Inheritance, `extends`, `implements`, interfaces, polymorphism, abstract classes and enforced access control.
+- Custom constructors, static class methods, class-level/static fields and object arrays.
+- Function/method overloading, lambdas, closures, generics and enums.
+- Exceptions and modules/imports.
 - Additional numeric types (`float`, `double`, `long`, `short`, `byte`), `char` and more collections.
 - Standard libraries for math, strings, files, networking and databases.
 - Graphics, UI, audio, input, physics and game APIs.
@@ -72,22 +78,24 @@ cmake --build build --parallel
 ./build/alvm run examples/hello.room
 ./build/alvm compile examples/functions.al
 ./build/alvm run examples/functions.room
+./build/alvm compile examples/objects.al
+./build/alvm run examples/objects.room
 ctest --test-dir build --output-on-failure
 ```
 
-Expected function example output: `30`, `120`, `Hello AL`, `15`.
+The object example demonstrates typed fields, instance methods, `this`, field mutation and reference aliasing.
 
-## .room v4
+## .room v5
 
-Little-endian fields: 4-byte `ALRM` magic; uint32 version 4; uint32 function count; then each function has length-prefixed UTF-8 name, uint8 return type, uint32 parameter count, uint32 local count, uint32 instruction count; each instruction has uint8 opcode, uint64 operand, and length-prefixed UTF-8 payload.
+Little-endian fields: 4-byte `ALRM` magic; uint32 version 5; uint32 class count; each class has a length-prefixed UTF-8 name, uint32 field count and uint32 scalar type tags; then uint32 function count; each function has name, signed owner-class id, return type, parameter count, local count and instruction count; each instruction has uint8 opcode, uint64 operand and length-prefixed payload.
 
-Versions 1, 2 and 3 are not accepted by the v4 loader. Recompile the original `.al` sources. The VM executes compiled `.room` bytecode and does not interpret source text.
+Versions 1 through 4 are not accepted by the v5 loader. Recompile the original `.al` files. The VM executes compiled `.room` bytecode and never interprets source at runtime.
 
 ## Roadmap
 
-1. Function overloading and stronger control-flow/return analysis.
-2. Classes, fields, constructors, instance methods and inheritance.
-3. Interfaces, enums, generics, exceptions, modules and standard library.
+1. Inheritance, interfaces, constructors, static members and object arrays.
+2. Overloading, generics, enums, exceptions and modules.
+3. Standard library APIs for system, files, networking and data.
 4. Graphics/game/audio APIs and a real-time runtime loop.
 5. Graphical IDE, project model, diagnostics and debugging.
-6. `.AL` packaging, Android integration and a tested APK pipeline.
+6. `.AL` packaging, Android integration and tested APK pipeline.
