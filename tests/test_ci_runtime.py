@@ -1,12 +1,16 @@
+import hashlib
+import json
 import struct
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "src" / "main" / "python"))
 
 import ci_runtime_engine as runtime
+import ci_runtime_manager as manager
 
 
 def u32(value):
@@ -100,6 +104,57 @@ class CiRuntimeTests(unittest.TestCase):
             result["ui"]["elements"][0]["text"],
             "Python executed the .room file"
         )
+
+
+    def test_runtime_update_and_rollback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "runtime-root"
+            package = Path(folder) / "ci-runtime-1.0.1.ciruntime"
+            runtime_source_path = (
+                Path(__file__).resolve().parents[1]
+                / "app" / "src" / "main" / "python" / "ci_runtime_engine.py"
+            )
+            runtime_source = runtime_source_path.read_text(encoding="utf-8")
+            runtime_source = runtime_source.replace(
+                'RUNTIME_VERSION = "1.0.0"',
+                'RUNTIME_VERSION = "1.0.1"',
+                1,
+            )
+            runtime_bytes = runtime_source.encode("utf-8")
+            manifest = {
+                "name": "CI Runtime",
+                "version": "1.0.1",
+                "runtime_api_version": 1,
+                "room_format_min": 9,
+                "room_format_max": 9,
+                "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
+            }
+            with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("manifest.json", json.dumps(manifest))
+                archive.writestr("runtime.py", runtime_bytes)
+
+            installed = json.loads(manager.install_update(str(package), str(root)))
+            self.assertTrue(installed["ok"], installed)
+            self.assertEqual(installed["active_version"], "1.0.1")
+
+            room = Path(folder) / "hello.room"
+            room.write_bytes(room_file([
+                instruction(2, 0, "Versioned runtime"),
+                instruction(23),
+                instruction(25),
+            ]))
+            result = json.loads(manager.run_room_json(str(room), str(root)))
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["runtimeVersion"], "1.0.1")
+            self.assertEqual(result["output"], "Versioned runtime")
+
+            rolled_back = json.loads(manager.rollback(str(root)))
+            self.assertTrue(rolled_back["ok"], rolled_back)
+            self.assertEqual(rolled_back["active_version"], "bundled")
+
+            fallback = json.loads(manager.run_room_json(str(room), str(root)))
+            self.assertTrue(fallback["ok"], fallback)
+            self.assertEqual(fallback["runtimeVersion"], "1.0.0")
 
     def test_rejects_wrong_room_version(self):
         result = self.run_bytes(room_file([instruction(25)], version=8))
