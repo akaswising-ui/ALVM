@@ -105,6 +105,8 @@ class SemanticAnalyzer {
   std::vector<std::map<std::string,Type>> scopes;
   Type currentReturn=Type::Void;
   std::string currentClass;
+  int loopDepth=0;
+  int breakDepth=0;
   void push(){scopes.emplace_back();}
   void pop(){scopes.pop_back();}
   void declare(const std::string& n,Type t){auto& scope=scopes.back();if(scope.count(n))throw Error("Duplicate variable in scope: "+n);scope[n]=t;}
@@ -146,8 +148,12 @@ class SemanticAnalyzer {
       case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
       case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(!isAssignable(actual,currentReturn))throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
       case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
-      case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;
-      case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;
+      case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");++loopDepth;++breakDepth;checkStmt(*s.first);--breakDepth;--loopDepth;break;
+      case Stmt::DoWhile:++loopDepth;++breakDepth;checkStmt(*s.first);--breakDepth;--loopDepth;if(checkExpr(*s.condition)!=Type::Bool)throw Error("do-while condition must be boolean");break;
+      case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");++loopDepth;++breakDepth;checkStmt(*s.third);--breakDepth;--loopDepth;checkStmt(*s.second);pop();break;
+      case Stmt::Switch:{Type switchType=checkExpr(*s.expr);if(switchType!=Type::Int&&switchType!=Type::String&&switchType!=Type::Bool)throw Error("switch supports int, string or boolean values");bool defaultSeen=false;++breakDepth;for(size_t i=0;i<s.caseValues.size();++i){if(s.caseDefault[i]){if(defaultSeen)throw Error("Duplicate default label");defaultSeen=true;}else if(checkExpr(*s.caseValues[i])!=switchType)throw Error("switch case type must match switch expression");push();for(auto& child:s.caseStatements[i])checkStmt(*child);pop();}--breakDepth;break;}
+      case Stmt::Break:if(breakDepth==0)throw Error("break is only valid inside a loop or switch");break;
+      case Stmt::Continue:if(loopDepth==0)throw Error("continue is only valid inside a loop");break;
     }
   }
   bool alwaysReturns(const Stmt& s)const{if(s.kind==Stmt::Return)return true;if(s.kind==Stmt::Block){for(const auto& child:s.children)if(alwaysReturns(*child))return true;return false;}if(s.kind==Stmt::If&&s.second)return alwaysReturns(*s.first)&&alwaysReturns(*s.second);return false;}
