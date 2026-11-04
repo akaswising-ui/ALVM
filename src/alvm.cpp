@@ -195,7 +195,7 @@ public:
         std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
       }
     }
-    for(auto& fn:p.functions){Signature sig=signature(fn);std::string symbol=fn.name;if(fn.name!="main"){symbol+="$";for(const auto& param:fn.params){symbol+=typeName(param.type);symbol+="_";}}fn.symbol=symbol;sig.symbol=symbol;auto& overloads=functionOverloads[fn.name];for(const auto& prior:overloads)if(prior.params==sig.params)throw Error("Duplicate function signature: "+fn.name);overloads.push_back(std::move(sig));}
+    for(auto& fn:p.functions){Signature sig=signature(fn);std::string symbol=fn.name;if(fn.name!="main"){symbol+="$";for(const auto& param:fn.params){std::string encoded=typeName(param.type);symbol+=std::to_string(encoded.size());symbol+="_";symbol+=encoded;}}fn.symbol=symbol;sig.symbol=symbol;auto& overloads=functionOverloads[fn.name];for(const auto& prior:overloads)if(prior.params==sig.params)throw Error("Duplicate function signature: "+fn.name);overloads.push_back(std::move(sig));}
     for(auto& fn:p.functions)analyzeFunction(fn);
     for(auto& cls:p.classes)for(auto& method:cls.methods)analyzeFunction(method);
     currentClass.clear();
