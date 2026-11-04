@@ -2,6 +2,17 @@
 
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
+## Stage 10: global function overloading
+
+Global functions can share a name when their parameter type lists differ. The compiler resolves a call using argument types, prefers the viable overload with the greatest number of exact type matches, and rejects missing or ambiguous matches. Return type alone does not distinguish overloads. The selected overload is assigned a stable internal symbol in IR and bytecode, while AL source keeps the readable function name.
+
+```al
+int calculate(int a, int b) { return a + b; }
+string calculate(string a, string b) { return a + b; }
+```
+
+This stage adds global function overloading only. Method and constructor overloading remain pending.
+
 ## Stage 9: array foreach iteration
 
 AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, so `.room` v7 does not need an ABI change.
@@ -21,7 +32,7 @@ Current C++17 compiler pipeline:
 
 Implemented:
 - Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
-- Typed functions, parameters, return values and recursion.
+- Typed functions, parameters, return values, recursion and global function overloading.
 - Classes, fields, objects, constructors, instance methods, `this`, inheritance and derived-to-base assignment.
 - `if/else`, `while`, `for`, `do/while` and typed `foreach` array iteration.
 - `switch/case/default` for `int`, `string` and `boolean` expressions.
@@ -66,7 +77,7 @@ room Main {
 
 ## Still pending
 
-Function/method overloading, constructors with `super(arguments)`, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+Method/constructor overloading, constructors with `super(arguments)`, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
 
 ## Build
 
