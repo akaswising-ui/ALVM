@@ -1,5 +1,18 @@
 # ALVM Studio
 
+## Android app UI: offline bundle
+
+The Android app packages the ALVM Studio interface inside the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
+
+- No AppDeploy-hosted page is loaded at runtime.
+- No AppDeploy branding or PWA install button is included in the Android UI.
+- The Android manifest does not request Internet or network-state permissions.
+- The WebView blocks network loads and opens the local `file:///android_asset/index.html` bundle.
+- Run, Compile and Execute actions use the existing native C++17 AL compiler and ALVM bridge.
+- The interface, editor, libraries page and website builder assets are packaged locally. Installing/downloading the APK is the only step that needs an Internet connection.
+
+The UI package intentionally does not replace the native compiler with the prototype browser compiler. Unsupported language features remain unsupported until they are implemented in the native engine and covered by tests.
+
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
 ## Stage 13: explicit base-constructor calls
