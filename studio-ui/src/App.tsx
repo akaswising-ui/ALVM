@@ -16,7 +16,7 @@ type GameScene = { width: number; height: number; background: string; objects: G
 type VarInfo = { name: string; type: 'int' | 'String' | 'boolean'; slot: number };
 type Program = { code: Instruction[]; vars: VarInfo[] };
 
-const sample = "// AL program: start a playable chess game.\nRoom Main {\n    public static void main() {\n        Chess.start();\n        AL.print(\"AL Chess started. Select a piece and then its destination.\");\n    }\n}";
+const sample = "// Write your AL program here.\nRoom Main {\n    public static void main() {\n        AL.print(\"Hello from AL\");\n    }\n}";
 
 function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
