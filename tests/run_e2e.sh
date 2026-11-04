@@ -116,4 +116,16 @@ fi
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
+"$BIN" compile "$ROOT/examples/calculator.al" -o "$TMP/calculator.room"
+UI_INITIAL="$("$BIN" ui "$TMP/calculator.room")"
+if [[ "$UI_INITIAL" != *'"title":"AL Calculator"'* || "$UI_INITIAL" != *'"id":"display","text":"0"'* ]]; then
+  printf 'AL UI initial render failed:\n%s\n' "$UI_INITIAL" >&2
+  exit 1
+fi
+UI_EVENTS="$("$BIN" ui-event "$TMP/calculator.room" onKey 7 onKey plus onKey 5 onKey equals)"
+if [[ "$UI_EVENTS" != *'"id":"display","text":"12"'* ]]; then
+  printf 'AL UI button callback sequence failed:\n%s\n' "$UI_EVENTS" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, explicit super calls, foreach, switch and loop control"
