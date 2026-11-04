@@ -199,6 +199,7 @@ struct IRProgram { std::vector<ClassIR> classes; std::vector<FunctionIR> functio
 class IRGenerator {
   std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds, classIds;
   std::map<std::string,std::map<std::string,int>> fieldSlots;
+  std::map<std::string,std::string> baseClasses;
   int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
   void expression(const Expr& e){
@@ -208,7 +209,7 @@ class IRGenerator {
       case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;
       case Expr::Variable:emit(Op::Load,slots.at(e.text));break;
       case Expr::This:emit(Op::Load,slots.at("this"));break;
-      case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));break;
+      case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));emit(Op::Dup);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
       case Expr::MethodCall:expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
@@ -245,6 +246,7 @@ class IRGenerator {
     int32_t owner=-1;
     if(!fn.ownerClass.empty()){owner=classIds.at(fn.ownerClass);slots["this"]=next++;}
     for(const auto& param:fn.params){slots[param.name]=next++;}
+    if(fn.isConstructor&&!fn.ownerClass.empty()){const std::string& base=baseClasses.at(fn.ownerClass);if(!base.empty()){emit(Op::Load,slots.at("this"));emit(Op::Call,functionIds.at(base+".$ctor"));}}
     statement(*fn.body);
     if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
     else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
@@ -255,7 +257,7 @@ public:
     IRProgram out;
     for(size_t i=0;i<p.classes.size();++i)classIds[p.classes[i].name]=(int)i;
     for(size_t i=0;i<p.classes.size();++i){
-      const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;
+      const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;baseClasses[decl.name]=decl.baseClass;
       if(!decl.baseClass.empty()){
         int base=classIds.at(decl.baseClass);if(base>=(int)i)throw Error("Base class must appear before derived class");
         c.baseClassId=base;c.fieldTypes=out.classes[(size_t)base].fieldTypes;fieldSlots[decl.name]=fieldSlots[decl.baseClass];
