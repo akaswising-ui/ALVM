@@ -46,9 +46,9 @@ Stage 8 keeps the previous stages' supported scalar and array types, functions a
 
 The current C++17 pipeline is:
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v8 -> verifier -> ALVM`
 
-Switch and loop control lower to existing jump instructions. The .room v7 binary layout remains unchanged.
+Switch and loop control lower to existing jump instructions. The .room v8 binary layout remains unchanged.
 
 ## Not implemented
 
@@ -72,7 +72,7 @@ foreach (int item : values) {
 - The iteration variable is scoped to the foreach statement and cannot be referenced after it.
 - `break;` exits the foreach loop.
 - `continue;` advances to the next element.
-- The compiler lowers foreach to ordinary array length, indexed read, arithmetic and jump instructions. No special foreach opcode is embedded in .room v7.
+- The compiler lowers foreach to ordinary array length, indexed read, arithmetic and jump instructions. No special foreach opcode is embedded in .room v8.
 - Empty arrays are not yet expressible as array literals; a future array allocation feature will make zero-element iteration directly testable.
 
 
@@ -128,3 +128,23 @@ foreach (int item : values) {
 - If the explicit call is omitted, the compiler automatically invokes the base class zero-argument constructor.
 - If no zero-argument base constructor exists and no explicit `super(arguments)` is supplied, compilation fails.
 - The selected base constructor is emitted as a normal bytecode call with the current object as receiver.
+
+
+## Stage 14: sized primitive-array allocation
+
+Syntax:
+
+```al
+int[] scores = new int[5];
+string[] labels = new string[2];
+boolean[] flags = new boolean[3];
+```
+
+- The element type must currently be `int`, `string` or `boolean`.
+- The length expression must have compile-time type `int`; it is evaluated once at runtime.
+- Runtime lengths from 0 through 100000 are accepted. Negative or larger lengths raise a runtime error.
+- Elements are initialized to `0`, the empty string, or `false`, respectively.
+- The resulting value supports indexed reads, indexed writes, `.length` and typed `foreach` iteration.
+- The compiler emits `NewArraySized`; the VM does not execute source text.
+- The opcode is serialized in `.room` version 8. Version 7 files are rejected with an explicit version error and must be recompiled.
+- Object arrays, multidimensional arrays, array literals of length zero, and collection types remain unsupported.
