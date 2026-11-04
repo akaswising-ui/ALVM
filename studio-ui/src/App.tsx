@@ -23,7 +23,7 @@ declare global {
   }
 }
 
-const sample = \`// AL program compiled and executed by the native C++ ALVM.
+const sample = `// AL program compiled and executed by the native C++ ALVM.
 room Main {
     public static void main() {
         int a = 10;
@@ -31,7 +31,7 @@ room Main {
         int result = a + b;
         AL.print(result);
     }
-}\`;
+}`;
 
 function statusFor(message: string, fallback: string): string {
   const lower = message.toLowerCase();
@@ -170,12 +170,12 @@ export default function App() {
               <h2>AL Language Reference</h2>
               <p>The source is compiled by the native AL compiler and executed by the native ALVM. The current language subset is documented in the project repository.</p>
               <h3>Basic program</h3>
-              <pre>{\`room Main {
+              <pre>{`room Main {
     public static void main() {
         int score = 10;
         AL.print(score);
     }
-}\`}</pre>
+}`}</pre>
               <h3>Supported features in the current engine</h3>
               <pre>int, float, double, long, short, byte, boolean, char, string
 Arrays · functions · recursion · function overloading
