@@ -2,60 +2,69 @@
 
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
-## Stage 7: constructors
+## Stage 8: control flow
 
-Current compiler pipeline:
+Current C++17 compiler pipeline:
 
 `.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
 
 Implemented:
-- Scalar and array types, arithmetic, boolean operations, conditions and loops.
+- Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
 - Typed functions, parameters, return values and recursion.
-- Classes, scalar fields, objects, methods, `this` and object references.
-- Single inheritance, inherited fields/methods and derived-to-base assignment.
-- Explicit constructors with typed parameters.
-- Automatic zero-argument constructors when no constructor is declared.
-- Static checks for constructor argument count and types.
-- A newly allocated object is preserved while its constructor executes.
-- Derived constructors automatically invoke their base class zero-argument constructor before their own body.
-- A derived class is rejected if its base class has only a parameterized constructor. Explicit `super(...)` arguments are not supported yet.
-- Duplicate constructors are rejected; constructor overloading is not implemented.
-- Binary `.room` v7 adds a `DUP` instruction for preserving an object reference during constructor invocation.
-- Regression tests cover explicit/default constructors, base initialization, wrong argument counts/types and unsupported constructor chains.
+- Classes, fields, objects, constructors, instance methods, `this`, inheritance and derived-to-base assignment.
+- `if/else`, `while`, `for` and `do/while`.
+- `switch/case/default` for `int`, `string` and `boolean` expressions.
+- `break` exits the nearest loop or switch.
+- `continue` jumps to the condition of a `while`/do-while loop or the increment clause of a `for` loop.
+- Switch cases use fall-through semantics. Use `break;` to stop at the end of a case.
+- The compiler rejects `break` outside loops/switches, `continue` outside loops, duplicate default labels and mismatched case types.
+- Branches are lowered into jumps and validated by the existing bytecode stack-depth verifier.
+- End-to-end regression tests cover numeric and string switches, loop continue/break and negative cases.
 
 ## Example
 
 ```al
 room Main {
     public static void main() {
-        Player p = new Player(100, "ALVM");
-        AL.print(p.health);
-    }
-
-    class Player {
-        int health;
-        string name;
-
-        Player(int startingHealth, string playerName) {
-            this.health = startingHealth;
-            this.name = playerName;
+        int option = 2;
+        switch (option) {
+            case 1:
+                AL.print("one");
+                break;
+            case 2:
+                AL.print("two");
+                break;
+            default:
+                AL.print("other");
         }
+
+        int count = 0;
+        do {
+            count = count + 1;
+            if (count == 2) {
+                continue;
+            }
+            if (count == 4) {
+                break;
+            }
+        } while (count < 10);
+        AL.print(count);
     }
 }
 ```
 
-## Not implemented
+## Still pending
 
-Constructor overloading, explicit `super(...)`, field initializers, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+Function/method overloading, constructors with `super(arguments)`, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
 
 ## Build
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/alvm compile examples/constructors.al
-./build/alvm run examples/constructors.room
+./build/alvm compile examples/control_flow_complete.al
+./build/alvm run examples/control_flow_complete.room
 ctest --test-dir build --output-on-failure
 ```
 
-The `.room` v7 format stores class hierarchy metadata and a function table. The loader rejects v1-v6 files; recompile their `.al` source. The VM executes compiled bytecode only.
+The `.room` binary format remains v7 because this stage uses existing jump instructions and adds no bytecode opcodes. Recompile source when the file format changes in later stages.

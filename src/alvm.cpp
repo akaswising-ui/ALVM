@@ -30,7 +30,7 @@ static std::vector<Token> lex(const std::string& src) {
     if(std::isalpha(static_cast<unsigned char>(c))||c=='_'){while(i<src.size()&&(std::isalnum(static_cast<unsigned char>(src[i]))||src[i]=='_'))t+=advance();}
     else if(std::isdigit(static_cast<unsigned char>(c))){while(i<src.size()&&std::isdigit(static_cast<unsigned char>(src[i])))t+=advance();}
     else if(c=='"'){advance();bool closed=false;while(i<src.size()){char x=advance();if(x=='"'){closed=true;break;}if(x=='\\'){if(i>=src.size())break;char e=advance();switch(e){case 'n':t+='\n';break;case 't':t+='\t';break;case 'r':t+='\r';break;case '"':t+='"';break;case '\\':t+='\\';break;default:throw Error("Unknown string escape at "+std::to_string(line)+":"+std::to_string(col));}}else t+=x;}if(!closed)throw Error("Unterminated string at "+std::to_string(sl)+":"+std::to_string(sc));t="\x01"+t;}
-    else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||"}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.[],").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
+    else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||"}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.[],:").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
     out.push_back({t,sl,sc});
   }
   out.push_back({"<eof>",line,col});return out;
@@ -50,11 +50,14 @@ struct Expr {
   Token token; int64_t number=0; bool boolean=false; std::string text; std::unique_ptr<Expr> left,right; std::vector<std::unique_ptr<Expr>> elements; Type inferred=Type::Unknown; std::string resolvedFunction; int resolvedField=-1;
 };
 struct Stmt {
-  enum Kind { Block, Declare, Assign, ArrayAssign, FieldAssign, ExprStatement, Print, Return, If, While, For } kind;
+  enum Kind { Block, Declare, Assign, ArrayAssign, FieldAssign, ExprStatement, Print, Return, If, While, DoWhile, For, Switch, Break, Continue } kind;
   Token token; std::string name; Type declared=Type::Unknown;
   std::unique_ptr<Expr> expr, condition, incrementExpr;
   std::unique_ptr<Stmt> first, second, third;
   std::vector<std::unique_ptr<Stmt>> children;
+  std::vector<std::unique_ptr<Expr>> caseValues;
+  std::vector<std::vector<std::unique_ptr<Stmt>>> caseStatements;
+  std::vector<bool> caseDefault;
 };
 struct Parameter { std::string name; Type type=Type::Unknown; };
 struct Function { std::string name; std::string ownerClass; Type returnType=Type::Void; bool isConstructor=false; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
@@ -86,7 +89,7 @@ class Parser {
   std::unique_ptr<Stmt> declaration(bool semicolon=true){Token tk=tok();Type ty=Type::Unknown;if(eat("var"))ty=Type::Unknown;else ty=parseType();auto s=stmtNode(Stmt::Declare,tk);s->declared=ty;s->name=take().text;if(s->name=="<eof>")throw Error("Expected variable name");need("=");s->expr=expression();if(semicolon)need(";");return s;}
   std::unique_ptr<Stmt> assignment(bool semicolon=true){Token tk=tok();auto s=stmtNode(Stmt::Assign,tk);s->name=take().text;if(eat("[")){s->kind=Stmt::ArrayAssign;s->condition=expression();need("]");}else if(eat(".")){Token field=take();s->kind=Stmt::FieldAssign;s->name=field.text;auto receiver=node(tk.text=="this"?Expr::This:Expr::Variable,tk);receiver->text=tk.text;s->condition=std::move(receiver);}need("=");s->expr=expression();if(semicolon)need(";");return s;}
   bool assignmentAhead()const{if(p+1<t.size()&&t[p+1].text=="=")return true;if(p+1<t.size()&&t[p+1].text==".")return p+3<t.size()&&t[p+3].text=="=";if(p+1<t.size()&&t[p+1].text=="["){int depth=0;for(size_t q=p+1;q<t.size();++q){if(t[q].text=="[")++depth;else if(t[q].text=="]"&&--depth==0)return q+1<t.size()&&t[q+1].text=="=";}}return false;}
-  std::unique_ptr<Stmt> statement(){Token tk=tok();if(cur()=="{")return block();if(isType())return declaration();if(eat("AL")){auto s=stmtNode(Stmt::Print,tk);need(".");need("print");need("(");s->expr=expression();need(")");need(";");return s;}if(eat("return")){auto s=stmtNode(Stmt::Return,tk);if(!eat(";")){s->expr=expression();need(";");}return s;}if(eat("if")){auto s=stmtNode(Stmt::If,tk);need("(");s->condition=expression();need(")");s->first=block();if(eat("else"))s->second=block();return s;}if(eat("while")){auto s=stmtNode(Stmt::While,tk);need("(");s->condition=expression();need(")");s->first=block();return s;}if(eat("for")){auto s=stmtNode(Stmt::For,tk);need("(");if(isType())s->first=declaration(false);else s->first=assignment(false);need(";");s->condition=expression();need(";");s->second=assignment(false);need(")");s->third=block();return s;}if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){if(assignmentAhead())return assignment();auto s=stmtNode(Stmt::ExprStatement,tk);s->expr=expression();need(";");return s;}throw Error("Unsupported statement at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
+  std::unique_ptr<Stmt> statement(){Token tk=tok();if(cur()=="{")return block();if(isType())return declaration();if(eat("AL")){auto s=stmtNode(Stmt::Print,tk);need(".");need("print");need("(");s->expr=expression();need(")");need(";");return s;}if(eat("return")){auto s=stmtNode(Stmt::Return,tk);if(!eat(";")){s->expr=expression();need(";");}return s;}if(eat("break")){auto s=stmtNode(Stmt::Break,tk);need(";");return s;}if(eat("continue")){auto s=stmtNode(Stmt::Continue,tk);need(";");return s;}if(eat("if")){auto s=stmtNode(Stmt::If,tk);need("(");s->condition=expression();need(")");s->first=block();if(eat("else"))s->second=block();return s;}if(eat("while")){auto s=stmtNode(Stmt::While,tk);need("(");s->condition=expression();need(")");s->first=block();return s;}if(eat("do")){auto s=stmtNode(Stmt::DoWhile,tk);s->first=block();need("while");need("(");s->condition=expression();need(")");need(";");return s;}if(eat("for")){auto s=stmtNode(Stmt::For,tk);need("(");if(isType())s->first=declaration(false);else s->first=assignment(false);need(";");s->condition=expression();need(";");s->second=assignment(false);need(")");s->third=block();return s;}if(eat("switch")){auto s=stmtNode(Stmt::Switch,tk);need("(");s->expr=expression();need(")");need("{");bool sawDefault=false;while(cur()!="}"&&cur()!="<eof>"){bool isDefault=eat("default");std::unique_ptr<Expr> value;if(!isDefault){need("case");value=expression();}else{if(sawDefault)throw Error("Duplicate default label");sawDefault=true;}need(":");std::vector<std::unique_ptr<Stmt>> body;while(cur()!="case"&&cur()!="default"&&cur()!="}"&&cur()!="<eof>")body.push_back(statement());s->caseValues.push_back(std::move(value));s->caseStatements.push_back(std::move(body));s->caseDefault.push_back(isDefault);}need("}");return s;}if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){if(assignmentAhead())return assignment();auto s=stmtNode(Stmt::ExprStatement,tk);s->expr=expression();need(";");return s;}throw Error("Unsupported statement at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
 public:
   explicit Parser(const std::string& src):t(lex(src)){}
   Function parseFunction(const std::string& owner){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Function fn;fn.returnType=parseType();fn.name=take().text;fn.ownerClass=owner;if(fn.name=="<eof>")throw Error("Expected function name");need("(");if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;if(param.name=="<eof>")throw Error("Expected parameter name");fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();return fn;}
@@ -102,6 +105,8 @@ class SemanticAnalyzer {
   std::vector<std::map<std::string,Type>> scopes;
   Type currentReturn=Type::Void;
   std::string currentClass;
+  int loopDepth=0;
+  int breakDepth=0;
   void push(){scopes.emplace_back();}
   void pop(){scopes.pop_back();}
   void declare(const std::string& n,Type t){auto& scope=scopes.back();if(scope.count(n))throw Error("Duplicate variable in scope: "+n);scope[n]=t;}
@@ -143,8 +148,12 @@ class SemanticAnalyzer {
       case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
       case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(!isAssignable(actual,currentReturn))throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
       case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
-      case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;
-      case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;
+      case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");++loopDepth;++breakDepth;checkStmt(*s.first);--breakDepth;--loopDepth;break;
+      case Stmt::DoWhile:++loopDepth;++breakDepth;checkStmt(*s.first);--breakDepth;--loopDepth;if(checkExpr(*s.condition)!=Type::Bool)throw Error("do-while condition must be boolean");break;
+      case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");++loopDepth;++breakDepth;checkStmt(*s.third);--breakDepth;--loopDepth;checkStmt(*s.second);pop();break;
+      case Stmt::Switch:{Type switchType=checkExpr(*s.expr);if(switchType!=Type::Int&&switchType!=Type::String&&switchType!=Type::Bool)throw Error("switch supports int, string or boolean values");bool defaultSeen=false;++breakDepth;for(size_t i=0;i<s.caseValues.size();++i){if(s.caseDefault[i]){if(defaultSeen)throw Error("Duplicate default label");defaultSeen=true;}else if(checkExpr(*s.caseValues[i])!=switchType)throw Error("switch case type must match switch expression");push();for(auto& child:s.caseStatements[i])checkStmt(*child);pop();}--breakDepth;break;}
+      case Stmt::Break:if(breakDepth==0)throw Error("break is only valid inside a loop or switch");break;
+      case Stmt::Continue:if(loopDepth==0)throw Error("continue is only valid inside a loop");break;
     }
   }
   bool alwaysReturns(const Stmt& s)const{if(s.kind==Stmt::Return)return true;if(s.kind==Stmt::Block){for(const auto& child:s.children)if(alwaysReturns(*child))return true;return false;}if(s.kind==Stmt::If&&s.second)return alwaysReturns(*s.first)&&alwaysReturns(*s.second);return false;}
@@ -200,6 +209,9 @@ class IRGenerator {
   std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds, classIds;
   std::map<std::string,std::map<std::string,int>> fieldSlots;
   std::map<std::string,std::string> baseClasses;
+  struct LoopPatch { int continueTarget=-1; std::vector<int> pendingContinues; };
+  std::vector<LoopPatch> loopPatches;
+  std::vector<std::vector<int>> breakPatches;
   int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
   void expression(const Expr& e){
@@ -237,8 +249,12 @@ class IRGenerator {
       case Stmt::Print:expression(*s.expr);emit(Op::Print);break;
       case Stmt::Return:if(s.expr)expression(*s.expr);emit(Op::Ret);break;
       case Stmt::If:{expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);if(s.second){int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();statement(*s.second);code[j].arg=(int64_t)code.size();}else code[jf].arg=(int64_t)code.size();break;}
-      case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();break;}
-      case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}
+      case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);breakPatches.emplace_back();loopPatches.push_back({start,{}});statement(*s.first);for(int j:loopPatches.back().pendingContinues)code[j].arg=start;loopPatches.pop_back();emit(Op::Jump,start);int end=(int)code.size();code[jf].arg=end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();break;}
+      case Stmt::DoWhile:{int start=(int)code.size();breakPatches.emplace_back();loopPatches.push_back({-1,{}});statement(*s.first);int conditionStart=(int)code.size();for(int j:loopPatches.back().pendingContinues)code[j].arg=conditionStart;loopPatches.pop_back();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);emit(Op::Jump,start);int end=(int)code.size();code[jf].arg=end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();break;}
+      case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);breakPatches.emplace_back();loopPatches.push_back({-1,{}});statement(*s.third);int incrementStart=(int)code.size();for(int j:loopPatches.back().pendingContinues)code[j].arg=incrementStart;loopPatches.pop_back();statement(*s.second);emit(Op::Jump,start);int end=(int)code.size();code[jf].arg=end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();slots=std::move(saved);break;}
+      case Stmt::Switch:{int switchSlot=next++;expression(*s.expr);emit(Op::Store,switchSlot);breakPatches.emplace_back();std::vector<int> bodyJumps(s.caseValues.size(),-1);int defaultIndex=-1;for(size_t i=0;i<s.caseValues.size();++i){if(s.caseDefault[i]){defaultIndex=(int)i;continue;}emit(Op::Load,switchSlot);expression(*s.caseValues[i]);emit(Op::Eq);int jf=emit(Op::JumpFalse,-1);bodyJumps[i]=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();}int noMatch=emit(Op::Jump,-1);std::vector<int> bodyStarts(s.caseValues.size(),-1);for(size_t i=0;i<s.caseValues.size();++i){bodyStarts[i]=(int)code.size();if(bodyJumps[i]>=0)code[bodyJumps[i]].arg=bodyStarts[i];for(const auto& child:s.caseStatements[i])statement(*child);}int end=(int)code.size();code[noMatch].arg=defaultIndex>=0?bodyStarts[(size_t)defaultIndex]:end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();break;}
+      case Stmt::Break:{if(breakPatches.empty())throw Error("break outside switch or loop during code generation");breakPatches.back().push_back(emit(Op::Jump,-1));break;}
+      case Stmt::Continue:{if(loopPatches.empty())throw Error("continue outside loop during code generation");int jump=emit(Op::Jump,-1);if(loopPatches.back().continueTarget>=0)code[jump].arg=loopPatches.back().continueTarget;else loopPatches.back().pendingContinues.push_back(jump);break;}
     }
   }
   void compileFunction(const Function& fn,IRProgram& out){
