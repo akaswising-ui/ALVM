@@ -372,6 +372,8 @@ static int stackDelta(Op op){
     case Op::ArraySet:return -3;
     case Op::SetField:return -2;
     case Op::Dup:return 1;
+    case Op::GetStaticField:return 1;
+    case Op::SetStaticField:return -1;
     default:return 0;
   }
 }
@@ -384,22 +386,25 @@ static void verify(const BytecodeProgram& program){
   for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId < -1 || (fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size()))throw Error("Invalid method owner class");}
   for(size_t fi=0;fi<functions.size();++fi){
     const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
-    if(fn.ownerClassId>=0&&fn.localCount<fn.parameterCount+1)throw Error("Method does not have room for its this parameter");
+    if(fn.ownerClassId>=0&&!fn.isStatic&&fn.localCount<fn.parameterCount+1)throw Error("Instance method does not have room for its this parameter");
+    if(fn.ownerClassId>=0&&fn.isStatic&&fn.localCount<fn.parameterCount)throw Error("Static method local count is smaller than parameter count");
     std::vector<int> depth(fn.code.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);
     while(!q.empty()){
       size_t pc=q.front();q.pop();const auto& i=fn.code[pc];
       if((i.op==Op::Load||i.op==Op::Store)&&(i.arg<0||(uint64_t)i.arg>=fn.localCount))throw Error("Invalid local slot");
       if(i.op==Op::NewObject&&(i.arg<0||(uint64_t)i.arg>=program.classes.size()))throw Error("Invalid class allocation target");
       if((i.op==Op::GetField||i.op==Op::SetField)&&(i.arg<0||i.arg>100000))throw Error("Invalid field index");
+      if(i.op==Op::GetStaticField||i.op==Op::SetStaticField){uint32_t classId=(uint32_t)((uint64_t)i.arg>>32),slot=(uint32_t)i.arg;if(classId>=program.classes.size()||slot>=program.classes[classId].staticFieldTypes.size())throw Error("Invalid static field reference");}
       int before=depth[pc],need=0,delta=stackDelta(i.op);
       switch(i.op){
         case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:case Op::GetField:case Op::Dup:need=1;break;
         case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:case Op::SetField:need=2;break;
         case Op::ArraySet:need=3;break;
+        case Op::SetStaticField:need=1;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
-          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
+          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0&&!target.isStatic?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
         }
         case Op::Ret:need=fn.returnType==Type::Void?0:1;break;
         default:break;
@@ -431,6 +436,8 @@ static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overfl
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static void execute(const BytecodeProgram& program){
   verify(program);const auto& functions=program.functions;const auto& classes=program.classes;
+  std::vector<std::vector<Value>> staticFields(classes.size());
+  for(size_t ci=0;ci<classes.size();++ci){for(Type type:classes[ci].staticFieldTypes){if(type==Type::Int)staticFields[ci].emplace_back((int64_t)0);else if(type==Type::String)staticFields[ci].emplace_back(std::string());else if(type==Type::Bool)staticFields[ci].emplace_back(false);else throw Error("Unsupported static field type");}}
   struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
   std::vector<Value> stack;
   auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
@@ -438,6 +445,8 @@ static void execute(const BytecodeProgram& program){
   while(!frames.empty()){
     Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
     switch(i.op){
+      case Op::GetStaticField:{uint32_t classId=(uint32_t)((uint64_t)i.arg>>32),slot=(uint32_t)i.arg;if(classId>=staticFields.size()||slot>=staticFields[classId].size())throw Error("Static field read out of bounds");stack.push_back(staticFields[classId][slot]);break;}
+      case Op::SetStaticField:{Value value=pop();uint32_t classId=(uint32_t)((uint64_t)i.arg>>32),slot=(uint32_t)i.arg;if(classId>=staticFields.size()||slot>=staticFields[classId].size())throw Error("Static field write out of bounds");if(value.index()!=staticFields[classId][slot].index())throw Error("Static field runtime type mismatch");staticFields[classId][slot]=std::move(value);break;}
       case Op::Dup:if(stack.empty())throw Error("DUP on empty stack");stack.push_back(stack.back());break;
       case Op::PushInt:stack.emplace_back(i.arg);break;
       case Op::PushString:stack.emplace_back(i.text);break;
@@ -464,8 +473,8 @@ static void execute(const BytecodeProgram& program){
       case Op::SetField:{Value value=pop(),base=pop();auto obj=std::get_if<ObjectPtr>(&base);if(!obj||!*obj)throw Error("Field write on non-object value");if(i.arg<0||(uint64_t)i.arg>=(*obj)->fields.size())throw Error("Object field index out of bounds");Type expected=classes[(*obj)->classId].fieldTypes[(size_t)i.arg];size_t actual=value.index();size_t expectedIndex=expected==Type::Int?0:expected==Type::String?1:2;if(actual!=expectedIndex)throw Error("Object field type mismatch");(*obj)->fields[(size_t)i.arg]=std::move(value);break;}
       case Op::Call:{
         size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
-        size_t count=(size_t)callee.parameterCount+(callee.ownerClassId>=0?1:0);std::vector<Value> args(count);for(size_t k=count;k>0;--k)args[k-1]=pop();
-        if(callee.ownerClassId>=0){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||!isInstanceOf((*obj)->classId,(size_t)callee.ownerClassId,classes))throw Error("Instance method called with incompatible receiver object");}
+        bool hasReceiver=callee.ownerClassId>=0&&!callee.isStatic;size_t count=(size_t)callee.parameterCount+(hasReceiver?1:0);std::vector<Value> args(count);for(size_t k=count;k>0;--k)args[k-1]=pop();
+        if(hasReceiver){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||!isInstanceOf((*obj)->classId,(size_t)callee.ownerClassId,classes))throw Error("Instance method called with incompatible receiver object");}
         Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);frames.push_back(std::move(next));break;
       }
       case Op::Ret:{bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;frames.pop_back();if(frames.empty())return;if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;}
