@@ -2,6 +2,19 @@
 
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
+## Stage 12: constructor overloading
+
+Classes can declare multiple constructors with distinct parameter type lists. `new ClassName(arguments)` resolves the matching constructor using the same exact-match preference and ambiguity rejection used by function and method calls. The compiler assigns each constructor a collision-resistant internal symbol. Derived constructors still invoke the base class zero-argument constructor automatically; explicit `super(arguments)` remains pending.
+
+```al
+class Box {
+    int value;
+    string label;
+    Box(int value) { this.value = value; }
+    Box(string label) { this.label = label; }
+}
+```
+
 ## Stage 11: instance method overloading
 
 Class instance methods can share a name when their ordered parameter type lists differ. Method calls are resolved from the receiver's static class type and argument types, using the same exact-match preference and ambiguity rejection as global function overloads. Inherited method signatures remain available to derived classes; a same-signature declaration is still rejected because virtual overriding is not implemented yet. Selected methods receive collision-resistant internal symbols in bytecode.
@@ -90,7 +103,7 @@ room Main {
 
 ## Still pending
 
-Constructor overloading, constructors with `super(arguments)`, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+constructors with `super(arguments)`, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
 
 ## Build
 
