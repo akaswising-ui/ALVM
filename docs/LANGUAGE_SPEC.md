@@ -48,7 +48,7 @@ The current C++17 pipeline is:
 
 `.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v8 -> verifier -> ALVM`
 
-Switch and loop control lower to existing jump instructions. The .room v8 binary layout remains unchanged.
+Switch and loop control lower to existing jump instructions. Stage 14 separately adds the `NewArraySized` instruction to `.room` v8.
 
 ## Not implemented
 
