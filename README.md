@@ -2,66 +2,60 @@
 
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
-## Stage 6: inheritance
+## Stage 7: constructors
 
-The current C++17 compiler pipeline is:
+Current compiler pipeline:
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v6 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
 
 Implemented:
-- Scalar types, typed arrays, arithmetic, conditions, loops and short-circuit boolean operators.
-- Typed functions, parameters, return values, nested calls and recursion.
-- Classes, scalar instance fields, object creation, field access, `this`, instance methods and object references.
-- Single inheritance using `class Dog extends Animal`.
-- Inherited fields and methods; a derived object may be used as a base-type variable, parameter or return value.
-- Runtime class ancestry checks for inherited method receivers.
-- Inherited field layouts are flattened in the object representation.
-- Compile-time rejection of unknown base classes, invalid downcasts, inherited field collisions and method overrides.
-- `.room` v6 class hierarchy metadata and verifier checks.
-
-Parent classes must be declared before child classes in the same room. Multi-generation inheritance works when this ordering is followed. Method overriding and virtual dispatch are not implemented, so a child cannot redeclare an inherited method. Static members, access control, constructors, interfaces and abstract classes remain pending.
+- Scalar and array types, arithmetic, boolean operations, conditions and loops.
+- Typed functions, parameters, return values and recursion.
+- Classes, scalar fields, objects, methods, `this` and object references.
+- Single inheritance, inherited fields/methods and derived-to-base assignment.
+- Explicit constructors with typed parameters.
+- Automatic zero-argument constructors when no constructor is declared.
+- Static checks for constructor argument count and types.
+- A newly allocated object is preserved while its constructor executes.
+- Derived constructors automatically invoke their base class zero-argument constructor before their own body.
+- A derived class is rejected if its base class has only a parameterized constructor. Explicit `super(...)` arguments are not supported yet.
+- Duplicate constructors are rejected; constructor overloading is not implemented.
+- Binary `.room` v7 adds a `DUP` instruction for preserving an object reference during constructor invocation.
+- Regression tests cover explicit/default constructors, base initialization, wrong argument counts/types and unsupported constructor chains.
 
 ## Example
 
 ```al
 room Main {
     public static void main() {
-        Dog dog = new Dog();
-        dog.setAge(7);
-        Animal animal = dog;
-        AL.print(animal.getAge());
-        AL.print(dog.bark());
+        Player p = new Player(100, "ALVM");
+        AL.print(p.health);
     }
 
-    class Animal {
-        int age;
-        public void setAge(int value) { this.age = value; }
-        public int getAge() { return this.age; }
-    }
+    class Player {
+        int health;
+        string name;
 
-    class Dog extends Animal {
-        int trained;
-        public int bark() { return 1; }
+        Player(int startingHealth, string playerName) {
+            this.health = startingHealth;
+            this.name = playerName;
+        }
     }
 }
 ```
 
 ## Not implemented
 
-Function/method overloading, virtual overriding, interfaces, abstract classes, constructors, static fields/methods, enforced access modifiers, object arrays, generics, enums, exceptions, modules, complete standard libraries, graphics/game/audio APIs, GUI IDE, `.AL` application packaging and Android APK generation are still pending.
+Constructor overloading, explicit `super(...)`, field initializers, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
 
 ## Build
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/alvm compile examples/inheritance.al
-./build/alvm run examples/inheritance.room
+./build/alvm compile examples/constructors.al
+./build/alvm run examples/constructors.room
 ctest --test-dir build --output-on-failure
 ```
 
-## .room v6 format
-
-Little-endian format: `ALRM` magic, version 6, class count; each class stores its name, signed base-class id (-1 for none), flattened field count and field type tags; then function count and function entries. A function stores its name, owner class id, return type, parameter count, local count and instructions. Each instruction stores opcode, 64-bit operand and length-prefixed payload.
-
-Base class ids must point to an earlier class entry. The loader rejects invalid parent references and old .room v1-v5 files. Recompile the original `.al` source. The VM executes compiled bytecode only.
+The `.room` v7 format stores class hierarchy metadata and a function table. The loader rejects v1-v6 files; recompile their `.al` source. The VM executes compiled bytecode only.

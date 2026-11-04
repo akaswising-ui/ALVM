@@ -31,7 +31,11 @@ test "$("$BIN" run "$TMP/objects.room")" = "$OBJECT_EXPECTED"
 INHERITANCE_EXPECTED="$(printf '7\n1\n7\n7\ntrue\n1')"
 test "$("$BIN" run "$TMP/inheritance.room")" = "$INHERITANCE_EXPECTED"
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class; do
+"$BIN" compile "$ROOT/examples/constructors.al" -o "$TMP/constructors.room"
+CONSTRUCTOR_EXPECTED="$(printf '100\nALVM\n120\n8\n1')"
+test "$("$BIN" run "$TMP/constructors.room")" = "$CONSTRUCTOR_EXPECTED"
+
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -48,4 +52,5 @@ fi
 "$BIN" disasm "$TMP/objects.room" | grep -q 'class Player'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
-echo "PASS: ALVM compiler, arrays, functions, objects, inheritance, subtype checks and runtime"
+"$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
+echo "PASS: ALVM functions, arrays, objects, inheritance, constructor calls and runtime"

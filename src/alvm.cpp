@@ -57,7 +57,7 @@ struct Stmt {
   std::vector<std::unique_ptr<Stmt>> children;
 };
 struct Parameter { std::string name; Type type=Type::Unknown; };
-struct Function { std::string name; std::string ownerClass; Type returnType=Type::Void; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
+struct Function { std::string name; std::string ownerClass; Type returnType=Type::Void; bool isConstructor=false; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
 struct Field { std::string name; Type type=Type::Unknown; };
 struct ClassDecl { std::string name; std::string baseClass; std::vector<Field> fields; std::vector<Function> methods; };
 struct Program { std::string name; std::vector<ClassDecl> classes; std::vector<Function> functions; };
@@ -71,7 +71,7 @@ class Parser {
   std::unique_ptr<Expr> node(Expr::Kind k,Token tk){auto x=std::make_unique<Expr>();x->kind=k;x->token=std::move(tk);return x;}
   std::unique_ptr<Stmt> stmtNode(Stmt::Kind k,Token tk){auto x=std::make_unique<Stmt>();x->kind=k;x->token=std::move(tk);return x;}
   Type parseType(){Type t;if(eat("int"))t=Type::Int;else if(eat("string"))t=Type::String;else if(eat("boolean"))t=Type::Bool;else if(eat("void"))t=Type::Void;else{auto f=userTypeMap.find(cur());if(f==userTypeMap.end())throw Error("Unknown type at "+std::to_string(tok().line)+":"+std::to_string(tok().col));t=f->second;take();}if(eat("[")){need("]");t=arrayOf(t);if(t==Type::Unknown)throw Error("Unsupported array element type");}return t;}
-  std::unique_ptr<Expr> primary(){Token tk=tok();std::unique_ptr<Expr> x;if(cur().size()&&std::isdigit(static_cast<unsigned char>(cur()[0]))){take();x=node(Expr::Integer,tk);try{x->number=std::stoll(tk.text);}catch(...){throw Error("Integer literal out of range at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}}else if(cur().size()&&cur()[0]=='\x01'){take();x=node(Expr::String,tk);x->text=tk.text.substr(1);}else if(eat("true")||eat("false")){x=node(Expr::Boolean,tk);x->boolean=tk.text=="true";}else if(eat("(")){x=expression();need(")");}else if(eat("[")){x=node(Expr::ArrayLiteral,tk);if(cur()!="]"){do{x->elements.push_back(expression());}while(eat(","));}need("]");}else if(eat("new")){Token cls=take();auto it=userTypeMap.find(cls.text);if(it==userTypeMap.end())throw Error("Unknown class: "+cls.text);need("(");need(")");x=node(Expr::NewObject,tk);x->text=cls.text;}else if(eat("this")){x=node(Expr::This,tk);x->text="this";}else if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){take();if(eat("(")){x=node(Expr::Call,tk);x->text=tk.text;if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}else{x=node(Expr::Variable,tk);x->text=tk.text;}}else throw Error("Expected expression at "+std::to_string(tok().line)+":"+std::to_string(tok().col));while(true){if(eat("[")){Token it=tok();auto idx=node(Expr::Index,it);idx->left=std::move(x);idx->right=expression();need("]");x=std::move(idx);}else if(eat(".")){Token it=take();if(it.text=="length"){auto len=node(Expr::Length,it);len->left=std::move(x);x=std::move(len);}else if(eat("(")){auto call=node(Expr::MethodCall,it);call->text=it.text;call->left=std::move(x);if(cur()!=")"){do{call->elements.push_back(expression());}while(eat(","));}need(")");x=std::move(call);}else{auto field=node(Expr::FieldAccess,it);field->left=std::move(x);field->text=it.text;x=std::move(field);}}else break;}return x;}
+  std::unique_ptr<Expr> primary(){Token tk=tok();std::unique_ptr<Expr> x;if(cur().size()&&std::isdigit(static_cast<unsigned char>(cur()[0]))){take();x=node(Expr::Integer,tk);try{x->number=std::stoll(tk.text);}catch(...){throw Error("Integer literal out of range at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}}else if(cur().size()&&cur()[0]=='\x01'){take();x=node(Expr::String,tk);x->text=tk.text.substr(1);}else if(eat("true")||eat("false")){x=node(Expr::Boolean,tk);x->boolean=tk.text=="true";}else if(eat("(")){x=expression();need(")");}else if(eat("[")){x=node(Expr::ArrayLiteral,tk);if(cur()!="]"){do{x->elements.push_back(expression());}while(eat(","));}need("]");}else if(eat("new")){Token cls=take();auto it=userTypeMap.find(cls.text);if(it==userTypeMap.end())throw Error("Unknown class: "+cls.text);x=node(Expr::NewObject,tk);x->text=cls.text;need("(");if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}else if(eat("this")){x=node(Expr::This,tk);x->text="this";}else if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){take();if(eat("(")){x=node(Expr::Call,tk);x->text=tk.text;if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}else{x=node(Expr::Variable,tk);x->text=tk.text;}}else throw Error("Expected expression at "+std::to_string(tok().line)+":"+std::to_string(tok().col));while(true){if(eat("[")){Token it=tok();auto idx=node(Expr::Index,it);idx->left=std::move(x);idx->right=expression();need("]");x=std::move(idx);}else if(eat(".")){Token it=take();if(it.text=="length"){auto len=node(Expr::Length,it);len->left=std::move(x);x=std::move(len);}else if(eat("(")){auto call=node(Expr::MethodCall,it);call->text=it.text;call->left=std::move(x);if(cur()!=")"){do{call->elements.push_back(expression());}while(eat(","));}need(")");x=std::move(call);}else{auto field=node(Expr::FieldAccess,it);field->left=std::move(x);field->text=it.text;x=std::move(field);}}else break;}return x;}
   std::unique_ptr<Expr> unary(){if(cur()=="!"||cur()=="-"){Token tk=take();auto x=node(Expr::Unary,tk);x->text=tk.text;x->left=unary();return x;}return primary();}
   template<class Next> std::unique_ptr<Expr> binary(Next next,const std::vector<std::string>& ops){auto x=(this->*next)();while(std::find(ops.begin(),ops.end(),cur())!=ops.end()){Token tk=take();auto n=node(Expr::Binary,tk);n->text=tk.text;n->left=std::move(x);n->right=(this->*next)();x=std::move(n);}return x;}
   std::unique_ptr<Expr> factor(){return binary(&Parser::unary,{"*","/","%"});}
@@ -90,13 +90,13 @@ class Parser {
 public:
   explicit Parser(const std::string& src):t(lex(src)){}
   Function parseFunction(const std::string& owner){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Function fn;fn.returnType=parseType();fn.name=take().text;fn.ownerClass=owner;if(fn.name=="<eof>")throw Error("Expected function name");need("(");if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;if(param.name=="<eof>")throw Error("Expected parameter name");fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();return fn;}
-  ClassDecl parseClass(){need("class");ClassDecl cls;cls.name=take().text;if(userTypeMap.find(cls.name)==userTypeMap.end())registerUserType(cls.name);if(eat("extends")){cls.baseClass=take().text;if(userTypeMap.find(cls.baseClass)==userTypeMap.end())throw Error("Unknown base class: "+cls.baseClass);if(cls.baseClass==cls.name)throw Error("A class cannot extend itself");}need("{");while(cur()!="}"&&cur()!="<eof>"){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Type ty=parseType();Token name=take();if(name.text=="<eof>")throw Error("Expected class member name");if(eat("(")){Function fn;fn.ownerClass=cls.name;fn.name=name.text;fn.returnType=ty;if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();cls.methods.push_back(std::move(fn));}else{if(ty==Type::Void)throw Error("Class field cannot have type void");need(";");for(const auto& field:cls.fields)if(field.name==name.text)throw Error("Duplicate field: "+name.text);cls.fields.push_back({name.text,ty});}}need("}");return cls;}
+  ClassDecl parseClass(){need("class");ClassDecl cls;cls.name=take().text;if(userTypeMap.find(cls.name)==userTypeMap.end())registerUserType(cls.name);if(eat("extends")){cls.baseClass=take().text;if(userTypeMap.find(cls.baseClass)==userTypeMap.end())throw Error("Unknown base class: "+cls.baseClass);if(cls.baseClass==cls.name)throw Error("A class cannot extend itself");}need("{");while(cur()!="}"&&cur()!="<eof>"){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();if(cur()==cls.name&&p+1<t.size()&&t[p+1].text=="("){take();Function ctor;ctor.ownerClass=cls.name;ctor.name="$ctor";ctor.returnType=Type::Void;ctor.isConstructor=true;need("(");if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Constructor parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;ctor.params.push_back(std::move(param));}while(eat(","));}need(")");ctor.body=block();cls.methods.push_back(std::move(ctor));continue;}Type ty=parseType();Token name=take();if(name.text=="<eof>")throw Error("Expected class member name");if(eat("(")){Function fn;fn.ownerClass=cls.name;fn.name=name.text;fn.returnType=ty;if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();cls.methods.push_back(std::move(fn));}else{if(ty==Type::Void)throw Error("Class field cannot have type void");need(";");for(const auto& field:cls.fields)if(field.name==name.text)throw Error("Duplicate field: "+name.text);cls.fields.push_back({name.text,ty});}}need("}");if(std::none_of(cls.methods.begin(),cls.methods.end(),[](const Function& fn){return fn.isConstructor;})){Function ctor;ctor.name="$ctor";ctor.ownerClass=cls.name;ctor.returnType=Type::Void;ctor.isConstructor=true;ctor.body=stmtNode(Stmt::Block,tok());cls.methods.push_back(std::move(ctor));}return cls;}
   Program parse(){if(!(eat("room")||eat("class")))throw Error("Program must start with room");Program out;out.name=take().text;need("{");userTypeNames.clear();userTypeMap.clear();for(size_t q=p;q+1<t.size();++q)if(t[q].text=="class"&&t[q+1].text!="<eof>")registerUserType(t[q+1].text);while(cur()!="}"&&cur()!="<eof>"){if(cur()=="class")out.classes.push_back(parseClass());else out.functions.push_back(parseFunction(""));}need("}");if(cur()!="<eof>")throw Error("Unexpected token after program end: "+cur());auto mainIt=std::find_if(out.functions.begin(),out.functions.end(),[](const Function& fn){return fn.name=="main";});if(mainIt==out.functions.end())throw Error("Program must declare main()");if(mainIt!=out.functions.begin())std::iter_swap(out.functions.begin(),mainIt);return out;}
 };
 
 class SemanticAnalyzer {
   struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; };
-  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; };
+  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; Signature constructor; bool hasConstructor=false; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,ClassInfo> classes;
   std::vector<std::map<std::string,Type>> scopes;
@@ -120,7 +120,7 @@ class SemanticAnalyzer {
       case Expr::Boolean:e.inferred=Type::Bool;break;
       case Expr::Variable:e.inferred=lookup(e.text);break;
       case Expr::This:if(currentClass.empty())throw Error("'this' can only be used inside an instance method");e.inferred=classes.at(currentClass).type;break;
-      case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);e.inferred=it->second.type;break;}
+      case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);const auto& ctor=it->second.constructor;if(e.elements.size()!=ctor.params.size())throw Error("Wrong argument count for constructor "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,ctor.params[i]))throw Error("Constructor argument "+std::to_string(i+1)+" must be "+typeName(ctor.params[i]));}e.resolvedFunction=e.text+".$ctor";e.inferred=it->second.type;break;}
       case Expr::FieldAccess:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(e.text);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+e.text+"' on "+typeName(objectType));e.resolvedField=it->second;e.inferred=cls.fieldTypes[(size_t)it->second];break;}
       case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,sig.params[i]))throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
       case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto fn=signatures.find(e.text);if(fn==signatures.end())throw Error("Unknown function: "+e.text);if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,fn->second.params[i]))throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));}e.resolvedFunction=e.text;e.inferred=fn->second.result;break;}
@@ -172,8 +172,16 @@ public:
       auto& info=classes.at(cls.name);
       if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
       for(const auto& method:cls.methods){
+        Signature sig=signature(method);
+        if(method.isConstructor){
+          if(info.hasConstructor)throw Error("Duplicate constructor in class "+cls.name);
+          if(!cls.baseClass.empty()&&classes.at(cls.baseClass).constructor.params.size()!=0)throw Error("Base class "+cls.baseClass+" has no zero-argument constructor; explicit super constructor calls are not supported yet");
+          info.constructor=sig;info.hasConstructor=true;
+          std::string key=cls.name+".$ctor";if(signatures.count(key))throw Error("Duplicate constructor signature");signatures.emplace(key,std::move(sig));
+          continue;
+        }
         if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
-        Signature sig=signature(method);info.methods.emplace(method.name,sig);
+        info.methods.emplace(method.name,sig);
         std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
       }
     }
@@ -183,7 +191,7 @@ public:
     currentClass.clear();
   }
 };
-enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField };
+enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField,Dup };
 struct IR { Op op; int64_t arg=0; std::string text; };
 struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
 struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
@@ -191,6 +199,7 @@ struct IRProgram { std::vector<ClassIR> classes; std::vector<FunctionIR> functio
 class IRGenerator {
   std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds, classIds;
   std::map<std::string,std::map<std::string,int>> fieldSlots;
+  std::map<std::string,std::string> baseClasses;
   int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
   void expression(const Expr& e){
@@ -200,7 +209,7 @@ class IRGenerator {
       case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;
       case Expr::Variable:emit(Op::Load,slots.at(e.text));break;
       case Expr::This:emit(Op::Load,slots.at("this"));break;
-      case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));break;
+      case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));emit(Op::Dup);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
       case Expr::MethodCall:expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
@@ -237,6 +246,7 @@ class IRGenerator {
     int32_t owner=-1;
     if(!fn.ownerClass.empty()){owner=classIds.at(fn.ownerClass);slots["this"]=next++;}
     for(const auto& param:fn.params){slots[param.name]=next++;}
+    if(fn.isConstructor&&!fn.ownerClass.empty()){const std::string& base=baseClasses.at(fn.ownerClass);if(!base.empty()){emit(Op::Load,slots.at("this"));emit(Op::Call,functionIds.at(base+".$ctor"));}}
     statement(*fn.body);
     if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
     else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
@@ -247,7 +257,7 @@ public:
     IRProgram out;
     for(size_t i=0;i<p.classes.size();++i)classIds[p.classes[i].name]=(int)i;
     for(size_t i=0;i<p.classes.size();++i){
-      const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;
+      const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;baseClasses[decl.name]=decl.baseClass;
       if(!decl.baseClass.empty()){
         int base=classIds.at(decl.baseClass);if(base>=(int)i)throw Error("Base class must appear before derived class");
         c.baseClassId=base;c.fieldTypes=out.classes[(size_t)base].fieldTypes;fieldSlots[decl.name]=fieldSlots[decl.baseClass];
@@ -286,7 +296,7 @@ static void writeString(std::ofstream& f,const std::string& value){if(value.size
 static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
 static void saveRoom(const std::string& path,const BytecodeProgram& program){
   std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
-  f.write("ALRM",4);writeU32(f,6);writeU32(f,(uint32_t)program.classes.size());
+  f.write("ALRM",4);writeU32(f,7);writeU32(f,(uint32_t)program.classes.size());
   for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.baseClassId);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
   writeU32(f,(uint32_t)program.functions.size());
   for(const auto& fn:program.functions){
@@ -298,7 +308,7 @@ static void saveRoom(const std::string& path,const BytecodeProgram& program){
 static BytecodeProgram loadRoom(const std::string& path){
   std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
   char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
-  if(readU32(f)!=6)throw Error("Unsupported .room version (expected 6)");
+  if(readU32(f)!=7)throw Error("Unsupported .room version (expected 7)");
   BytecodeProgram program;uint32_t classCount=readU32(f);if(classCount>10000)throw Error("Class count limit exceeded");
   for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v6");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
   uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
@@ -306,7 +316,7 @@ static BytecodeProgram loadRoom(const std::string& path){
     FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;
     fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
     uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
-    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::SetField)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
+    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::Dup)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
     program.functions.push_back(std::move(fn));
   }
   if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");
@@ -319,6 +329,7 @@ static int stackDelta(Op op){
     case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;
     case Op::ArraySet:return -3;
     case Op::SetField:return -2;
+    case Op::Dup:return 1;
     default:return 0;
   }
 }
@@ -340,7 +351,7 @@ static void verify(const BytecodeProgram& program){
       if((i.op==Op::GetField||i.op==Op::SetField)&&(i.arg<0||i.arg>100000))throw Error("Invalid field index");
       int before=depth[pc],need=0,delta=stackDelta(i.op);
       switch(i.op){
-        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:case Op::GetField:need=1;break;
+        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:case Op::GetField:case Op::Dup:need=1;break;
         case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:case Op::SetField:need=2;break;
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
@@ -385,6 +396,7 @@ static void execute(const BytecodeProgram& program){
   while(!frames.empty()){
     Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
     switch(i.op){
+      case Op::Dup:if(stack.empty())throw Error("DUP on empty stack");stack.push_back(stack.back());break;
       case Op::PushInt:stack.emplace_back(i.arg);break;
       case Op::PushString:stack.emplace_back(i.text);break;
       case Op::PushBool:stack.emplace_back(i.arg!=0);break;

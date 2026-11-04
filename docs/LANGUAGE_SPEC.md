@@ -1,68 +1,62 @@
-# AL Language Specification: Stage 6
+# AL Language Specification: Stage 7
 
 ## Identity
 
-AL uses Python-influenced vocabulary, Java-like source structure, and strict C++-influenced rules. Its compiler and VM are independent implementations.
+AL uses Python-influenced vocabulary, Java-like source structure, and strict C++-influenced rules. It owns its compiler pipeline and bytecode VM.
 
-## Implemented syntax
+## Constructor syntax
 
 ```al
 room Main {
     public static void main() {
-        Dog dog = new Dog();
-        dog.setAge(7);
-        Animal animal = dog;
-        AL.print(animal.getAge());
+        Player p = new Player(100, "ALVM");
+        AL.print(p.health);
     }
 
-    class Animal {
-        int age;
-        public void setAge(int value) { this.age = value; }
-        public int getAge() { return this.age; }
-    }
+    class Player {
+        int health;
+        string name;
 
-    class Dog extends Animal {
-        int trained;
-        public int bark() { return 1; }
+        Player(int startingHealth, string playerName) {
+            this.health = startingHealth;
+            this.name = playerName;
+        }
     }
 }
 ```
 
-## Inheritance rules
+A constructor is declared with the same name as its class and no return type. Constructor parameters use the supported scalar or class types. The call form is `new ClassName(arguments)`.
 
-- A class may extend one class: `class Derived extends Base`.
-- The base class must be declared earlier in the same room. Forward base references are rejected.
-- Multi-generation inheritance is supported when each ancestor appears before its descendant.
-- The compiler copies inherited field slots and method signatures into the derived class layout.
-- Derived instances are assignable to a base class type. This applies to local variables, function parameters and function returns.
-- Base-to-derived assignment is rejected. There are no explicit casts yet.
-- Inherited fields and methods are available through derived-typed expressions.
-- Runtime method receiver checks walk the class ancestry, so a derived instance can be passed to an inherited base method.
-- The current implementation rejects field hiding and method overriding. Virtual dispatch is not implemented.
-- Object references are shared when assigned. Object equality uses reference identity.
+## Constructor semantics
 
-## Existing supported subset
+- If a class declares no constructor, the compiler synthesizes a public zero-argument constructor.
+- If a class declares one constructor, that signature becomes the only accepted allocation signature for that class.
+- Constructor argument count and types are checked during semantic analysis.
+- Constructors have a hidden `this` parameter and execute in a normal VM call frame.
+- The allocated object reference is duplicated before constructor invocation, so the `new` expression evaluates to the initialized object.
+- Constructors have void return semantics. Returning a value is rejected.
+- Derived constructors automatically call their base class constructor with no arguments before executing the derived constructor body.
+- A derived class cannot compile when its base class constructor requires arguments. Explicit `super(arguments)` calls are not implemented.
+- Constructor overloading is not implemented. A class can define exactly one constructor.
+- Classes with no explicit constructor still get a generated zero-argument constructor, including derived classes.
 
-- Scalar types: `int`, `string`, `boolean`; arrays: `int[]`, `string[]`, `boolean[]`; user-defined class types.
-- Typed functions, parameters, returns, recursion and nested direct calls. Main must be global `void main()`.
-- Classes, scalar fields, `new ClassName()`, `object.field`, `object.field = value`, `this` and instance methods.
-- Arrays are non-empty homogeneous scalar literals with integer indexing, mutation and `.length`; bounds are checked at runtime.
-- Arithmetic, string concatenation, comparison, logical operators, boolean short-circuit, `if/else`, `while`, `for`.
-- Integer overflow and division by zero are runtime errors.
-- Class fields support scalar types only and default to 0, empty string and false. Custom constructors and field initializers are not implemented.
-- Access modifiers and `static` are parsed as syntax only. Access enforcement and static members are not implemented.
-- Maximum VM call-frame depth is 1024.
+## Inherited language features
+
+Stage 7 retains:
+- Scalar and array types, expressions, arithmetic, comparisons and boolean short-circuiting.
+- `if/else`, `while`, `for`.
+- Typed functions, parameters, returns and recursion.
+- Classes, scalar fields, object creation, field access, instance methods and `this`.
+- Single inheritance using `extends`, inherited fields/methods and derived-to-base assignment.
+- Typed arrays, indexing, mutation, bounds checking and `.length`.
+- Runtime overflow and division-by-zero checks.
+
+Class fields remain scalar `int`, `string` and `boolean` with default values. Field initializer expressions, static members, enforced access control, method overriding, virtual dispatch, interfaces, abstract classes, object arrays, generics, enums, exceptions, modules, standard library modules, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android support are not yet implemented.
 
 ## Compiler and bytecode
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowering -> .room v6 -> bytecode verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowerer -> .room v7 -> verifier -> ALVM`
 
-The binary v6 file stores class metadata followed by function metadata and code. Integers are little-endian. Each class entry stores a length-prefixed name, signed base-class id (-1 for none), flattened field count and scalar field type tags. Each function stores a name, owner class id (-1 for global), return type, parameter count, local count and instructions.
+The v7 bytecode instruction set includes `DUP`, which duplicates the stack top and is verified to require a value. The binary format keeps the v6 class hierarchy table and function table while changing the version to 7. The loader rejects .room v1-v6 files. Recompile source files.
 
-The verifier rejects invalid class names, invalid/forward base references, invalid method owners, bad local slots, invalid allocations/calls, invalid jumps and stack-depth errors. The VM executes compiled bytecode; it does not interpret source text.
-
-Stage 6 rejects .room v1-v5 files. Recompile the source to create v6 bytecode.
-
-## Not implemented
-
-Method overriding and virtual dispatch, interfaces, `implements`, abstract classes, constructors, static members, enforced access control, object arrays, object-valued fields, overloading, generics, enums, exceptions, modules, full standard libraries, file/network/database APIs, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android APK integration are roadmap items, not executable Stage 6 features.
+The VM loads compiled bytecode and does not interpret `.al` source text.
