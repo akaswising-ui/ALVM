@@ -69,15 +69,15 @@ room Main {
         case "equals":
             int left = UI.getInt("left", 0);
             int operation = UI.getInt("operation", 0);
-            if (operation == 1) value = left + value;
-            if (operation == 2) value = left - value;
-            if (operation == 3) value = left * value;
+            if (operation == 1) { value = left + value; }
+            if (operation == 2) { value = left - value; }
+            if (operation == 3) { value = left * value; }
             if (operation == 4 && value == 0) {
                 UI.setText("display", "Cannot divide by zero");
                 value = 0;
                 failed = true;
             }
-            if (operation == 4 && value != 0) value = left / value;
+            if (operation == 4 && value != 0) { value = left / value; }
             UI.setInt("operation", 0);
             break;
         default:
