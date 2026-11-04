@@ -396,6 +396,7 @@ static void execute(const BytecodeProgram& program){
   while(!frames.empty()){
     Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
     switch(i.op){
+      case Op::Dup:if(stack.empty())throw Error("DUP on empty stack");stack.push_back(stack.back());break;
       case Op::PushInt:stack.emplace_back(i.arg);break;
       case Op::PushString:stack.emplace_back(i.text);break;
       case Op::PushBool:stack.emplace_back(i.arg!=0);break;
