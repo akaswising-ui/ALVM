@@ -207,17 +207,61 @@ public:
     }
   }
 };
-enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength };
+enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret };
 struct IR { Op op; int64_t arg=0; std::string text; };
+struct FunctionIR { std::string name; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
 class IRGenerator {
-  std::vector<IR> code; std::map<std::string,int> slots; int next=0;
+  std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds; int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
-  void expression(const Expr& e){switch(e.kind){case Expr::Integer:emit(Op::PushInt,e.number);break;case Expr::String:emit(Op::PushString,0,e.text);break;case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;case Expr::Variable:emit(Op::Load,slots.at(e.text));break;case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;case Expr::Length:expression(*e.left);emit(Op::ArrayLength);break;case Expr::Unary:expression(*e.left);emit(e.text=="-"?Op::Neg:Op::Not);break;case Expr::Binary:{if(e.text=="&&"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);expression(*e.right);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();emit(Op::PushBool,0);code[j].arg=(int64_t)code.size();break;}if(e.text=="||"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);emit(Op::PushBool,1);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();expression(*e.right);code[j].arg=(int64_t)code.size();break;}expression(*e.left);expression(*e.right);if(e.text=="+")emit(Op::Add);else if(e.text=="-")emit(Op::Sub);else if(e.text=="*")emit(Op::Mul);else if(e.text=="/")emit(Op::Div);else if(e.text=="%")emit(Op::Mod);else if(e.text=="==")emit(Op::Eq);else if(e.text=="!=")emit(Op::Ne);else if(e.text=="<")emit(Op::Lt);else if(e.text==">")emit(Op::Gt);else if(e.text=="<=")emit(Op::Le);else if(e.text==">=")emit(Op::Ge);break;}}}
-  void statement(const Stmt& s){switch(s.kind){case Stmt::Block:{auto saved=slots;for(const auto& c:s.children)statement(*c);slots=std::move(saved);break;}case Stmt::Declare:{int slot=next++;slots[s.name]=slot;expression(*s.expr);emit(Op::Store,slot);break;}case Stmt::Assign:expression(*s.expr);emit(Op::Store,slots.at(s.name));break;case Stmt::ArrayAssign:emit(Op::Load,slots.at(s.name));expression(*s.condition);expression(*s.expr);emit(Op::ArraySet);break;case Stmt::Print:expression(*s.expr);emit(Op::Print);break;case Stmt::Return:emit(Op::Halt);break;case Stmt::If:{expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);if(s.second){int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();statement(*s.second);code[j].arg=(int64_t)code.size();}else code[jf].arg=(int64_t)code.size();break;}case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();break;}case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}}}
+  void expression(const Expr& e){
+    switch(e.kind){
+      case Expr::Integer:emit(Op::PushInt,e.number);break;
+      case Expr::String:emit(Op::PushString,0,e.text);break;
+      case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;
+      case Expr::Variable:emit(Op::Load,slots.at(e.text));break;
+      case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.text));break;
+      case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;
+      case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;
+      case Expr::Length:expression(*e.left);emit(Op::ArrayLength);break;
+      case Expr::Unary:expression(*e.left);emit(e.text=="-"?Op::Neg:Op::Not);break;
+      case Expr::Binary:{
+        if(e.text=="&&"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);expression(*e.right);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();emit(Op::PushBool,0);code[j].arg=(int64_t)code.size();break;}
+        if(e.text=="||"){expression(*e.left);int jf=emit(Op::JumpFalse,-1);emit(Op::PushBool,1);int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();expression(*e.right);code[j].arg=(int64_t)code.size();break;}
+        expression(*e.left);expression(*e.right);
+        if(e.text=="+")emit(Op::Add);else if(e.text=="-")emit(Op::Sub);else if(e.text=="*")emit(Op::Mul);else if(e.text=="/")emit(Op::Div);else if(e.text=="%")emit(Op::Mod);else if(e.text=="==")emit(Op::Eq);else if(e.text=="!=")emit(Op::Ne);else if(e.text=="<")emit(Op::Lt);else if(e.text==">")emit(Op::Gt);else if(e.text=="<=")emit(Op::Le);else if(e.text==">=")emit(Op::Ge);
+        break;
+      }
+    }
+  }
+  void statement(const Stmt& s){
+    switch(s.kind){
+      case Stmt::Block:{auto saved=slots;for(const auto& child:s.children)statement(*child);slots=std::move(saved);break;}
+      case Stmt::Declare:{int slot=next++;slots[s.name]=slot;expression(*s.expr);emit(Op::Store,slot);break;}
+      case Stmt::Assign:expression(*s.expr);emit(Op::Store,slots.at(s.name));break;
+      case Stmt::ArrayAssign:emit(Op::Load,slots.at(s.name));expression(*s.condition);expression(*s.expr);emit(Op::ArraySet);break;
+      case Stmt::ExprStatement:expression(*s.expr);if(s.expr->inferred!=Type::Void)emit(Op::Pop);break;
+      case Stmt::Print:expression(*s.expr);emit(Op::Print);break;
+      case Stmt::Return:if(s.expr)expression(*s.expr);emit(Op::Ret);break;
+      case Stmt::If:{expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);if(s.second){int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();statement(*s.second);code[j].arg=(int64_t)code.size();}else code[jf].arg=(int64_t)code.size();break;}
+      case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();break;}
+      case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}
+    }
+  }
 public:
-  std::vector<IR> generate(const Program& p){statement(*p.body);if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);return code;}
-};
-struct Bytecode { Op op; int64_t arg=0; std::string text; };
+  std::vector<FunctionIR> generate(const Program& p){
+    for(size_t i=0;i<p.functions.size();++i)functionIds[p.functions[i].name]=(int)i;
+    std::vector<FunctionIR> out;
+    for(const auto& fn:p.functions){
+      code.clear();slots.clear();next=0;
+      for(size_t i=0;i<fn.params.size();++i){slots[fn.params[i].name]=(int)i;++next;}
+      statement(*fn.body);
+      if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
+      else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
+      FunctionIR item;item.name=fn.name;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.push_back(std::move(item));
+    }
+    return out;
+  }
+};struct Bytecode { Op op; int64_t arg=0; std::string text; };
 class BytecodeLowerer { public: std::vector<Bytecode> lower(const std::vector<IR>& ir){std::vector<Bytecode> out;out.reserve(ir.size());for(const auto& i:ir)out.push_back({i.op,i.arg,i.text});return out;} };
 static void writeU32(std::ofstream& f,uint32_t x){for(int i=0;i<4;++i)f.put((char)(x>>(8*i)));}
 static uint32_t readU32(std::ifstream& f){uint32_t x=0;for(int i=0;i<4;++i){int c=f.get();if(c==EOF)throw Error("Truncated .room file");x|=(uint32_t)(uint8_t)c<<(8*i);}return x;}
