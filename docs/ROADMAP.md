@@ -26,7 +26,7 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 2. **OOP dispatch:** override signatures, virtual method table metadata, runtime dispatch and inheritance/polymorphism tests.
 3. **Runtime safety:** exception model, stack traces with source locations, heap/resource management and runtime type metadata.
 4. **Core standard library:** strings/math/collections first, then permission-scoped file APIs using explicit Android capability grants.
-5. **Application UI framework:** view tree, layout, button/text-field/image widgets, event loop and lifecycle. Keep ALVM Studio itself offline; any network permission must belong to a generated app that explicitly requests it.
+5. **Application UI framework (Stage 15 initial slice implemented):** AL `UI.screen`, `UI.text`, `UI.button`, integer UI state and AL event callbacks render through native Java Android Views. Still to build: editable text fields, custom layout trees, image widgets, full event/lifecycle system. Keep ALVM Studio itself offline; any network permission must belong to a generated app that explicitly requests it.
 6. **Graphics/game/audio:** 2D renderer, touch/keyboard input, frame loop, collision helpers and audio playback, each backed by working native implementations and tests.
 7. **Database and networking:** local database first; networking as an optional, permission-gated capability rather than a background dependency of the IDE.
 8. **Application packaging:** `.AL` manifest/container, resources and module validation, then Android project generation and APK build with clear signing/build diagnostics.
