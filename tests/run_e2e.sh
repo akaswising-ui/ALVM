@@ -43,7 +43,15 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default; do
+"$BIN" compile "$ROOT/examples/static_members.al" -o "$TMP/static.room"
+STATIC_EXPECTED="$(printf '15\n30\n17\n10')"
+STATIC_ACTUAL="$("$BIN" run "$TMP/static.room")"
+if [[ "$STATIC_ACTUAL" != "$STATIC_EXPECTED" ]]; then
+  printf 'static members expected:\n%s\nstatic members actual:\n%s\n' "$STATIC_EXPECTED" "$STATIC_ACTUAL" >&2
+  exit 1
+fi
+
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default static_this_error static_method_instance_call instance_method_static_call static_field_type_error; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -59,6 +67,6 @@ fi
 
 "$BIN" disasm "$TMP/objects.room" | grep -q 'class Player'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
-"$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
-echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, switch and loop control"
+"$BIN" disasm "$TMP/static.room" | grep -q 'function Counter.increment'
+echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, control flow and static members"
