@@ -261,14 +261,14 @@ public:
     return out;
   }
 };struct Bytecode { Op op; int64_t arg=0; std::string text; };
-struct ClassBC { std::string name; std::vector<Type> fieldTypes; };
+struct ClassBC { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
 struct FunctionBC { std::string name; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
 struct BytecodeProgram { std::vector<ClassBC> classes; std::vector<FunctionBC> functions; };
 class BytecodeLowerer {
 public:
   BytecodeProgram lower(const IRProgram& ir){
     BytecodeProgram out;
-    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.fieldTypes});
+    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.baseClassId,cls.fieldTypes});
     for(const auto& fn:ir.functions){
       FunctionBC b;b.name=fn.name;b.ownerClassId=fn.ownerClassId;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
       for(const auto& i:fn.code)b.code.push_back({i.op,i.arg,i.text});
@@ -285,8 +285,8 @@ static void writeString(std::ofstream& f,const std::string& value){if(value.size
 static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
 static void saveRoom(const std::string& path,const BytecodeProgram& program){
   std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
-  f.write("ALRM",4);writeU32(f,5);writeU32(f,(uint32_t)program.classes.size());
-  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
+  f.write("ALRM",4);writeU32(f,6);writeU32(f,(uint32_t)program.classes.size());
+  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.baseClassId);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
   writeU32(f,(uint32_t)program.functions.size());
   for(const auto& fn:program.functions){
     writeString(f,fn.name);writeU32(f,(uint32_t)fn.ownerClassId);writeU32(f,(uint32_t)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
@@ -297,9 +297,9 @@ static void saveRoom(const std::string& path,const BytecodeProgram& program){
 static BytecodeProgram loadRoom(const std::string& path){
   std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
   char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
-  if(readU32(f)!=5)throw Error("Unsupported .room version (expected 5)");
+  if(readU32(f)!=6)throw Error("Unsupported .room version (expected 6)");
   BytecodeProgram program;uint32_t classCount=readU32(f);if(classCount>10000)throw Error("Class count limit exceeded");
-  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v5");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
+  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v6");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
   uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
   for(uint32_t j=0;j<n;++j){
     FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;
@@ -326,7 +326,7 @@ static void verify(const BytecodeProgram& program){
   if(functions.empty()||functions[0].name!="main"||functions[0].ownerClassId!=-1)throw Error(".room must start with global main function");
   if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
   std::map<std::string,bool> names;
-  for(const auto& cls:program.classes)if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");else names["class:"+cls.name]=true;
+  for(size_t ci=0;ci<program.classes.size();++ci){const auto& cls=program.classes[ci];if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");names["class:"+cls.name]=true;if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=ci))throw Error("Invalid class inheritance graph");}
   for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId < -1 || (fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size()))throw Error("Invalid method owner class");}
   for(size_t fi=0;fi<functions.size();++fi){
     const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
