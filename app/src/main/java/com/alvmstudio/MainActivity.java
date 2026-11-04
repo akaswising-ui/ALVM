@@ -37,8 +37,6 @@ import java.util.Comparator;
 import java.util.List;
 
 public class MainActivity extends Activity {
-    private static final String APP_URL = "https://alvm-studio-e8a74s.v2.appdeploy.ai/";
-    private static final String APP_HOST = "alvm-studio-e8a74s.v2.appdeploy.ai";
 
     private static final int REQUEST_WORKSPACE_TREE = 13;
     private static final int REQUEST_IMPORT_FILE = 14;
@@ -102,32 +100,29 @@ public class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setAllowFileAccess(false);
+        settings.setAllowFileAccess(true);
+        settings.setBlockNetworkLoads(true);
         settings.setAllowContentAccess(true);
 
         webView.addJavascriptInterface(new AndroidBridge(), "Android");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                if (APP_HOST.equalsIgnoreCase(uri.getHost())) return false;
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
-                } catch (Exception ignored) { }
-                return true;
+                // The app shell is bundled locally. Block navigation to remote pages.
+                return !"file".equalsIgnoreCase(request.getUrl().getScheme());
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (url != null && url.startsWith(APP_URL)) installNativeUiHooks();
+                if (url != null && url.startsWith("file:///android_asset/")) installNativeUiHooks();
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (request.isForMainFrame()) {
-                    showOutputInWeb("Cannot load ALVM Studio. Connect to the internet and reopen the app.", "ERROR");
+                    showOutputInWeb("Cannot load the ALVM Studio interface bundled in this APK.", "ERROR");
                 }
             }
         });
@@ -153,7 +148,7 @@ public class MainActivity extends Activity {
         });
 
         setContentView(webView);
-        webView.loadUrl(APP_URL);
+        webView.loadUrl("file:///android_asset/index.html");
     }
 
     private void installNativeUiHooks() {
