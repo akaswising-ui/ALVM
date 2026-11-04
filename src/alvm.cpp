@@ -87,16 +87,126 @@ public:
 };
 
 class SemanticAnalyzer {
+  struct Signature { Type result; std::vector<Type> params; };
+  std::map<std::string,Signature> signatures;
   std::vector<std::map<std::string,Type>> scopes;
-  void push(){scopes.emplace_back();}void pop(){scopes.pop_back();}
+  Type currentReturn=Type::Void;
+  void push(){scopes.emplace_back();}
+  void pop(){scopes.pop_back();}
   Type lookup(const std::string& n){for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto f=i->find(n);if(f!=i->end())return f->second;}throw Error("Unknown variable: "+n);}
-  void declare(const std::string& n,Type t){auto& s=scopes.back();if(s.count(n))throw Error("Duplicate variable in scope: "+n);s[n]=t;}
-  Type checkExpr(Expr& e){switch(e.kind){case Expr::Integer:e.inferred=Type::Int;break;case Expr::String:e.inferred=Type::String;break;case Expr::Boolean:e.inferred=Type::Bool;break;case Expr::Variable:e.inferred=lookup(e.text);break;case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}case Expr::Index:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error("Indexing requires an array");if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");e.inferred=elementOf(base);break;}case Expr::Length:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error(".length requires an array");e.inferred=Type::Int;break;}case Expr::Unary:{Type a=checkExpr(*e.left);if(e.text=="-"&&a!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&a!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}case Expr::Binary:{Type a=checkExpr(*e.left),b=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&a==Type::String&&b==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(a!=Type::Int||b!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(a!=Type::Int||b!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(a!=b)throw Error("Equality operands must have the same type");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(a!=Type::Bool||b!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}}return e.inferred;}
-  void checkStmt(Stmt& s){switch(s.kind){case Stmt::Block:push();for(auto& c:s.children)checkStmt(*c);pop();break;case Stmt::Declare:{Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;if(actual!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");declare(s.name,actual);break;}case Stmt::Assign:{Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);if(lhs!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");break;}case Stmt::ArrayAssign:{Type arr=lookup(s.name);if(!isArray(arr))throw Error("Indexed assignment requires an array variable: "+s.name);if(checkExpr(*s.condition)!=Type::Int)throw Error("Array index must be int");Type rhs=checkExpr(*s.expr);if(rhs!=elementOf(arr))throw Error("Cannot store "+typeName(rhs)+" in "+typeName(arr));break;}case Stmt::Print:checkExpr(*s.expr);break;case Stmt::Return:if(s.expr)throw Error("main is void and cannot return a value");break;case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;}}
+  void declare(const std::string& n,Type t){auto& scope=scopes.back();if(scope.count(n))throw Error("Duplicate variable in scope: "+n);scope[n]=t;}
+  Type checkExpr(Expr& e){
+    switch(e.kind){
+      case Expr::Integer:e.inferred=Type::Int;break;
+      case Expr::String:e.inferred=Type::String;break;
+      case Expr::Boolean:e.inferred=Type::Bool;break;
+      case Expr::Variable:e.inferred=lookup(e.text);break;
+      case Expr::Call:{
+        if(e.text=="main")throw Error("main() cannot be called as a normal function");
+        auto fn=signatures.find(e.text);
+        if(fn==signatures.end())throw Error("Unknown function: "+e.text);
+        if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);
+        for(size_t i=0;i<e.elements.size();++i){
+          Type actual=checkExpr(*e.elements[i]);
+          if(actual!=fn->second.params[i])throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));
+        }
+        e.inferred=fn->second.result;break;
+      }
+      case Expr::ArrayLiteral:{
+        if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");
+        Type item=checkExpr(*e.elements[0]);
+        if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");
+        for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");
+        e.inferred=arrayOf(item);break;
+      }
+      case Expr::Index:{
+        Type base=checkExpr(*e.left);
+        if(!isArray(base))throw Error("Indexing requires an array");
+        if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");
+        e.inferred=elementOf(base);break;
+      }
+      case Expr::Length:{
+        Type base=checkExpr(*e.left);
+        if(!isArray(base))throw Error(".length requires an array");
+        e.inferred=Type::Int;break;
+      }
+      case Expr::Unary:{
+        Type a=checkExpr(*e.left);
+        if(e.text=="-"&&a!=Type::Int)throw Error("Unary '-' requires int");
+        if(e.text=="!"&&a!=Type::Bool)throw Error("Unary '!' requires boolean");
+        e.inferred=e.text=="-"?Type::Int:Type::Bool;break;
+      }
+      case Expr::Binary:{
+        Type a=checkExpr(*e.left),b=checkExpr(*e.right);const auto& op=e.text;
+        if(op=="+"&&a==Type::String&&b==Type::String)e.inferred=Type::String;
+        else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){
+          if(a!=Type::Int||b!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;
+        }else if(op=="<"||op==">"||op=="<="||op==">="){
+          if(a!=Type::Int||b!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;
+        }else if(op=="=="||op=="!="){
+          if(a!=b)throw Error("Equality operands must have the same type");e.inferred=Type::Bool;
+        }else if(op=="&&"||op=="||"){
+          if(a!=Type::Bool||b!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;
+        }else throw Error("Unsupported operator: "+op);
+        break;
+      }
+    }
+    return e.inferred;
+  }
+  void checkStmt(Stmt& s){
+    switch(s.kind){
+      case Stmt::Block:push();for(auto& child:s.children)checkStmt(*child);pop();break;
+      case Stmt::Declare:{
+        Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;
+        if(actual!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");
+        declare(s.name,actual);break;
+      }
+      case Stmt::Assign:{
+        Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);
+        if(lhs!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");
+        break;
+      }
+      case Stmt::ArrayAssign:{
+        Type arr=lookup(s.name);if(!isArray(arr))throw Error("Indexed assignment requires an array variable: "+s.name);
+        if(checkExpr(*s.condition)!=Type::Int)throw Error("Array index must be int");
+        Type rhs=checkExpr(*s.expr);if(rhs!=elementOf(arr))throw Error("Cannot store "+typeName(rhs)+" in "+typeName(arr));
+        break;
+      }
+      case Stmt::ExprStatement:checkExpr(*s.expr);break;
+      case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
+      case Stmt::Return:{
+        if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}
+        else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(actual!=currentReturn)throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}
+        break;
+      }
+      case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
+      case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;
+      case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;
+    }
+  }
+  bool alwaysReturns(const Stmt& s)const{
+    if(s.kind==Stmt::Return)return true;
+    if(s.kind==Stmt::Block){for(const auto& child:s.children)if(alwaysReturns(*child))return true;return false;}
+    if(s.kind==Stmt::If&&s.second)return alwaysReturns(*s.first)&&alwaysReturns(*s.second);
+    return false;
+  }
 public:
-  void analyze(Program& p){(void)p;push();checkStmt(*p.body);pop();}
+  void analyze(Program& p){
+    if(p.functions.empty()||p.functions[0].name!="main")throw Error("Missing main() entry function");
+    if(p.functions[0].returnType!=Type::Void||!p.functions[0].params.empty())throw Error("main() must be declared as void main() with no parameters");
+    for(const auto& fn:p.functions){
+      if(signatures.count(fn.name))throw Error("Duplicate function name: "+fn.name);
+      Signature sig;sig.result=fn.returnType;for(const auto& param:fn.params)sig.params.push_back(param.type);
+      signatures.emplace(fn.name,std::move(sig));
+    }
+    for(auto& fn:p.functions){
+      currentReturn=fn.returnType;push();
+      for(const auto& param:fn.params)declare(param.name,param.type);
+      checkStmt(*fn.body);pop();
+      if(fn.returnType!=Type::Void&&!alwaysReturns(*fn.body))throw Error("Non-void function may finish without returning a value: "+fn.name);
+    }
+  }
 };
-
 enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength };
 struct IR { Op op; int64_t arg=0; std::string text; };
 class IRGenerator {
