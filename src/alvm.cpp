@@ -184,7 +184,7 @@ public:
 };
 enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField };
 struct IR { Op op; int64_t arg=0; std::string text; };
-struct ClassIR { std::string name; std::vector<Type> fieldTypes; };
+struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
 struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
 struct IRProgram { std::vector<ClassIR> classes; std::vector<FunctionIR> functions; };
 class IRGenerator {
@@ -244,7 +244,16 @@ class IRGenerator {
 public:
   IRProgram generate(const Program& p){
     IRProgram out;
-    for(size_t i=0;i<p.classes.size();++i){classIds[p.classes[i].name]=(int)i;ClassIR c;c.name=p.classes[i].name;for(const auto& field:p.classes[i].fields)c.fieldTypes.push_back(field.type);out.classes.push_back(std::move(c));for(size_t j=0;j<p.classes[i].fields.size();++j)fieldSlots[p.classes[i].name][p.classes[i].fields[j].name]=(int)j;}
+    for(size_t i=0;i<p.classes.size();++i)classIds[p.classes[i].name]=(int)i;
+    for(size_t i=0;i<p.classes.size();++i){
+      const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;
+      if(!decl.baseClass.empty()){
+        int base=classIds.at(decl.baseClass);if(base>=(int)i)throw Error("Base class must appear before derived class");
+        c.baseClassId=base;c.fieldTypes=out.classes[(size_t)base].fieldTypes;fieldSlots[decl.name]=fieldSlots[decl.baseClass];
+      }
+      for(const auto& field:decl.fields){fieldSlots[decl.name][field.name]=(int)c.fieldTypes.size();c.fieldTypes.push_back(field.type);}
+      out.classes.push_back(std::move(c));
+    }
     int id=0;for(const auto& fn:p.functions)functionIds[fn.name]=id++;
     for(const auto& cls:p.classes)for(const auto& method:cls.methods)functionIds[cls.name+"."+method.name]=id++;
     for(const auto& fn:p.functions)compileFunction(fn,out);
