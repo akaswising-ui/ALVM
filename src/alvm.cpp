@@ -99,7 +99,7 @@ public:
 
 class SemanticAnalyzer {
   struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; std::string symbol; };
-  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; Signature constructor; bool hasConstructor=false; };
+  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,std::vector<Signature>> methods; Signature constructor; bool hasConstructor=false; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,std::vector<Signature>> functionOverloads;
   std::map<std::string,ClassInfo> classes;
@@ -128,7 +128,7 @@ class SemanticAnalyzer {
       case Expr::This:if(currentClass.empty())throw Error("'this' can only be used inside an instance method");e.inferred=classes.at(currentClass).type;break;
       case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);const auto& ctor=it->second.constructor;if(e.elements.size()!=ctor.params.size())throw Error("Wrong argument count for constructor "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,ctor.params[i]))throw Error("Constructor argument "+std::to_string(i+1)+" must be "+typeName(ctor.params[i]));}e.resolvedFunction=e.text+".$ctor";e.inferred=it->second.type;break;}
       case Expr::FieldAccess:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(e.text);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+e.text+"' on "+typeName(objectType));e.resolvedField=it->second;e.inferred=cls.fieldTypes[(size_t)it->second];break;}
-      case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,sig.params[i]))throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
+      case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:it->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for method: "+e.text);if(ambiguous)throw Error("Ambiguous overload for method: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
       case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto found=functionOverloads.find(e.text);if(found==functionOverloads.end())throw Error("Unknown function: "+e.text);std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:found->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for function: "+e.text);if(ambiguous)throw Error("Ambiguous overload for function: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
       case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}
       case Expr::Index:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error("Indexing requires an array");if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");e.inferred=elementOf(base);break;}
@@ -178,10 +178,10 @@ public:
       }
       if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);
     }
-    for(const auto& cls:p.classes){
+    for(auto& cls:p.classes){
       auto& info=classes.at(cls.name);
       if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
-      for(const auto& method:cls.methods){
+      for(auto& method:cls.methods){
         Signature sig=signature(method);
         if(method.isConstructor){
           if(info.hasConstructor)throw Error("Duplicate constructor in class "+cls.name);
@@ -190,9 +190,8 @@ public:
           std::string key=cls.name+".$ctor";if(signatures.count(key))throw Error("Duplicate constructor signature");signatures.emplace(key,std::move(sig));
           continue;
         }
-        if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
-        info.methods.emplace(method.name,sig);
-        std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
+        auto& overloads=info.methods[method.name];for(const auto& prior:overloads)if(prior.params==sig.params)throw Error("Duplicate or overriding method signature for '"+method.name+"' in "+cls.name);
+        std::string symbol=cls.name+"."+method.name+"$";for(const auto& param:method.params){std::string encoded=typeName(param.type);symbol+=std::to_string(encoded.size());symbol+="_";symbol+=encoded;}method.symbol=symbol;sig.symbol=symbol;overloads.push_back(sig);if(signatures.count(symbol))throw Error("Duplicate method symbol: "+symbol);signatures.emplace(symbol,std::move(sig));
       }
     }
     for(auto& fn:p.functions){Signature sig=signature(fn);std::string symbol=fn.name;if(fn.name!="main"){symbol+="$";for(const auto& param:fn.params){std::string encoded=typeName(param.type);symbol+=std::to_string(encoded.size());symbol+="_";symbol+=encoded;}}fn.symbol=symbol;sig.symbol=symbol;auto& overloads=functionOverloads[fn.name];for(const auto& prior:overloads)if(prior.params==sig.params)throw Error("Duplicate function signature: "+fn.name);overloads.push_back(std::move(sig));}
@@ -267,7 +266,7 @@ class IRGenerator {
     statement(*fn.body);
     if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
     else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
-    FunctionIR item;item.name=fn.ownerClass.empty()?(fn.symbol.empty()?fn.name:fn.symbol):fn.ownerClass+"."+fn.name;item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
+    FunctionIR item;item.name=fn.ownerClass.empty()?(fn.symbol.empty()?fn.name:fn.symbol):(fn.symbol.empty()?fn.ownerClass+"."+fn.name:fn.symbol);item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
   }
 public:
   IRProgram generate(const Program& p){
@@ -283,7 +282,7 @@ public:
       out.classes.push_back(std::move(c));
     }
     int id=0;for(const auto& fn:p.functions)functionIds[fn.symbol.empty()?fn.name:fn.symbol]=id++;
-    for(const auto& cls:p.classes)for(const auto& method:cls.methods)functionIds[cls.name+"."+method.name]=id++;
+    for(const auto& cls:p.classes)for(const auto& method:cls.methods)functionIds[method.symbol.empty()?cls.name+"."+method.name:method.symbol]=id++;
     for(const auto& fn:p.functions)compileFunction(fn,out);
     for(const auto& cls:p.classes)for(const auto& method:cls.methods)compileFunction(method,out);
     return out;
