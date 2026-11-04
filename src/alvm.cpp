@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <map>
