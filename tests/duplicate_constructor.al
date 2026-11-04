@@ -1,10 +1,10 @@
 room DuplicateConstructor {
     public static void main() {
-        Player p = new Player();
+        Player p = new Player(1);
     }
     class Player {
         int value;
-        Player() { this.value = 1; }
         Player(int x) { this.value = x; }
+        Player(int y) { this.value = y + 1; }
     }
 }
