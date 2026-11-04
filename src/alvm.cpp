@@ -219,12 +219,14 @@ public:
 };
 enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField,Dup };
 struct IR { Op op; int64_t arg=0; std::string text; };
-struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
-struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
+struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; std::vector<Type> staticFieldTypes; };
+struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; bool isStatic=false; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
 struct IRProgram { std::vector<ClassIR> classes; std::vector<FunctionIR> functions; };
 class IRGenerator {
   std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds, classIds;
   std::map<std::string,std::map<std::string,int>> fieldSlots;
+  std::map<std::string,std::map<std::string,int>> staticFieldSlots;
+  std::map<std::string,std::map<std::string,std::string>> staticFieldOwners;
   std::map<std::string,std::string> baseClasses;
   struct LoopPatch { int continueTarget=-1; std::vector<int> pendingContinues; };
   std::vector<LoopPatch> loopPatches;
@@ -240,6 +242,8 @@ class IRGenerator {
       case Expr::This:emit(Op::Load,slots.at("this"));break;
       case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));emit(Op::Dup);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
+      case Expr::StaticFieldAccess:emit(Op::GetStaticField,((int64_t)(uint32_t)classIds.at(e.qualifier)<<32)|(uint32_t)e.resolvedField);break;
+      case Expr::StaticMethodCall:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::MethodCall:expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;
@@ -262,6 +266,7 @@ class IRGenerator {
       case Stmt::Assign:expression(*s.expr);emit(Op::Store,slots.at(s.name));break;
       case Stmt::ArrayAssign:emit(Op::Load,slots.at(s.name));expression(*s.condition);expression(*s.expr);emit(Op::ArraySet);break;
       case Stmt::FieldAssign:expression(*s.condition);expression(*s.expr);emit(Op::SetField,(int64_t)s.incrementExpr->number);break;
+      case Stmt::StaticFieldAssign:expression(*s.expr);emit(Op::SetStaticField,((int64_t)(uint32_t)classIds.at(s.qualifier)<<32)|(uint32_t)s.incrementExpr->number);break;
       case Stmt::ExprStatement:expression(*s.expr);if(s.expr->inferred!=Type::Void)emit(Op::Pop);break;
       case Stmt::Print:expression(*s.expr);emit(Op::Print);break;
       case Stmt::Return:if(s.expr)expression(*s.expr);emit(Op::Ret);break;
@@ -277,13 +282,13 @@ class IRGenerator {
   void compileFunction(const Function& fn,IRProgram& out){
     code.clear();slots.clear();next=0;
     int32_t owner=-1;
-    if(!fn.ownerClass.empty()){owner=classIds.at(fn.ownerClass);slots["this"]=next++;}
+    if(!fn.ownerClass.empty()){owner=classIds.at(fn.ownerClass);if(!fn.isStatic)slots["this"]=next++;}
     for(const auto& param:fn.params){slots[param.name]=next++;}
     if(fn.isConstructor&&!fn.ownerClass.empty()){const std::string& base=baseClasses.at(fn.ownerClass);if(!base.empty()){emit(Op::Load,slots.at("this"));emit(Op::Call,functionIds.at(base+".$ctor"));}}
     statement(*fn.body);
     if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
     else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
-    FunctionIR item;item.name=fn.ownerClass.empty()?fn.name:fn.ownerClass+"."+fn.name;item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
+    FunctionIR item;item.name=fn.ownerClass.empty()?fn.name:fn.ownerClass+"."+fn.name;item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.isStatic=fn.isStatic;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
   }
 public:
   IRProgram generate(const Program& p){
@@ -293,9 +298,13 @@ public:
       const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;baseClasses[decl.name]=decl.baseClass;
       if(!decl.baseClass.empty()){
         int base=classIds.at(decl.baseClass);if(base>=(int)i)throw Error("Base class must appear before derived class");
-        c.baseClassId=base;c.fieldTypes=out.classes[(size_t)base].fieldTypes;fieldSlots[decl.name]=fieldSlots[decl.baseClass];
+        c.baseClassId=base;c.fieldTypes=out.classes[(size_t)base].fieldTypes;c.staticFieldTypes=out.classes[(size_t)base].staticFieldTypes;
+        fieldSlots[decl.name]=fieldSlots[decl.baseClass];staticFieldSlots[decl.name]=staticFieldSlots[decl.baseClass];staticFieldOwners[decl.name]=staticFieldOwners[decl.baseClass];
       }
-      for(const auto& field:decl.fields){fieldSlots[decl.name][field.name]=(int)c.fieldTypes.size();c.fieldTypes.push_back(field.type);}
+      for(const auto& field:decl.fields){
+        if(field.isStatic){staticFieldSlots[decl.name][field.name]=(int)c.staticFieldTypes.size();staticFieldOwners[decl.name][field.name]=decl.name;c.staticFieldTypes.push_back(field.type);}
+        else{fieldSlots[decl.name][field.name]=(int)c.fieldTypes.size();c.fieldTypes.push_back(field.type);}
+      }
       out.classes.push_back(std::move(c));
     }
     int id=0;for(const auto& fn:p.functions)functionIds[fn.name]=id++;
