@@ -21,6 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
+import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONObject;
 
@@ -49,6 +50,7 @@ public class MainActivity extends Activity {
     }
 
     private WebView webView;
+    private WebViewAssetLoader assetLoader;
     private ValueCallback<Uri[]> pendingFileCallback;
     private boolean saveAfterFolderPick = false;
     private boolean openAfterFolderPick = false;
@@ -87,6 +89,10 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(9, 13, 21));
         initWorkspaceFolders();
 
+        assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .build();
+
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(9, 13, 21));
 
@@ -100,7 +106,7 @@ public class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setAllowFileAccess(true);
+        settings.setAllowFileAccess(false);
         settings.setBlockNetworkLoads(true);
         settings.setAllowContentAccess(true);
 
@@ -108,13 +114,23 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                // The app shell is bundled locally. Block navigation to remote pages.
-                return !"file".equalsIgnoreCase(request.getUrl().getScheme());
+                Uri uri = request.getUrl();
+                boolean localAsset = "https".equalsIgnoreCase(uri.getScheme())
+                        && "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())
+                        && uri.getPath() != null && uri.getPath().startsWith("/assets/");
+                return !localAsset;
+            }
+
+            @Override
+            public android.webkit.WebResourceResponse shouldInterceptRequest(
+                    WebView view, WebResourceRequest request) {
+                return assetLoader.shouldInterceptRequest(request.getUrl());
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                if (url != null && url.startsWith("https://appassets.androidplatform.net/assets/")) installNativeUiHooks();
             }
 
             @Override
@@ -147,7 +163,57 @@ public class MainActivity extends Activity {
         });
 
         setContentView(webView);
-        webView.loadUrl("file:///android_asset/index.html");
+        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
+    }
+
+    private void installNativeUiHooks() {
+        String script = "(function(){"
+                + "if(window.__alvmNativeHooksInstalled)return;"
+                + "window.__alvmNativeHooksInstalled=true;"
+                + "window.__alvmShowOutput=function(message,status){"
+                + "var area=document.querySelector('.console-output');"
+                + "if(area){area.replaceChildren();String(message||'(no output)').split('\\n').forEach(function(line){"
+                + "var row=document.createElement('div');row.textContent=line||' ';"
+                + "if(line.indexOf('✕')===0||line.toLowerCase().indexOf('error')>=0)row.className='error-line';"
+                + "else if(line.indexOf('✓')===0)row.className='success-line';"
+                + "else if(line.indexOf('AL OUTPUT')===0)row.className='program-output';"
+                + "area.appendChild(row);});}"
+                + "var badge=document.querySelector('.console-title .status');"
+                + "if(badge){badge.textContent=status||'READY';badge.className='status'+(status==='SUCCESS'?' success':((status||'').indexOf('ERROR')>=0?' error':''));}"
+                + "};"
+                + "document.addEventListener('click',function(event){"
+                + "var button=event.target&&event.target.closest?event.target.closest('button'):null;"
+                + "if(!button)return;"
+                + "var sourceNode=document.querySelector('.editor-area textarea');"
+                + "var source=sourceNode?sourceNode.value:'';"
+                + "var fileNode=document.querySelector('.file-item.active span');"
+                + "var fileName=fileNode?fileNode.textContent:'Main.al';"
+                + "if(button.matches('.run-button')){"
+                + "if(/\\bChess\\s*\\.\\s*start\\s*\\(|\\bGame\\s*\\./.test(source))return;"
+                + "event.preventDefault();event.stopImmediatePropagation();"
+                + "var result=Android.runSource(source,fileName);"
+                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
+                + "if(button.matches('.compile-button')){"
+                + "if(/\\bChess\\s*\\.\\s*start\\s*\\(|\\bGame\\s*\\./.test(source))return;"
+                + "event.preventDefault();event.stopImmediatePropagation();"
+                + "var result=Android.compileSource(source,fileName);"
+                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'COMPILE ERROR':'COMPILED');return;}"
+                + "if(button.matches('.execute-button')){"
+                + "event.preventDefault();event.stopImmediatePropagation();"
+                + "var result=Android.executeRoom();"
+                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
+                + "if(button.closest('.file-actions')){"
+                + "var label=(button.innerText||button.textContent||'').toLowerCase();"
+                + "if(label.indexOf('save')>=0){event.preventDefault();event.stopImmediatePropagation();"
+                + "var saved=Android.saveSource(source,fileName);window.__alvmShowOutput(saved,saved.indexOf('error')>=0?'ERROR':'READY');return;}"
+                + "if(label.indexOf('open')>=0){event.preventDefault();event.stopImmediatePropagation();Android.openWorkspace();return;}}"
+                + "if(button.classList.contains('side-button')){"
+                + "var label=(button.innerText||button.textContent||'').toLowerCase();"
+                + "if(label.indexOf('new file')>=0){event.preventDefault();event.stopImmediatePropagation();Android.createNewFile();return;}"
+                + "if(label.indexOf('open file')>=0){event.preventDefault();event.stopImmediatePropagation();Android.openWorkspace();return;}}"
+                + "},true);"
+                + "})();";
+        webView.evaluateJavascript(script, null);
     }
 
     private void showOutputInWeb(String message, String status) {
