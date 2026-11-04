@@ -11,6 +11,14 @@ The Library Store has 12 module cards. Existing compiler/VM, standard, file, net
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the implemented-feature matrix and staged plan for native GUI, runtime APIs, OOP, collections and Android project packaging.
 
+## Python CI Runtime and hot updates
+
+The C++17 compiler stays responsible for AL source analysis and `.room` generation. The Android app executes verified `.room` v9 bytecode with a Python 3.11 CI Runtime embedded through Chaquopy. Java hosts the interpreter and renders native Android Views; TypeScript/React remains the offline Studio interface.
+
+CI Runtime engine modules are stored separately in app-private version folders. From the workspace file manager, open CI RUNTIME to import a `.ciruntime` package or roll back to a previous engine version. Engine-module updates do not require an APK update. The Python interpreter itself, Android host or bytecode-format changes still require a compatible APK release.
+
+See docs/CI_RUNTIME.md and docs/ROOM_FORMAT.md. Runtime packages contain executable Python code; install only trusted packages. The package SHA-256 check detects corruption, but does not authenticate the publisher.
+
 ## Android app UI: offline bundle
 
 The Android app packages the complete ALVM Studio interface and its local UI runtime in the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
@@ -18,12 +26,12 @@ The Android app packages the complete ALVM Studio interface and its local UI run
 - The UI opens from the local `https://appassets.androidplatform.net/assets/index.html` WebViewAssetLoader mapping (served from APK assets, not the Internet); it does not load the AppDeploy-hosted page.
 - The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
 - The Android manifest has no Internet or network-state permission. WebView network loads are blocked.
-- Ordinary AL source Run/Compile and native `.room` execution continue through the existing C++17 compiler/ALVM JNI bridge.
-- AL programs can declare native Android screens with `UI.screen`, `UI.text` and `UI.button`. Android Java renders these as native Views; button clicks call the named AL `void handler(string buttonId)` function in the C++ VM. `UI.getInt` / `UI.setInt` provide integer state across UI events.
+- AL source Run/Compile continues through the C++17 compiler. Android then executes the generated `.room` v9 bytecode with the separate Python 3.11 CI Runtime through Chaquopy.
+- AL programs can declare native Android screens with `UI.screen`, `UI.text` and `UI.button`. Android Java renders these as native Views; button clicks call the named AL `void handler(string buttonId)` function in Python CI Runtime. `UI.getInt` / `UI.setInt` provide integer state across UI events.
 - The prior local Studio browser runtime, touch-game preview and Chess preview are kept in the bundled UI for the commands they already handled. They do not require a server connection.
 - The editor, UI libraries page, website builder, local export and file-picker interface are included in the offline assets.
 
-The native C++ compiler/VM source is not replaced by the browser prototype compiler. Unsupported native language features remain unsupported until implemented and tested in the native engine. The local game preview is a Studio runtime feature, not evidence that AL's native graphics/game APIs are implemented.
+The C++ compiler remains the authoritative AL source compiler and `.room` writer. The Android app's active bytecode executor is Python CI Runtime; the existing C++ VM remains in the desktop CLI regression path. Unsupported native language features remain unsupported until implemented and tested. The local game preview is a Studio feature, not evidence that AL's native graphics/game APIs are implemented.
 
 ## Stage 15: native AL UI and Java Android rendering
 
@@ -51,7 +59,7 @@ Supported calls:
 - `UI.setInt(key, value)` and `UI.getInt(key, defaultValue)`: keep integer state between button events in the running app.
 - `UI.clear()`: clear UI elements and integer state.
 
-The Android Java host creates and updates actual native Android Views. A click calls back into the C++ ALVM, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
+The Android Java host creates and updates actual native Android Views. A click calls back into Python CI Runtime, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
 
 The `.room` format advances to v9 for the `UiCall` opcode. Recompile v8 bytecode from source. This first UI stage does not yet include editable text fields, arbitrary layout trees, lifecycle callbacks, touch gestures, graphics or audio.
 ## Stage 13: explicit base-constructor calls
