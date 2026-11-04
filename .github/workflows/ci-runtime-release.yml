@@ -1,0 +1,70 @@
+name: Publish CI Runtime release
+
+on:
+  push:
+    tags:
+      - "ci-runtime-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Runtime version, for example 1.0.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve runtime version
+        id: version
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#ci-runtime-v}"
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Runtime version must be major.minor.patch"
+            exit 1
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=ci-runtime-v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build .ciruntime package
+        run: |
+          mkdir -p dist
+          python tools/package_ci_runtime.py \
+            --version "${{ steps.version.outputs.value }}" \
+            --output "dist/ci-runtime-${{ steps.version.outputs.value }}.ciruntime"
+          sha256sum "dist/ci-runtime-${{ steps.version.outputs.value }}.ciruntime" \
+            > "dist/ci-runtime-${{ steps.version.outputs.value }}.ciruntime.sha256"
+
+      - name: Publish Runtime release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.value }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/ci-runtime-$VERSION.ciruntime" "dist/ci-runtime-$VERSION.ciruntime.sha256" --clobber
+          else
+            gh release create "$TAG" \
+              "dist/ci-runtime-$VERSION.ciruntime" \
+              "dist/ci-runtime-$VERSION.ciruntime.sha256" \
+              --title "CI Runtime $VERSION" \
+              --notes "Versioned ALVM CI Runtime package. Runtime API 1; .room format 9."
+          fi
