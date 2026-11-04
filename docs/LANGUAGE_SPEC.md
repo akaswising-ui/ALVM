@@ -1,5 +1,19 @@
 # AL Language Specification: Stage 15
 
+## AL Language Design Principles
+
+### Language identity
+
+AL is an independent language with its own lexer, parser, semantic analysis, compiler, bytecode format, virtual machine and runtime.
+
+- **Keyword vocabulary:** Python-inspired naming and readable English keyword spellings where selected for AL. This describes vocabulary only; AL does not execute Python and does not inherit Python's indentation-based grammar.
+- **Source-code writing style:** Java/C++-inspired braces, semicolons, class declarations, typed variables and method declarations.
+- **Language rules:** C++-inspired strictness, including explicit types, compile-time validation, deterministic grammar and rejection of invalid operations.
+- **Execution:** .al source is compiled to verified .room bytecode; ALVM executes bytecode and never interprets the original source as a shortcut.
+
+The language design is not a clone of Python, Java or C++. Their influence is limited to selected vocabulary and familiar syntax conventions. The compiler, runtime and bytecode are AL-specific.
+
+
 ## Control-flow syntax
 
 ```al
