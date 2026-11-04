@@ -74,3 +74,17 @@ foreach (int item : values) {
 - `continue;` advances to the next element.
 - The compiler lowers foreach to ordinary array length, indexed read, arithmetic and jump instructions. No special foreach opcode is embedded in .room v7.
 - Empty arrays are not yet expressible as array literals; a future array allocation feature will make zero-element iteration directly testable.
+
+
+## Global function overloading
+
+- Two or more global functions may use the same name when their ordered parameter type lists differ.
+- A function call is resolved using the static types of its arguments.
+- A candidate is viable only when its arity matches and each argument is assignable to the corresponding parameter type.
+- Among viable candidates, the compiler selects the candidate with the greatest number of exact argument-to-parameter type matches.
+- If no candidate is viable, compilation fails with a no-matching-overload diagnostic.
+- If multiple candidates tie for the best score, compilation fails with an ambiguous-overload diagnostic.
+- Return type alone cannot distinguish overloads. Repeating the same parameter type list is a duplicate signature, even if the return type differs.
+- `main()` is a unique entry point and cannot be overloaded or called as an ordinary function.
+- The compiler assigns each overload a stable internal symbol; the source-level function name remains unchanged.
+- This stage implements global function overloading. Method and constructor overloading are not yet implemented.
