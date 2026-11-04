@@ -96,7 +96,7 @@ public:
 
 class SemanticAnalyzer {
   struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; };
-  struct ClassInfo { Type type=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; };
+  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,ClassInfo> classes;
   std::vector<std::map<std::string,Type>> scopes;
@@ -104,9 +104,15 @@ class SemanticAnalyzer {
   std::string currentClass;
   void push(){scopes.emplace_back();}
   void pop(){scopes.pop_back();}
-  Type lookup(const std::string& n){for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto f=i->find(n);if(f!=i->end())return f->second;}throw Error("Unknown variable: "+n);}
   void declare(const std::string& n,Type t){auto& scope=scopes.back();if(scope.count(n))throw Error("Duplicate variable in scope: "+n);scope[n]=t;}
+  Type lookup(const std::string& n){for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto f=i->find(n);if(f!=i->end())return f->second;}throw Error("Unknown variable: "+n);}
   ClassInfo& classFor(Type t){for(auto& item:classes)if(item.second.type==t)return item.second;throw Error("Expected a class object, got "+typeName(t));}
+  bool isAssignable(Type actual,Type expected)const{
+    if(actual==expected)return true;
+    if(!isUserType(actual)||!isUserType(expected))return false;
+    for(const auto& item:classes)if(item.second.type==actual){Type base=item.second.baseType;while(base!=Type::Unknown){if(base==expected)return true;bool found=false;for(const auto& parent:classes)if(parent.second.type==base){base=parent.second.baseType;found=true;break;}if(!found)break;}return false;}
+    return false;
+  }
   Type checkExpr(Expr& e){
     switch(e.kind){
       case Expr::Integer:e.inferred=Type::Int;break;
@@ -116,26 +122,26 @@ class SemanticAnalyzer {
       case Expr::This:if(currentClass.empty())throw Error("'this' can only be used inside an instance method");e.inferred=classes.at(currentClass).type;break;
       case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);e.inferred=it->second.type;break;}
       case Expr::FieldAccess:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(e.text);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+e.text+"' on "+typeName(objectType));e.resolvedField=it->second;e.inferred=cls.fieldTypes[(size_t)it->second];break;}
-      case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(actual!=sig.params[i])throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
-      case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto fn=signatures.find(e.text);if(fn==signatures.end())throw Error("Unknown function: "+e.text);if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(actual!=fn->second.params[i])throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));}e.resolvedFunction=e.text;e.inferred=fn->second.result;break;}
+      case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,sig.params[i]))throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
+      case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto fn=signatures.find(e.text);if(fn==signatures.end())throw Error("Unknown function: "+e.text);if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,fn->second.params[i]))throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));}e.resolvedFunction=e.text;e.inferred=fn->second.result;break;}
       case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}
       case Expr::Index:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error("Indexing requires an array");if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");e.inferred=elementOf(base);break;}
       case Expr::Length:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error(".length requires an array");e.inferred=Type::Int;break;}
-      case Expr::Unary:{Type a=checkExpr(*e.left);if(e.text=="-"&&a!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&a!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}
-      case Expr::Binary:{Type a=checkExpr(*e.left),b=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&a==Type::String&&b==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(a!=Type::Int||b!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(a!=Type::Int||b!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(a!=b)throw Error("Equality operands must have the same type");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(a!=Type::Bool||b!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}
+      case Expr::Unary:{Type x=checkExpr(*e.left);if(e.text=="-"&&x!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&x!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}
+      case Expr::Binary:{Type x=checkExpr(*e.left),y=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&x==Type::String&&y==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(x!=Type::Int||y!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(x!=Type::Int||y!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(x!=y&&!(isAssignable(x,y)||isAssignable(y,x)))throw Error("Equality operands must have compatible types");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(x!=Type::Bool||y!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}
     }
     return e.inferred;
   }
   void checkStmt(Stmt& s){
     switch(s.kind){
       case Stmt::Block:push();for(auto& child:s.children)checkStmt(*child);pop();break;
-      case Stmt::Declare:{Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;if(actual!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");declare(s.name,actual);break;}
-      case Stmt::Assign:{Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);if(lhs!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");break;}
+      case Stmt::Declare:{Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;if(!isAssignable(rhs,actual))throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");declare(s.name,actual);break;}
+      case Stmt::Assign:{Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);if(!isAssignable(rhs,lhs))throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");break;}
       case Stmt::ArrayAssign:{Type arr=lookup(s.name);if(!isArray(arr))throw Error("Indexed assignment requires an array variable: "+s.name);if(checkExpr(*s.condition)!=Type::Int)throw Error("Array index must be int");Type rhs=checkExpr(*s.expr);if(rhs!=elementOf(arr))throw Error("Cannot store "+typeName(rhs)+" in "+typeName(arr));break;}
-      case Stmt::FieldAssign:{Type objectType=checkExpr(*s.condition);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(s.name);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+s.name+"' on "+typeName(objectType));Type expected=cls.fieldTypes[(size_t)it->second],actual=checkExpr(*s.expr);if(expected!=actual)throw Error("Cannot assign "+typeName(actual)+" to field "+s.name+" of type "+typeName(expected));s.incrementExpr=std::make_unique<Expr>();s.incrementExpr->number=it->second;break;}
+      case Stmt::FieldAssign:{Type objectType=checkExpr(*s.condition);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(s.name);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+s.name+"' on "+typeName(objectType));Type expected=cls.fieldTypes[(size_t)it->second],actual=checkExpr(*s.expr);if(!isAssignable(actual,expected))throw Error("Cannot assign "+typeName(actual)+" to field "+s.name+" of type "+typeName(expected));s.incrementExpr=std::make_unique<Expr>();s.incrementExpr->number=it->second;break;}
       case Stmt::ExprStatement:checkExpr(*s.expr);break;
       case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
-      case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(actual!=currentReturn)throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
+      case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(!isAssignable(actual,currentReturn))throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
       case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
       case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;
       case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;
@@ -148,8 +154,28 @@ public:
   void analyze(Program& p){
     if(p.functions.empty()||p.functions[0].name!="main")throw Error("Missing main() entry function");
     if(p.functions[0].returnType!=Type::Void||!p.functions[0].params.empty())throw Error("main() must be declared as void main() with no parameters");
-    for(const auto& cls:p.classes){ClassInfo info;info.type=userTypeMap.at(cls.name);for(size_t i=0;i<cls.fields.size();++i){if(cls.fields[i].type==Type::Void||isArray(cls.fields[i].type))throw Error("Class fields currently support scalar types only");info.fieldSlots[cls.fields[i].name]=(int)i;info.fieldTypes.push_back(cls.fields[i].type);}if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);}
-    for(const auto& cls:p.classes){auto& info=classes.at(cls.name);for(const auto& method:cls.methods){if(info.methods.count(method.name))throw Error("Duplicate method: "+method.name);Signature sig=signature(method);info.methods.emplace(method.name,sig);std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));}}
+    for(const auto& cls:p.classes){
+      ClassInfo info;info.type=userTypeMap.at(cls.name);
+      if(!cls.baseClass.empty()){
+        auto parent=classes.find(cls.baseClass);
+        if(parent==classes.end())throw Error("Base class '"+cls.baseClass+"' must be declared before derived class '"+cls.name+"'");
+        info.baseType=parent->second.type;info.fieldSlots=parent->second.fieldSlots;info.fieldTypes=parent->second.fieldTypes;info.methods=parent->second.methods;
+      }
+      for(const auto& field:cls.fields){
+        if(field.type==Type::Void||isArray(field.type)||isUserType(field.type))throw Error("Class fields currently support scalar int, string or boolean types only");
+        if(info.fieldSlots.count(field.name))throw Error("Field '"+field.name+"' conflicts with an inherited field in "+cls.name);
+        info.fieldSlots[field.name]=(int)info.fieldTypes.size();info.fieldTypes.push_back(field.type);
+      }
+      if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);
+    }
+    for(const auto& cls:p.classes){
+      auto& info=classes.at(cls.name);
+      for(const auto& method:cls.methods){
+        if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
+        Signature sig=signature(method);info.methods.emplace(method.name,sig);
+        std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
+      }
+    }
     for(const auto& fn:p.functions){if(signatures.count(fn.name))throw Error("Duplicate function name: "+fn.name);signatures.emplace(fn.name,signature(fn));}
     for(auto& fn:p.functions)analyzeFunction(fn);
     for(auto& cls:p.classes)for(auto& method:cls.methods)analyzeFunction(method);
