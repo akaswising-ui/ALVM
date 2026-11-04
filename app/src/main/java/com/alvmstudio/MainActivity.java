@@ -19,6 +19,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.ValueCallback;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.GridLayout;
@@ -659,13 +660,34 @@ public class MainActivity extends Activity {
             content.addView(heading, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+            boolean hasGameCanvas = false;
+            for (int index = 0; index < elements.length(); index++) {
+                JSONObject item = elements.optJSONObject(index);
+                if (item != null) {
+                    String kind = item.optString("kind", "");
+                    if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)) {
+                        hasGameCanvas = true;
+                        break;
+                    }
+                }
+            }
+            if (hasGameCanvas) {
+                Game2DView gameView = new Game2DView(this, elements);
+                LinearLayout.LayoutParams gameParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(480));
+                gameParams.bottomMargin = dp(12);
+                content.addView(gameView, gameParams);
+            }
+
             for (int index = 0; index < elements.length(); index++) {
                 JSONObject element = elements.optJSONObject(index);
                 if (element == null) continue;
                 String kind = element.optString("kind", "");
                 String id = element.optString("id", "");
                 String text = element.optString("text", "");
-                if ("text".equals(kind)) {
+                if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)) {
+                    continue;
+                } else if ("text".equals(kind)) {
                     TextView label = new TextView(this);
                     label.setTag(id);
                     label.setText(text);
