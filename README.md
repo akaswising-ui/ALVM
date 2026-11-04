@@ -12,11 +12,41 @@ The Android app packages the complete ALVM Studio interface and its local UI run
 - The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
 - The Android manifest has no Internet or network-state permission. WebView network loads are blocked.
 - Ordinary AL source Run/Compile and native `.room` execution continue through the existing C++17 compiler/ALVM JNI bridge.
+- AL programs can declare native Android screens with `UI.screen`, `UI.text` and `UI.button`. Android Java renders these as native Views; button clicks call the named AL `void handler(string buttonId)` function in the C++ VM. `UI.getInt` / `UI.setInt` provide integer state across UI events.
 - The prior local Studio browser runtime, touch-game preview and Chess preview are kept in the bundled UI for the commands they already handled. They do not require a server connection.
 - The editor, UI libraries page, website builder, local export and file-picker interface are included in the offline assets.
 
 The native C++ compiler/VM source is not replaced by the browser prototype compiler. Unsupported native language features remain unsupported until implemented and tested in the native engine. The local game preview is a Studio runtime feature, not evidence that AL's native graphics/game APIs are implemented.
 
+## Stage 15: native AL UI and Java Android rendering
+
+AL can now declare a basic native Android screen. The UI commands are part of AL source and compiled into `.room` bytecode; the Android host renders them with Java `TextView`, `Button` and `GridLayout` views. This does not use a preloaded Calculator or a JavaScript-created game scene.
+
+```al
+room Main {
+    public static void main() {
+        UI.screen("My AL App");
+        UI.text("message", "Hello from AL");
+        UI.button("tap", "Tap me", "onTap");
+    }
+}
+
+void onTap(string buttonId) {
+    UI.setText("message", "AL button clicked: " + buttonId);
+}
+```
+
+Supported calls:
+- `UI.screen(title)`: set the native screen title.
+- `UI.text(id, value)`: create or replace a text display.
+- `UI.button(id, label, "handler")`: create a button and bind it to a global AL `void handler(string buttonId)` function.
+- `UI.setText(id, value)`: update an existing text display with a string or integer.
+- `UI.setInt(key, value)` and `UI.getInt(key, defaultValue)`: keep integer state between button events in the running app.
+- `UI.clear()`: clear UI elements and integer state.
+
+The Android Java host creates and updates actual native Android Views. A click calls back into the C++ ALVM, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
+
+The `.room` format advances to v9 for the `UiCall` opcode. Recompile v8 bytecode from source. This first UI stage does not yet include editable text fields, arbitrary layout trees, lifecycle callbacks, touch gestures, graphics or audio.
 ## Stage 13: explicit base-constructor calls
 
 Derived constructors may begin with `super(arguments);` to select a matching base constructor. Arguments are type-checked using the base class's constructor overload set. The call must be the first statement and can appear only in a derived-class constructor. When omitted, the compiler inserts the base class zero-argument constructor call; compilation fails if no such constructor exists.
@@ -152,7 +182,7 @@ room Main {
 
 ## Still pending
 
-Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, multidimensional arrays, generics, enums, exceptions, modules, full standard libraries, AL-native GUI and Android controls, touch/gesture APIs, graphics/audio engine, database/networking APIs, `.AL` application packaging and building a user AL program into an Android APK remain pending. The ALVM Studio Android app itself already has an offline APK build; that is not the same as generating APKs from AL programs.
+Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, multidimensional arrays, generics, enums, exceptions, modules, full standard libraries, Richer layout containers, editable text fields, touch/gesture APIs, graphics/audio engine, database/networking APIs, `.AL` application packaging and building a user AL program into an Android APK remain pending. The ALVM Studio Android app itself already has an offline APK build; that is not the same as generating APKs from AL programs.
 
 ## Build
 
@@ -164,4 +194,4 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The `.room` binary format is v8. Stage 14 adds the `NewArraySized` opcode; recompile version 7 bytecode from its `.al` source.
+The `.room` binary format is v9. Stage 15 adds the `UiCall` opcode; recompile version 8 bytecode from its `.al` source.
