@@ -18,7 +18,7 @@ class Child extends Base {
 
 ## Stage 12: constructor overloading
 
-Classes can declare multiple constructors with distinct parameter type lists. `new ClassName(arguments)` resolves the matching constructor using the same exact-match preference and ambiguity rejection used by function and method calls. The compiler assigns each constructor a collision-resistant internal symbol. Derived constructors still invoke the base class zero-argument constructor automatically; explicit `super(arguments)` remains pending.
+Classes can declare multiple constructors with distinct parameter type lists. `new ClassName(arguments)` resolves the matching constructor using the same exact-match preference and ambiguity rejection used by function and method calls. The compiler assigns each constructor a collision-resistant internal symbol. Derived constructors may invoke a matching base constructor explicitly with `super(arguments);`. If omitted, the compiler invokes the base class zero-argument constructor automatically.
 
 ```al
 class Box {
@@ -40,7 +40,7 @@ class Calculator {
 }
 ```
 
-This stage adds instance method overloading. Constructor overloading and virtual method overriding remain pending.
+This stage adds instance method overloading. Constructor overloading is implemented in Stage 12; virtual method overriding remains pending.
 
 ## Stage 10: global function overloading
 
@@ -51,7 +51,7 @@ int calculate(int a, int b) { return a + b; }
 string calculate(string a, string b) { return a + b; }
 ```
 
-This stage adds global function overloading only. Method and constructor overloading remain pending.
+This stage adds global function overloading. Instance method and constructor overloading are implemented in later stages.
 
 ## Stage 9: array foreach iteration
 
@@ -73,7 +73,7 @@ Current C++17 compiler pipeline:
 Implemented:
 - Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
 - Typed functions, parameters, return values, recursion and global function overloading.
-- Classes, fields, objects, constructors, instance methods, `this`, inheritance and derived-to-base assignment.
+- Classes, fields, objects, overloaded constructors and methods, `this`, inheritance, explicit base-constructor calls and derived-to-base assignment.
 - `if/else`, `while`, `for`, `do/while` and typed `foreach` array iteration.
 - `switch/case/default` for `int`, `string` and `boolean` expressions.
 - `break` exits the nearest loop or switch.
@@ -117,7 +117,7 @@ room Main {
 
 ## Still pending
 
-virtual overriding, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
 
 ## Build
 
