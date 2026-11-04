@@ -8,7 +8,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.json.JSONArray;
@@ -27,12 +26,15 @@ public final class CiRuntimeUpdater {
         public final String assetName;
         public final String downloadUrl;
         public final String assetDigest;
+        public final String checksumUrl;
 
-        Release(String version, String assetName, String downloadUrl, String assetDigest) {
+        Release(String version, String assetName, String downloadUrl,
+                String assetDigest, String checksumUrl) {
             this.version = version;
             this.assetName = assetName;
             this.downloadUrl = downloadUrl;
             this.assetDigest = assetDigest;
+            this.checksumUrl = checksumUrl;
         }
     }
 
@@ -69,8 +71,17 @@ public final class CiRuntimeUpdater {
                     String name = asset.optString("name", "");
                     String url = asset.optString("browser_download_url", "");
                     if (!name.endsWith(".ciruntime") || url.isEmpty()) continue;
+                    String checksumUrl = "";
+                    for (int checksumIndex = 0; checksumIndex < assets.length(); checksumIndex++) {
+                        JSONObject checksumAsset = assets.optJSONObject(checksumIndex);
+                        if (checksumAsset != null
+                                && (name + ".sha256").equals(checksumAsset.optString("name", ""))) {
+                            checksumUrl = checksumAsset.optString("browser_download_url", "");
+                            break;
+                        }
+                    }
                     Release candidate = new Release(version, name, url,
-                            asset.optString("digest", ""));
+                            asset.optString("digest", ""), checksumUrl);
                     if (latest == null || compareVersions(candidate.version, latest.version) > 0) {
                         latest = candidate;
                     }
@@ -148,14 +159,15 @@ public final class CiRuntimeUpdater {
             }
             if (total == 0) throw new IllegalStateException("Runtime package was empty");
 
+            StringBuilder actual = new StringBuilder();
+            for (byte value : digest.digest()) actual.append(String.format(Locale.ROOT, "%02x", value));
             String expected = release.assetDigest == null ? "" : release.assetDigest.trim();
             if (expected.startsWith("sha256:")) expected = expected.substring(7);
-            if (!expected.isEmpty()) {
-                StringBuilder actual = new StringBuilder();
-                for (byte value : digest.digest()) actual.append(String.format(Locale.ROOT, "%02x", value));
-                if (!actual.toString().equalsIgnoreCase(expected)) {
-                    throw new SecurityException("GitHub asset SHA-256 verification failed");
-                }
+            if (expected.isEmpty() && release.checksumUrl != null && !release.checksumUrl.isEmpty()) {
+                expected = downloadChecksum(release.checksumUrl);
+            }
+            if (!expected.isEmpty() && !actual.toString().equalsIgnoreCase(expected)) {
+                throw new SecurityException("CI Runtime package SHA-256 verification failed");
             }
 
             if (destination.exists() && !destination.delete()) {
@@ -168,6 +180,42 @@ public final class CiRuntimeUpdater {
         } catch (Exception error) {
             temporary.delete();
             throw error;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static String downloadChecksum(String checksumUrl) throws Exception {
+        URL source = new URL(checksumUrl);
+        if (!"https".equalsIgnoreCase(source.getProtocol())
+                || !"github.com".equalsIgnoreCase(source.getHost())
+                || !source.getPath().startsWith("/akaswising-ui/ALVM/releases/download/")) {
+            throw new SecurityException("Runtime checksum URL is not an official ALVM release asset");
+        }
+        HttpURLConnection connection = (HttpURLConnection) source.openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(20000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.5.3");
+        try {
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                throw new IllegalStateException("Runtime checksum download failed");
+            }
+            URL finalUrl = connection.getURL();
+            String host = finalUrl.getHost().toLowerCase(Locale.ROOT);
+            if (!"https".equalsIgnoreCase(finalUrl.getProtocol())
+                    || !(host.equals("github.com")
+                    || host.equals("release-assets.githubusercontent.com")
+                    || host.equals("objects.githubusercontent.com"))) {
+                throw new SecurityException("Checksum redirected to an untrusted host");
+            }
+            String body = readText(connection.getInputStream()).trim();
+            if (body.length() > 2048) throw new IllegalStateException("Runtime checksum file is too large");
+            String hash = body.split("\\s+")[0];
+            if (!hash.matches("(?i)^[0-9a-f]{64}$")) {
+                throw new IllegalStateException("Runtime checksum file has an invalid format");
+            }
+            return hash;
         } finally {
             connection.disconnect();
         }
