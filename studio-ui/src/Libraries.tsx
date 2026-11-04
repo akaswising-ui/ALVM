@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Boxes, Code2, Cpu, Database, FileCode2, Folder, Gamepad2, Globe,
-  Image, Layers, Network, ShieldCheck, Plus, Check, ExternalLink
+  Image, Layers, Network, ShieldCheck, Plus, Check, ExternalLink, Volume2, TerminalSquare
 } from 'lucide-react';
 
 type Entry = { id: string; title: string; description: string; snippet: string };
@@ -95,6 +95,26 @@ const modules: Module[] = [
     ]
   },
   {
+  {
+    id: 'audio', name: 'AL.Audio', group: 'System libraries', status: 'Planned',
+    detail: 'Native audio playback, sound effects, volume control and audio resource management. These APIs remain planned until the AL runtime and Android host implement and test them.',
+    entries: [
+      { id: 'play', title: 'Play audio', description: 'Play an audio asset from the application package.', snippet: 'Audio.play("assets/sound.ogg");' },
+      { id: 'effect', title: 'Sound effect', description: 'Play a short sound effect.', snippet: 'Audio.playEffect("assets/click.wav");' },
+      { id: 'volume', title: 'Set volume', description: 'Set the application audio volume.', snippet: 'Audio.setVolume(0.7);' },
+      { id: 'stop', title: 'Stop playback', description: 'Stop the currently playing audio resource.', snippet: 'Audio.stop();' }
+    ]
+  },
+  {
+    id: 'system', name: 'AL.System', group: 'System libraries', status: 'Planned',
+    detail: 'Platform information, app lifecycle, permissions and system capability access. Operations will be permission-scoped and implemented by the native runtime.',
+    entries: [
+      { id: 'platform', title: 'Platform information', description: 'Read the operating system and device platform.', snippet: 'System.platform();' },
+      { id: 'device', title: 'Device information', description: 'Read permitted device capability information.', snippet: 'System.deviceInfo();' },
+      { id: 'permission', title: 'Request permission', description: 'Request a capability from the Android host.', snippet: 'System.requestPermission("camera");' },
+      { id: 'exit', title: 'Exit application', description: 'Request a normal application exit.', snippet: 'System.exit();' }
+    ]
+  },
     id: 'database', name: 'Database Library', group: 'Data libraries', status: 'Planned',
     detail: 'Structured storage, tables, queries, indexes and persistence.',
     entries: [
@@ -132,13 +152,13 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
           <h2>Library Store</h2>
           <p>Choose a module, add reusable components to your project, and build with them.</p>
         </div>
-        <div className="library-count"><Boxes size={17} /> 10 MODULES</div>
+        <div className="library-count"><Boxes size={17} /> {modules.length} MODULES</div>
       </div>
       <div className="library-layout">
         <nav className="library-list" aria-label="AL modules">
           {modules.map(module => (
             <button key={module.id} className={selected === module.id ? 'library-item selected' : 'library-item'} onClick={() => { setSelected(module.id); setQuery(''); }}>
-              <span>{module.id === 'website' ? <Globe size={17} /> : module.id === 'standard' ? <Boxes size={17} /> : module.id === 'graphics' ? <Image size={17} /> : module.id === 'filesystem' ? <Folder size={17} /> : module.id === 'network' ? <Network size={17} /> : module.id === 'gui' ? <Layers size={17} /> : module.id === 'game' ? <Gamepad2 size={17} /> : module.id === 'database' ? <Database size={17} /> : module.id === 'vm' ? <Cpu size={17} /> : <Code2 size={17} />}</span>
+              <span>{module.id === 'website' ? <Globe size={17} /> : module.id === 'standard' ? <Boxes size={17} /> : module.id === 'graphics' ? <Image size={17} /> : module.id === 'filesystem' ? <Folder size={17} /> : module.id === 'network' ? <Network size={17} /> : module.id === 'gui' ? <Layers size={17} /> : module.id === 'game' ? <Gamepad2 size={17} /> : module.id === 'database' ? <Database size={17} /> : module.id === 'audio' ? <Volume2 size={17} /> : module.id === 'system' ? <TerminalSquare size={17} /> : module.id === 'vm' ? <Cpu size={17} /> : <Code2 size={17} />}</span>
               <span>{module.name}</span>
               <small>{module.status === 'Planned' ? 'ROADMAP' : module.status === 'Prototype' ? 'CORE' : 'BUILDER'}</small>
             </button>
