@@ -25,12 +25,6 @@ android {
         }
     }
 
-    chaquopy {
-        defaultConfig {
-            version = "3.11"
-        }
-    }
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -41,6 +35,12 @@ android {
             path file('src/main/cpp/CMakeLists.txt')
             version '3.22.1'
         }
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.11"
     }
 }
 
