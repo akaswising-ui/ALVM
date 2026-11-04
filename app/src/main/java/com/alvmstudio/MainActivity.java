@@ -21,6 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
+import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONObject;
 
@@ -49,6 +50,7 @@ public class MainActivity extends Activity {
     }
 
     private WebView webView;
+    private WebViewAssetLoader assetLoader;
     private ValueCallback<Uri[]> pendingFileCallback;
     private boolean saveAfterFolderPick = false;
     private boolean openAfterFolderPick = false;
@@ -87,6 +89,10 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(9, 13, 21));
         initWorkspaceFolders();
 
+        assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .build();
+
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(9, 13, 21));
 
@@ -100,7 +106,7 @@ public class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setAllowFileAccess(true);
+        settings.setAllowFileAccess(false);
         settings.setBlockNetworkLoads(true);
         settings.setAllowContentAccess(true);
 
@@ -108,14 +114,23 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                // The app shell is bundled locally. Block navigation to remote pages.
-                return !"file".equalsIgnoreCase(request.getUrl().getScheme());
+                Uri uri = request.getUrl();
+                boolean localAsset = "https".equalsIgnoreCase(uri.getScheme())
+                        && "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())
+                        && uri.getPath() != null && uri.getPath().startsWith("/assets/");
+                return !localAsset;
+            }
+
+            @Override
+            public android.webkit.WebResourceResponse shouldInterceptRequest(
+                    WebView view, WebResourceRequest request) {
+                return assetLoader.shouldInterceptRequest(request.getUrl());
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (url != null && url.startsWith("file:///android_asset/")) installNativeUiHooks();
+                if (url != null && url.startsWith("https://appassets.androidplatform.net/assets/")) installNativeUiHooks();
             }
 
             @Override
@@ -148,7 +163,7 @@ public class MainActivity extends Activity {
         });
 
         setContentView(webView);
-        webView.loadUrl("file:///android_asset/index.html");
+        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
     }
 
     private void installNativeUiHooks() {
