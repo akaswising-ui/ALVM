@@ -209,6 +209,9 @@ class IRGenerator {
   std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds, classIds;
   std::map<std::string,std::map<std::string,int>> fieldSlots;
   std::map<std::string,std::string> baseClasses;
+  struct LoopPatch { int continueTarget=-1; std::vector<int> pendingContinues; };
+  std::vector<LoopPatch> loopPatches;
+  std::vector<std::vector<int>> breakPatches;
   int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
   void expression(const Expr& e){
@@ -246,8 +249,12 @@ class IRGenerator {
       case Stmt::Print:expression(*s.expr);emit(Op::Print);break;
       case Stmt::Return:if(s.expr)expression(*s.expr);emit(Op::Ret);break;
       case Stmt::If:{expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);if(s.second){int j=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();statement(*s.second);code[j].arg=(int64_t)code.size();}else code[jf].arg=(int64_t)code.size();break;}
-      case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.first);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();break;}
-      case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}
+      case Stmt::While:{int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);breakPatches.emplace_back();loopPatches.push_back({start,{}});statement(*s.first);for(int j:loopPatches.back().pendingContinues)code[j].arg=start;loopPatches.pop_back();emit(Op::Jump,start);int end=(int)code.size();code[jf].arg=end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();break;}
+      case Stmt::DoWhile:{int start=(int)code.size();breakPatches.emplace_back();loopPatches.push_back({-1,{}});statement(*s.first);int conditionStart=(int)code.size();for(int j:loopPatches.back().pendingContinues)code[j].arg=conditionStart;loopPatches.pop_back();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);emit(Op::Jump,start);int end=(int)code.size();code[jf].arg=end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();break;}
+      case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);breakPatches.emplace_back();loopPatches.push_back({-1,{}});statement(*s.third);int incrementStart=(int)code.size();for(int j:loopPatches.back().pendingContinues)code[j].arg=incrementStart;loopPatches.pop_back();statement(*s.second);emit(Op::Jump,start);int end=(int)code.size();code[jf].arg=end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();slots=std::move(saved);break;}
+      case Stmt::Switch:{int switchSlot=next++;expression(*s.expr);emit(Op::Store,switchSlot);breakPatches.emplace_back();std::vector<int> bodyJumps(s.caseValues.size(),-1);int defaultIndex=-1;for(size_t i=0;i<s.caseValues.size();++i){if(s.caseDefault[i]){defaultIndex=(int)i;continue;}emit(Op::Load,switchSlot);expression(*s.caseValues[i]);emit(Op::Eq);int jf=emit(Op::JumpFalse,-1);bodyJumps[i]=emit(Op::Jump,-1);code[jf].arg=(int64_t)code.size();}int noMatch=emit(Op::Jump,-1);std::vector<int> bodyStarts(s.caseValues.size(),-1);for(size_t i=0;i<s.caseValues.size();++i){bodyStarts[i]=(int)code.size();if(bodyJumps[i]>=0)code[bodyJumps[i]].arg=bodyStarts[i];for(const auto& child:s.caseStatements[i])statement(*child);}int end=(int)code.size();code[noMatch].arg=defaultIndex>=0?bodyStarts[(size_t)defaultIndex]:end;for(int j:breakPatches.back())code[j].arg=end;breakPatches.pop_back();break;}
+      case Stmt::Break:{if(breakPatches.empty())throw Error("break outside switch or loop during code generation");breakPatches.back().push_back(emit(Op::Jump,-1));break;}
+      case Stmt::Continue:{if(loopPatches.empty())throw Error("continue outside loop during code generation");int jump=emit(Op::Jump,-1);if(loopPatches.back().continueTarget>=0)code[jump].arg=loopPatches.back().continueTarget;else loopPatches.back().pendingContinues.push_back(jump);break;}
     }
   }
   void compileFunction(const Function& fn,IRProgram& out){
