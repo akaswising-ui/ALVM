@@ -21,10 +21,10 @@ test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
 
 
 "$BIN" compile "$ROOT/examples/array_allocation.al" -o "$TMP/array-allocation.room"
-ARRAY_ALLOCATION_EXPECTED="$(printf '5\\n10\\n0\\n50\\n\\nAL\\n0\\nfalse\\ntrue')"
+ARRAY_ALLOCATION_EXPECTED="$(printf '5\n10\n0\n50\n\nAL\n0\nfalse\ntrue')"
 ARRAY_ALLOCATION_ACTUAL="$("$BIN" run "$TMP/array-allocation.room")"
 if [[ "$ARRAY_ALLOCATION_ACTUAL" != "$ARRAY_ALLOCATION_EXPECTED" ]]; then
-  printf 'array allocation expected:\\n%s\\narray allocation actual:\\n%s\\n' "$ARRAY_ALLOCATION_EXPECTED" "$ARRAY_ALLOCATION_ACTUAL" >&2
+  printf 'array allocation expected:\n%s\narray allocation actual:\n%s\n' "$ARRAY_ALLOCATION_EXPECTED" "$ARRAY_ALLOCATION_ACTUAL" >&2
   exit 1
 fi
 
