@@ -1,6 +1,7 @@
 import hashlib
 import json
 import struct
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -155,6 +156,60 @@ class CiRuntimeTests(unittest.TestCase):
             fallback = json.loads(manager.run_room_json(str(room), str(root)))
             self.assertTrue(fallback["ok"], fallback)
             self.assertEqual(fallback["runtimeVersion"], "1.0.0")
+
+
+    def test_cpp_compiler_output_runs_in_python_runtime(self):
+        repository = Path(__file__).resolve().parents[1]
+        compiler = repository / "build" / "alvm"
+        if not compiler.is_file():
+            self.skipTest("Build build/alvm first to run the compiler/runtime integration test")
+
+        with tempfile.TemporaryDirectory() as folder:
+            room = Path(folder) / "hello.room"
+            source = repository / "examples" / "hello.al"
+            subprocess.run(
+                [str(compiler), "compile", str(source), "-o", str(room)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            result = runtime.run_room(str(room))
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["output"], "30")
+
+    def test_cpp_compiled_calculator_ui_events_run_in_python_runtime(self):
+        repository = Path(__file__).resolve().parents[1]
+        compiler = repository / "build" / "alvm"
+        if not compiler.is_file():
+            self.skipTest("Build build/alvm first to run the compiler/runtime integration test")
+
+        with tempfile.TemporaryDirectory() as folder:
+            room = Path(folder) / "calculator.room"
+            source = repository / "examples" / "calculator.al"
+            subprocess.run(
+                [str(compiler), "compile", str(source), "-o", str(room)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            result = runtime.run_room(str(room))
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["ui"]["title"], "AL Calculator")
+            self.assertTrue(any(
+                element["kind"] == "button" and element["id"] == "equals"
+                for element in result["ui"]["elements"]
+            ))
+
+            for event in ("2", "3", "plus", "4", "equals"):
+                result = runtime.run_room(str(room), "onKey", event)
+                self.assertTrue(result["ok"], result)
+
+            display = next(
+                element for element in result["ui"]["elements"]
+                if element["id"] == "display"
+            )
+            self.assertEqual(display["text"], "27")
 
     def test_rejects_wrong_room_version(self):
         result = self.run_bytes(room_file([instruction(25)], version=8))
