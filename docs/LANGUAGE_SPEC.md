@@ -157,9 +157,11 @@ The native Android runtime supports a declarative screen API:
 UI.screen("AL App");
 UI.text("display", "0");
 UI.button("one", "1", "onButton");
+    }
 
-void onButton(string buttonId) {
-    UI.setText("display", buttonId);
+    void onButton(string buttonId) {
+        UI.setText("display", buttonId);
+    }
 }
 ```
 
