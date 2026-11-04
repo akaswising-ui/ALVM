@@ -37,7 +37,11 @@ test "$("$BIN" run "$TMP/constructors.room")" = "$CONSTRUCTOR_EXPECTED"
 
 "$BIN" compile "$ROOT/examples/control_flow_complete.al" -o "$TMP/control-complete.room"
 CONTROL_COMPLETE_EXPECTED="$(printf '10\n12\n4\n20\n2')"
-test "$("$BIN" run "$TMP/control-complete.room")" = "$CONTROL_COMPLETE_EXPECTED"
+CONTROL_COMPLETE_ACTUAL="$("$BIN" run "$TMP/control-complete.room")"
+if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
+  printf 'control-flow expected:\n%s\ncontrol-flow actual:\n%s\n' "$CONTROL_COMPLETE_EXPECTED" "$CONTROL_COMPLETE_ACTUAL" >&2
+  exit 1
+fi
 
 for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
