@@ -27,6 +27,26 @@ class Child extends Base {
 }
 ```
 
+## Stage 14: sized primitive-array allocation
+
+AL supports runtime-sized allocations for the three currently implemented primitive array types:
+
+```al
+int[] scores = new int[5];
+string[] names = new string[2];
+boolean[] flags = new boolean[3];
+
+scores[0] = 10;
+AL.print(scores.length); // 5
+AL.print(scores[1]);     // 0 (default)
+AL.print(names[0]);      // empty string (default)
+AL.print(flags[0]);      // false (default)
+```
+
+The compiler type-checks the length expression as `int` and emits the `NewArraySized` instruction. The verifier checks the encoded element type and stack effect. The VM allocates the array and initializes each slot to the type's default value. Runtime lengths must be between 0 and 100000 inclusive. This stage adds a real opcode and advances the binary `.room` format from version 7 to version 8. Existing version 7 files must be recompiled from their `.al` sources.
+
+This stage does **not** add object arrays, multidimensional arrays, generics, lists, maps or sets.
+
 ## Stage 12: constructor overloading
 
 Classes can declare multiple constructors with distinct parameter type lists. `new ClassName(arguments)` resolves the matching constructor using the same exact-match preference and ambiguity rejection used by function and method calls. The compiler assigns each constructor a collision-resistant internal symbol. Derived constructors may invoke a matching base constructor explicitly with `super(arguments);`. If omitted, the compiler invokes the base class zero-argument constructor automatically.
@@ -79,7 +99,7 @@ foreach (int score : scores) {
 
 Current C++17 compiler pipeline:
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v8 -> verifier -> ALVM`
 
 Implemented:
 - Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
@@ -128,7 +148,7 @@ room Main {
 
 ## Still pending
 
-Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, multidimensional arrays, generics, enums, exceptions, modules, full standard libraries, AL-native GUI and Android controls, touch/gesture APIs, graphics/audio engine, database/networking APIs, `.AL` application packaging and building a user AL program into an Android APK remain pending. The ALVM Studio Android app itself already has an offline APK build; that is not the same as generating APKs from AL programs.
 
 ## Build
 
