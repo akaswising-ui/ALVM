@@ -262,15 +262,94 @@ public:
     return out;
   }
 };struct Bytecode { Op op; int64_t arg=0; std::string text; };
-class BytecodeLowerer { public: std::vector<Bytecode> lower(const std::vector<IR>& ir){std::vector<Bytecode> out;out.reserve(ir.size());for(const auto& i:ir)out.push_back({i.op,i.arg,i.text});return out;} };
+struct FunctionBC { std::string name; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
+class BytecodeLowerer {
+public:
+  std::vector<FunctionBC> lower(const std::vector<FunctionIR>& ir){
+    std::vector<FunctionBC> out;
+    for(const auto& fn:ir){
+      FunctionBC b;b.name=fn.name;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
+      for(const auto& i:fn.code)b.code.push_back({i.op,i.arg,i.text});
+      out.push_back(std::move(b));
+    }
+    return out;
+  }
+};
 static void writeU32(std::ofstream& f,uint32_t x){for(int i=0;i<4;++i)f.put((char)(x>>(8*i)));}
 static uint32_t readU32(std::ifstream& f){uint32_t x=0;for(int i=0;i<4;++i){int c=f.get();if(c==EOF)throw Error("Truncated .room file");x|=(uint32_t)(uint8_t)c<<(8*i);}return x;}
 static void writeU64(std::ofstream& f,uint64_t x){for(int i=0;i<8;++i)f.put((char)(x>>(8*i)));}
 static uint64_t readU64(std::ifstream& f){uint64_t x=0;for(int i=0;i<8;++i){int c=f.get();if(c==EOF)throw Error("Truncated .room file");x|=(uint64_t)(uint8_t)c<<(8*i);}return x;}
-static void saveRoom(const std::string& path,const std::vector<Bytecode>& code){std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");f.write("ALRM",4);writeU32(f,3);writeU32(f,(uint32_t)code.size());for(const auto& i:code){f.put((char)i.op);writeU64(f,(uint64_t)i.arg);if(i.text.size()>1000000)throw Error("String constant too large");writeU32(f,(uint32_t)i.text.size());f.write(i.text.data(),(std::streamsize)i.text.size());}if(!f)throw Error("Failed writing .room file");}
-static std::vector<Bytecode> loadRoom(const std::string& path){std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");if(readU32(f)!=3)throw Error("Unsupported .room version (expected 3)");uint32_t n=readU32(f);if(n==0||n>1000000)throw Error("Invalid instruction count");std::vector<Bytecode> code;code.reserve(n);for(uint32_t k=0;k<n;++k){int op=f.get();if(op<1||op>(int)Op::ArrayLength)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);uint32_t len=readU32(f);if(len>1000000)throw Error("Constant length limit exceeded");std::string text(len,'\0');if(len){f.read(text.data(),len);if((uint32_t)f.gcount()!=len)throw Error("Truncated string constant");}code.push_back({(Op)op,arg,std::move(text)});}if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");return code;}
-static int stackDelta(Op op){switch(op){case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:return 1;case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;case Op::ArraySet:return -3;default:return 0;}}
-static void verify(const std::vector<Bytecode>& c){if(c.empty()||c.back().op!=Op::Halt)throw Error("Bytecode must end with HALT");std::vector<int> depth(c.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);while(!q.empty()){size_t pc=q.front();q.pop();const auto& i=c[pc];int before=depth[pc],need=0,delta=stackDelta(i.op);switch(i.op){case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:need=1;break;case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:need=2;break;case Op::ArraySet:need=3;break;case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;default:break;}if(before<need)throw Error("Bytecode stack underflow at instruction "+std::to_string(pc));int after=before+delta;auto visit=[&](int64_t dest){if(dest<0||(uint64_t)dest>=c.size())throw Error("Invalid jump target");size_t d=(size_t)dest;if(depth[d]==-1){depth[d]=after;q.push(d);}else if(depth[d]!=after)throw Error("Inconsistent stack depth at control-flow join");};if(i.op==Op::Jump)visit(i.arg);else if(i.op==Op::JumpFalse){visit(i.arg);if(pc+1<c.size())visit((int64_t)pc+1);}else if(i.op!=Op::Halt){if(pc+1>=c.size())throw Error("Execution can fall off end of bytecode");visit((int64_t)pc+1);}}}
+static void writeString(std::ofstream& f,const std::string& value){if(value.size()>1000000)throw Error("String too long for .room file");writeU32(f,(uint32_t)value.size());f.write(value.data(),(std::streamsize)value.size());}
+static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
+static void saveRoom(const std::string& path,const std::vector<FunctionBC>& functions){
+  std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
+  f.write("ALRM",4);writeU32(f,4);writeU32(f,(uint32_t)functions.size());
+  for(const auto& fn:functions){
+    writeString(f,fn.name);f.put((char)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
+    for(const auto& i:fn.code){f.put((char)i.op);writeU64(f,(uint64_t)i.arg);writeString(f,i.text);}
+  }
+  if(!f)throw Error("Failed writing .room file");
+}
+static std::vector<FunctionBC> loadRoom(const std::string& path){
+  std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
+  char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
+  if(readU32(f)!=4)throw Error("Unsupported .room version (expected 4)");
+  uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");
+  std::vector<FunctionBC> functions;functions.reserve(n);
+  for(uint32_t j=0;j<n;++j){
+    FunctionBC fn;fn.name=readString(f);int ty=f.get();if(ty<0||ty>(int)Type::Unknown)throw Error("Invalid function return type");fn.returnType=(Type)ty;
+    fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
+    uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
+    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::Ret)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
+    functions.push_back(std::move(fn));
+  }
+  if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");
+  return functions;
+}
+static int stackDelta(Op op){
+  switch(op){
+    case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:return 1;
+    case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;
+    case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;
+    case Op::ArraySet:return -3;
+    default:return 0;
+  }
+}
+static void verify(const std::vector<FunctionBC>& functions){
+  if(functions.empty()||functions[0].name!="main")throw Error(".room must start with main function");
+  if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
+  std::map<std::string,bool> names;
+  for(const auto& fn:functions){if(fn.name.empty()||names.count(fn.name))throw Error("Empty or duplicate function name");names[fn.name]=true;}
+  for(size_t fi=0;fi<functions.size();++fi){
+    const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
+    std::vector<int> depth(fn.code.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);
+    while(!q.empty()){
+      size_t pc=q.front();q.pop();const auto& i=fn.code[pc];
+      if((i.op==Op::Load||i.op==Op::Store)&&(i.arg<0||(uint64_t)i.arg>=fn.localCount))throw Error("Invalid local slot");
+      int before=depth[pc],need=0,delta=stackDelta(i.op);
+      switch(i.op){
+        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:need=1;break;
+        case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:need=2;break;
+        case Op::ArraySet:need=3;break;
+        case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
+        case Op::Call:{
+          if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
+          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount;delta=(target.returnType==Type::Void?0:1)-(int)target.parameterCount;break;
+        }
+        case Op::Ret:need=fn.returnType==Type::Void?0:1;break;
+        default:break;
+      }
+      if(before<need)throw Error("Bytecode stack underflow at "+fn.name+" instruction "+std::to_string(pc));
+      if(i.op==Op::Ret){if(before!=need)throw Error("Invalid stack at RET in function "+fn.name);continue;}
+      if(i.op==Op::Halt){if(fn.name!="main"||before!=0)throw Error("Invalid HALT in bytecode");continue;}
+      int after=before+delta;
+      auto visit=[&](int64_t dest){if(dest<0||(uint64_t)dest>=fn.code.size())throw Error("Invalid jump target");size_t d=(size_t)dest;if(depth[d]==-1){depth[d]=after;q.push(d);}else if(depth[d]!=after)throw Error("Inconsistent stack depth at control-flow join");};
+      if(i.op==Op::Jump)visit(i.arg);
+      else if(i.op==Op::JumpFalse){visit(i.arg);if(pc+1<fn.code.size())visit((int64_t)pc+1);}
+      else if(i.op!=Op::Halt){if(pc+1>=fn.code.size())throw Error("Execution can fall off end of function "+fn.name);visit((int64_t)pc+1);}
+    }
+  }
+}
 struct Array;
 using ArrayPtr=std::shared_ptr<Array>;
 using Value=std::variant<int64_t,std::string,bool,ArrayPtr>;
@@ -281,7 +360,53 @@ static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;th
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
-static void execute(const std::vector<Bytecode>& c){verify(c);std::vector<Value> stack;std::map<int64_t,Value> locals;auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};size_t pc=0;while(pc<c.size()){const auto& i=c[pc];switch(i.op){case Op::PushInt:stack.emplace_back(i.arg);break;case Op::PushString:stack.emplace_back(i.text);break;case Op::PushBool:stack.emplace_back(i.arg!=0);break;case Op::Load:{auto f=locals.find(i.arg);if(f==locals.end())throw Error("Read of uninitialized local variable");stack.push_back(f->second);break;}case Op::Store:locals[i.arg]=pop();break;case Op::Print:std::cout<<show(pop())<<'\n';break;case Op::Pop:pop();break;case Op::Neg:{auto a=integer(pop());if(a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-a);break;}case Op::Not:stack.emplace_back(!boolean(pop()));break;case Op::Add:{Value b=pop(),a=pop();if(std::holds_alternative<std::string>(a)&&std::holds_alternative<std::string>(b))stack.emplace_back(std::get<std::string>(a)+std::get<std::string>(b));else stack.emplace_back(checkedAdd(integer(a),integer(b)));break;}case Op::Sub:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedSub(a,b));break;}case Op::Mul:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedMul(a,b));break;}case Op::Div:case Op::Mod:{auto b=integer(pop()),a=integer(pop());if(b==0)throw Error("Division by zero");if(a==std::numeric_limits<int64_t>::min()&&b==-1)throw Error("Integer overflow");stack.emplace_back(i.op==Op::Div?a/b:a%b);break;}case Op::Eq:case Op::Ne:{Value b=pop(),a=pop();bool same=a.index()==b.index()&&a==b;stack.emplace_back(i.op==Op::Eq?same:!same);break;}case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:{auto b=integer(pop()),a=integer(pop());bool r=i.op==Op::Lt?a<b:i.op==Op::Gt?a>b:i.op==Op::Le?a<=b:a>=b;stack.emplace_back(r);break;}case Op::And:case Op::Or:{bool b=boolean(pop()),a=boolean(pop());stack.emplace_back(i.op==Op::And?(a&&b):(a||b));break;}case Op::NewArray:{if(i.arg<0||(uint64_t)i.arg>stack.size())throw Error("Invalid array construction");auto a=std::make_shared<Array>();a->items.resize((size_t)i.arg);for(size_t k=(size_t)i.arg;k>0;--k)a->items[k-1]=pop();if(!a->items.empty()){a->elementKind=a->items[0].index();for(const auto& v:a->items)if(v.index()!=a->elementKind)throw Error("Array element type mismatch in bytecode");}stack.emplace_back(a);break;}case Op::ArrayGet:{auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array access on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");stack.push_back((*a)->items[(size_t)index]);break;}case Op::ArraySet:{Value value=pop();auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array assignment on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");if((*a)->elementKind==std::numeric_limits<size_t>::max())(*a)->elementKind=value.index();if(value.index()!=(*a)->elementKind)throw Error("Array element type mismatch");(*a)->items[(size_t)index]=std::move(value);break;}case Op::ArrayLength:{Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error(".length on non-array value");stack.emplace_back((int64_t)(*a)->items.size());break;}case Op::Jump:pc=(size_t)i.arg;continue;case Op::JumpFalse:{bool cond=boolean(pop());if(!cond){pc=(size_t)i.arg;continue;}break;}case Op::Halt:return;}++pc;}}
+static void execute(const std::vector<FunctionBC>& functions){
+  verify(functions);
+  struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
+  std::vector<Value> stack;
+  auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
+  Frame entry;entry.function=0;entry.locals.resize(functions[0].localCount);std::vector<Frame> frames;frames.push_back(std::move(entry));
+  while(!frames.empty()){
+    Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");
+    const auto& i=fn.code[frame.pc++];
+    switch(i.op){
+      case Op::PushInt:stack.emplace_back(i.arg);break;
+      case Op::PushString:stack.emplace_back(i.text);break;
+      case Op::PushBool:stack.emplace_back(i.arg!=0);break;
+      case Op::Load:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size()||!frame.locals[(size_t)i.arg])throw Error("Read of uninitialized local variable");stack.push_back(*frame.locals[(size_t)i.arg]);break;}
+      case Op::Store:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size())throw Error("Invalid local slot");frame.locals[(size_t)i.arg]=pop();break;}
+      case Op::Print:std::cout<<show(pop())<<'\n';break;
+      case Op::Pop:pop();break;
+      case Op::Neg:{auto a=integer(pop());if(a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-a);break;}
+      case Op::Not:stack.emplace_back(!boolean(pop()));break;
+      case Op::Add:{Value b=pop(),a=pop();if(std::holds_alternative<std::string>(a)&&std::holds_alternative<std::string>(b))stack.emplace_back(std::get<std::string>(a)+std::get<std::string>(b));else stack.emplace_back(checkedAdd(integer(a),integer(b)));break;}
+      case Op::Sub:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedSub(a,b));break;}
+      case Op::Mul:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedMul(a,b));break;}
+      case Op::Div:case Op::Mod:{auto b=integer(pop()),a=integer(pop());if(b==0)throw Error("Division by zero");if(a==std::numeric_limits<int64_t>::min()&&b==-1)throw Error("Integer overflow");stack.emplace_back(i.op==Op::Div?a/b:a%b);break;}
+      case Op::Eq:case Op::Ne:{Value b=pop(),a=pop();bool same=a.index()==b.index()&&a==b;stack.emplace_back(i.op==Op::Eq?same:!same);break;}
+      case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:{auto b=integer(pop()),a=integer(pop());bool r=i.op==Op::Lt?a<b:i.op==Op::Gt?a>b:i.op==Op::Le?a<=b:a>=b;stack.emplace_back(r);break;}
+      case Op::And:case Op::Or:{bool b=boolean(pop()),a=boolean(pop());stack.emplace_back(i.op==Op::And?(a&&b):(a||b));break;}
+      case Op::NewArray:{if(i.arg<0||(uint64_t)i.arg>stack.size())throw Error("Invalid array construction");auto a=std::make_shared<Array>();a->items.resize((size_t)i.arg);for(size_t k=(size_t)i.arg;k>0;--k)a->items[k-1]=pop();if(!a->items.empty()){a->elementKind=a->items[0].index();for(const auto& v:a->items)if(v.index()!=a->elementKind)throw Error("Array element type mismatch in bytecode");}stack.emplace_back(a);break;}
+      case Op::ArrayGet:{auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array access on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");stack.push_back((*a)->items[(size_t)index]);break;}
+      case Op::ArraySet:{Value value=pop();auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array assignment on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");if((*a)->elementKind==std::numeric_limits<size_t>::max())(*a)->elementKind=value.index();if(value.index()!=(*a)->elementKind)throw Error("Array element type mismatch");(*a)->items[(size_t)index]=std::move(value);break;}
+      case Op::ArrayLength:{Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error(".length on non-array value");stack.emplace_back((int64_t)(*a)->items.size());break;}
+      case Op::Call:{
+        size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
+        std::vector<Value> args(callee.parameterCount);for(size_t k=callee.parameterCount;k>0;--k)args[k-1]=pop();
+        Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);
+        frames.push_back(std::move(next));break;
+      }
+      case Op::Ret:{
+        bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;
+        frames.pop_back();if(frames.empty())return;
+        if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;
+      }
+      case Op::Jump:frame.pc=(size_t)i.arg;break;
+      case Op::JumpFalse:{bool cond=boolean(pop());if(!cond)frame.pc=(size_t)i.arg;break;}
+      case Op::Halt:return;
+    }
+  }
+}
 } // namespace al
 
 int main(int argc,char** argv){try{if(argc<3){std::cerr<<"Usage: alvm compile <file.al> [-o file.room] | run <file.room> | disasm <file.room>\n";return 2;}std::string command=argv[1],input=argv[2];if(command=="compile"){std::ifstream f(input);if(!f)throw al::Error("Cannot open source file");std::string source((std::istreambuf_iterator<char>(f)),{});al::Program program=al::Parser(source).parse();al::SemanticAnalyzer().analyze(program);auto ir=al::IRGenerator().generate(program);auto bc=al::BytecodeLowerer().lower(ir);std::string output=input;auto dot=output.find_last_of('.');if(dot!=std::string::npos)output.resize(dot);output+=".room";for(int i=3;i+1<argc;++i)if(std::string(argv[i])=="-o")output=argv[i+1];al::saveRoom(output,bc);std::cout<<"Compiled "<<output<<" ("<<bc.size()<<" instructions)\n";}else if(command=="run"){al::execute(al::loadRoom(input));}else if(command=="disasm"){auto bc=al::loadRoom(input);al::verify(bc);for(size_t i=0;i<bc.size();++i)std::cout<<i<<": op="<<(int)bc[i].op<<" arg="<<bc[i].arg<<(bc[i].text.empty()?"":" text=\""+bc[i].text+"\"")<<'\n';}else throw al::Error("Unknown command: "+command);return 0;}catch(const std::exception& e){std::cerr<<"AL error: "<<e.what()<<'\n';return 1;}}
