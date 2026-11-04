@@ -192,6 +192,7 @@ public:
     }
     for(const auto& cls:p.classes){
       auto& info=classes.at(cls.name);
+      if(!cls.baseClass.empty()){const auto& parent=classes.at(cls.baseClass);info.methods=parent.methods;info.staticMethods=parent.staticMethods;}
       for(const auto& method:cls.methods){
         Signature sig=signature(method);
         if(method.isConstructor){
