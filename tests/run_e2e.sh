@@ -19,6 +19,14 @@ test "$("$BIN" run "$TMP/logic.room")" = "short circuit ok"
 ARRAY_EXPECTED="$(printf '10\n3\n18\n7\nAL Bytecode\n2\nflags ok')"
 test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
 
+"$BIN" compile "$ROOT/examples/overloading.al" -o "$TMP/overloading.room"
+OVERLOAD_EXPECTED="$(printf '5\nAL\n10')"
+OVERLOAD_ACTUAL="$("$BIN" run "$TMP/overloading.room")"
+if [[ "$OVERLOAD_ACTUAL" != "$OVERLOAD_EXPECTED" ]]; then
+  printf 'overload expected:\n%s\noverload actual:\n%s\n' "$OVERLOAD_EXPECTED" "$OVERLOAD_ACTUAL" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/functions.al" -o "$TMP/functions.room"
 FUNCTION_EXPECTED="$(printf '30\n120\nHello AL\n15')"
 test "$("$BIN" run "$TMP/functions.room")" = "$FUNCTION_EXPECTED"
@@ -51,7 +59,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array; do
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -69,4 +77,4 @@ fi
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
-echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, foreach, switch and loop control"
+echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function overloading, foreach, switch and loop control"
