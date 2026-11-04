@@ -2,9 +2,11 @@ package com.alvmstudio;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
@@ -16,13 +18,19 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.ValueCallback;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -65,10 +73,13 @@ public class MainActivity extends Activity {
     private String currentFileName = "Main.al";
     private String pendingSource = "";
     private boolean compiled = false;
+    private Dialog nativeUiDialog;
 
     private static native String nativeCompile(String source, String filesDir);
     private static native String nativeRun(String roomPath);
     private static native String nativeDisassemble(String roomPath);
+    private static native String nativeGetUiJson();
+    private static native String nativeRunUiEvent(String roomPath, String callback, String eventValue);
 
     private String roomPath() {
         return new File(getFilesDir(), "main.room").getAbsolutePath();
@@ -274,6 +285,7 @@ public class MainActivity extends Activity {
         if (!compiled) return result;
         String output = nativeRun(roomPath());
         if (output == null) output = "";
+        publishNativeUi();
         return "✓ Program completed in native ALVM.\n\n"
                 + (output.trim().isEmpty() ? "(program produced no console output)" : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
     }
@@ -283,6 +295,7 @@ public class MainActivity extends Activity {
         if (!room.exists()) return "✕ No compiled .room file is loaded.";
         try {
             String output = nativeRun(roomPath());
+            publishNativeUi();
             return "✓ .room execution complete.\n\n"
                     + (output == null || output.trim().isEmpty()
                     ? "(program produced no console output)"
@@ -610,6 +623,106 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void publishNativeUi() {
+        final String json;
+        try { json = nativeGetUiJson(); }
+        catch (Exception error) { return; }
+        if (json == null || json.trim().isEmpty()) return;
+        runOnUiThread(() -> showNativeUi(json));
+    }
+
+    private void showNativeUi(String json) {
+        try {
+            JSONObject root = new JSONObject(json);
+            JSONArray elements = root.optJSONArray("elements");
+            if (elements == null || elements.length() == 0) {
+                if (nativeUiDialog != null && nativeUiDialog.isShowing()) nativeUiDialog.dismiss();
+                nativeUiDialog = null;
+                return;
+            }
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setPadding(dp(18), dp(16), dp(18), dp(18));
+            content.setBackground(roundDrawable(Color.rgb(15, 23, 38), dp(20)));
+
+            TextView heading = new TextView(this);
+            heading.setText(root.optString("title", "AL Application"));
+            heading.setTextColor(Color.WHITE);
+            heading.setTextSize(21);
+            heading.setTypeface(null, android.graphics.Typeface.BOLD);
+            heading.setPadding(0, 0, 0, dp(14));
+            content.addView(heading, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            for (int index = 0; index < elements.length(); index++) {
+                JSONObject element = elements.optJSONObject(index);
+                if (element == null) continue;
+                String kind = element.optString("kind", "");
+                String id = element.optString("id", "");
+                String text = element.optString("text", "");
+                if ("text".equals(kind)) {
+                    TextView label = new TextView(this);
+                    label.setTag(id);
+                    label.setText(text);
+                    label.setTextColor(Color.rgb(235, 241, 251));
+                    label.setTextSize(25);
+                    label.setGravity(Gravity.CENTER);
+                    label.setPadding(dp(8), dp(18), dp(8), dp(18));
+                    content.addView(label, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                } else if ("button".equals(kind)) {
+                    String callback = element.optString("callback", "");
+                    Button button = new Button(this);
+                    button.setText(text);
+                    button.setAllCaps(false);
+                    button.setTextColor(Color.WHITE);
+                    button.setTextSize(18);
+                    button.setBackground(roundDrawable(Color.rgb(55, 68, 103), dp(12)));
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
+                    params.topMargin = dp(7);
+                    content.addView(button, params);
+                    button.setOnClickListener(view -> {
+                        try {
+                            String result = nativeRunUiEvent(roomPath(), callback, id);
+                            if (result != null && result.trim().length() > 0) {
+                                showOutputInWeb(result, result.toLowerCase().contains("error")
+                                        ? "RUNTIME ERROR" : "SUCCESS");
+                            }
+                            showNativeUi(nativeGetUiJson());
+                        } catch (Exception error) {
+                            showOutputInWeb("AL UI event error: " + error.getMessage(), "RUNTIME ERROR");
+                        }
+                    });
+                }
+            }
+
+            ScrollView scroll = new ScrollView(this);
+            scroll.setFillViewport(true);
+            scroll.addView(content);
+            if (nativeUiDialog == null) nativeUiDialog = new Dialog(this);
+            nativeUiDialog.setContentView(scroll);
+            nativeUiDialog.setCancelable(true);
+            if (!nativeUiDialog.isShowing()) nativeUiDialog.show();
+            if (nativeUiDialog.getWindow() != null) {
+                nativeUiDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                nativeUiDialog.getWindow().setLayout(
+                        Math.min(getResources().getDisplayMetrics().widthPixels - dp(28), dp(430)),
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+        } catch (Exception error) {
+            showOutputInWeb("Could not render AL UI: " + error.getMessage(), "ERROR");
+        }
+    }
+
+    private GradientDrawable roundDrawable(int color, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        drawable.setStroke(dp(1), Color.rgb(74, 88, 120));
+        return drawable;
+    }
+
     private final class AndroidBridge {
         @JavascriptInterface
         public String runSource(String source, String name) {
@@ -713,6 +826,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (nativeUiDialog != null) { nativeUiDialog.dismiss(); nativeUiDialog = null; }
         if (webView != null) {
             webView.removeJavascriptInterface("Android");
             webView.destroy();
