@@ -20,8 +20,12 @@ ARRAY_EXPECTED="$(printf '10\n3\n18\n7\nAL Bytecode\n2\nflags ok')"
 test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
 
 "$BIN" compile "$ROOT/examples/overloading.al" -o "$TMP/overloading.room"
-OVERLOAD_EXPECTED="$(printf '5\\nAL\\n10')"
-test "$("$BIN" run "$TMP/overloading.room")" = "$OVERLOAD_EXPECTED"
+OVERLOAD_EXPECTED="$(printf '5\nAL\n10')"
+OVERLOAD_ACTUAL="$("$BIN" run "$TMP/overloading.room")"
+if [[ "$OVERLOAD_ACTUAL" != "$OVERLOAD_EXPECTED" ]]; then
+  printf 'overload expected:\n%s\noverload actual:\n%s\n' "$OVERLOAD_EXPECTED" "$OVERLOAD_ACTUAL" >&2
+  exit 1
+fi
 
 "$BIN" compile "$ROOT/examples/functions.al" -o "$TMP/functions.room"
 FUNCTION_EXPECTED="$(printf '30\n120\nHello AL\n15')"
