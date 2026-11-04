@@ -1,0 +1,8 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="#FFFFFFFF"/>
+    <item
+        android:drawable="@drawable/alvm_logo"
+        android:width="280dp"
+        android:height="280dp"
+        android:gravity="center"/>
+</layer-list>
