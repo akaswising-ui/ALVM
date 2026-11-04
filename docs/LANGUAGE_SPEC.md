@@ -1,62 +1,55 @@
-# AL Language Specification: Stage 7
+# AL Language Specification: Stage 8
 
-## Identity
-
-AL uses Python-influenced vocabulary, Java-like source structure, and strict C++-influenced rules. It owns its compiler pipeline and bytecode VM.
-
-## Constructor syntax
+## Control-flow syntax
 
 ```al
-room Main {
-    public static void main() {
-        Player p = new Player(100, "ALVM");
-        AL.print(p.health);
-    }
-
-    class Player {
-        int health;
-        string name;
-
-        Player(int startingHealth, string playerName) {
-            this.health = startingHealth;
-            this.name = playerName;
-        }
-    }
+switch (expression) {
+    case value:
+        statements
+        break;
+    default:
+        statements
 }
+
+do {
+    statements
+} while (condition);
 ```
 
-A constructor is declared with the same name as its class and no return type. Constructor parameters use the supported scalar or class types. The call form is `new ClassName(arguments)`.
+The language also supports `break;` and `continue;` inside their valid contexts.
 
-## Constructor semantics
+## Switch semantics
 
-- If a class declares no constructor, the compiler synthesizes a public zero-argument constructor.
-- If a class declares one constructor, that signature becomes the only accepted allocation signature for that class.
-- Constructor argument count and types are checked during semantic analysis.
-- Constructors have a hidden `this` parameter and execute in a normal VM call frame.
-- The allocated object reference is duplicated before constructor invocation, so the `new` expression evaluates to the initialized object.
-- Constructors have void return semantics. Returning a value is rejected.
-- Derived constructors automatically call their base class constructor with no arguments before executing the derived constructor body.
-- A derived class cannot compile when its base class constructor requires arguments. Explicit `super(arguments)` calls are not implemented.
-- Constructor overloading is not implemented. A class can define exactly one constructor.
-- Classes with no explicit constructor still get a generated zero-argument constructor, including derived classes.
+- The switch expression must have type `int`, `string` or `boolean`.
+- Every case expression must have the same type as the switch expression.
+- A switch can contain at most one `default` label.
+- The switch expression is evaluated once and stored in a compiler-generated local slot.
+- Case expressions are tested in source order using equality.
+- If a case matches, execution begins at that case body.
+- Case bodies fall through into the next case unless they execute `break;` or otherwise leave the switch.
+- If no case matches, execution transfers to the default body. Without a default, the switch ends.
+- `break;` exits the nearest enclosing loop or switch.
 
-## Inherited language features
+## Loop control
 
-Stage 7 retains:
-- Scalar and array types, expressions, arithmetic, comparisons and boolean short-circuiting.
-- `if/else`, `while`, `for`.
-- Typed functions, parameters, returns and recursion.
-- Classes, scalar fields, object creation, field access, instance methods and `this`.
-- Single inheritance using `extends`, inherited fields/methods and derived-to-base assignment.
-- Typed arrays, indexing, mutation, bounds checking and `.length`.
-- Runtime overflow and division-by-zero checks.
+- `do { ... } while (condition);` executes its body at least once. Its condition must be boolean.
+- `continue;` in a `while` loop transfers to its condition check.
+- `continue;` in a `do/while` loop transfers to the trailing condition check.
+- `continue;` in a `for` loop transfers to the increment expression, then to the condition check.
+- `break;` is valid only inside a loop or switch.
+- `continue;` is valid only inside a loop. A switch nested inside a loop does not change the continue target; continue still applies to the nearest enclosing loop.
+- A switch nested in a loop has its own break target, so break exits the switch and not the outer loop.
 
-Class fields remain scalar `int`, `string` and `boolean` with default values. Field initializer expressions, static members, enforced access control, method overriding, virtual dispatch, interfaces, abstract classes, object arrays, generics, enums, exceptions, modules, standard library modules, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android support are not yet implemented.
+## Existing language features
 
-## Compiler and bytecode
+Stage 8 keeps the previous stages' supported scalar and array types, functions and recursion, classes and objects, constructors, single inheritance, field/method access, arithmetic, boolean operations, `if/else`, `while`, `for`, and typed mutable arrays.
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowerer -> .room v7 -> verifier -> ALVM`
+The current C++17 pipeline is:
 
-The v7 bytecode instruction set includes `DUP`, which duplicates the stack top and is verified to require a value. The binary format keeps the v6 class hierarchy table and function table while changing the version to 7. The loader rejects .room v1-v6 files. Recompile source files.
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
 
-The VM loads compiled bytecode and does not interpret `.al` source text.
+Switch and loop control lower to existing jump instructions. The .room v7 binary layout remains unchanged.
+
+## Not implemented
+
+`foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, method overloading, constructors with explicit `super(arguments)`, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, full standard library modules, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android APK integration are future features.
