@@ -161,8 +161,8 @@ class SemanticAnalyzer {
     }
   }
   bool alwaysReturns(const Stmt& s)const{if(s.kind==Stmt::Return)return true;if(s.kind==Stmt::Block){for(const auto& child:s.children)if(alwaysReturns(*child))return true;return false;}if(s.kind==Stmt::If&&s.second)return alwaysReturns(*s.first)&&alwaysReturns(*s.second);return false;}
-  Signature signature(const Function& fn){Signature sig;sig.result=fn.returnType;sig.ownerClass=fn.ownerClass;for(const auto& param:fn.params)sig.params.push_back(param.type);return sig;}
-  void analyzeFunction(Function& fn){currentClass=fn.ownerClass;currentReturn=fn.returnType;push();if(!currentClass.empty())declare("this",classes.at(currentClass).type);for(const auto& param:fn.params)declare(param.name,param.type);checkStmt(*fn.body);pop();if(fn.returnType!=Type::Void&&!alwaysReturns(*fn.body))throw Error("Non-void function may finish without returning a value: "+fn.name);}
+  Signature signature(const Function& fn){Signature sig;sig.result=fn.returnType;sig.ownerClass=fn.ownerClass;sig.isStatic=fn.isStatic;for(const auto& param:fn.params)sig.params.push_back(param.type);return sig;}
+  void analyzeFunction(Function& fn){currentClass=fn.ownerClass;currentStatic=fn.isStatic;currentReturn=fn.returnType;push();if(!currentClass.empty()&&!currentStatic)declare("this",classes.at(currentClass).type);for(const auto& param:fn.params)declare(param.name,param.type);checkStmt(*fn.body);pop();if(fn.returnType!=Type::Void&&!alwaysReturns(*fn.body))throw Error("Non-void function may finish without returning a value: "+fn.name);}
 public:
   void analyze(Program& p){
     if(p.functions.empty()||p.functions[0].name!="main")throw Error("Missing main() entry function");
@@ -172,18 +172,26 @@ public:
       if(!cls.baseClass.empty()){
         auto parent=classes.find(cls.baseClass);
         if(parent==classes.end())throw Error("Base class '"+cls.baseClass+"' must be declared before derived class '"+cls.name+"'");
-        info.baseType=parent->second.type;info.fieldSlots=parent->second.fieldSlots;info.fieldTypes=parent->second.fieldTypes;info.methods=parent->second.methods;
+        info.baseType=parent->second.type;
+        info.fieldSlots=parent->second.fieldSlots;info.fieldTypes=parent->second.fieldTypes;
+        info.staticFieldSlots=parent->second.staticFieldSlots;info.staticFieldTypes=parent->second.staticFieldTypes;info.staticFieldOwners=parent->second.staticFieldOwners;
+        info.methods=parent->second.methods;info.staticMethods=parent->second.staticMethods;
       }
       for(const auto& field:cls.fields){
         if(field.type==Type::Void||isArray(field.type)||isUserType(field.type))throw Error("Class fields currently support scalar int, string or boolean types only");
-        if(info.fieldSlots.count(field.name))throw Error("Field '"+field.name+"' conflicts with an inherited field in "+cls.name);
-        info.fieldSlots[field.name]=(int)info.fieldTypes.size();info.fieldTypes.push_back(field.type);
+        if(field.isStatic){
+          if(info.fieldSlots.count(field.name)||info.staticFieldSlots.count(field.name))throw Error("Static field '"+field.name+"' conflicts with an inherited or instance field in "+cls.name);
+          info.staticFieldSlots[field.name]=(int)info.staticFieldTypes.size();
+          info.staticFieldTypes.push_back(field.type);info.staticFieldOwners[field.name]=cls.name;
+        }else{
+          if(info.fieldSlots.count(field.name)||info.staticFieldSlots.count(field.name))throw Error("Field '"+field.name+"' conflicts with an inherited or static field in "+cls.name);
+          info.fieldSlots[field.name]=(int)info.fieldTypes.size();info.fieldTypes.push_back(field.type);
+        }
       }
       if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);
     }
     for(const auto& cls:p.classes){
       auto& info=classes.at(cls.name);
-      if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
       for(const auto& method:cls.methods){
         Signature sig=signature(method);
         if(method.isConstructor){
@@ -193,8 +201,13 @@ public:
           std::string key=cls.name+".$ctor";if(signatures.count(key))throw Error("Duplicate constructor signature");signatures.emplace(key,std::move(sig));
           continue;
         }
-        if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
-        info.methods.emplace(method.name,sig);
+        if(method.isStatic){
+          if(info.methods.count(method.name)||info.staticMethods.count(method.name))throw Error("Static method '"+method.name+"' conflicts with an inherited or instance method in "+cls.name);
+          info.staticMethods.emplace(method.name,sig);
+        }else{
+          if(info.methods.count(method.name)||info.staticMethods.count(method.name))throw Error("Method '"+method.name+"' conflicts with an inherited or static method in "+cls.name);
+          info.methods.emplace(method.name,sig);
+        }
         std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
       }
     }
