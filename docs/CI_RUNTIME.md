@@ -46,14 +46,15 @@ The module must expose:
 
 ## Installing and rolling back on Android
 
-1. Open the ALVM Studio workspace/file manager.
-2. Open CI RUNTIME.
-3. Choose INSTALL UPDATE and select a .ciruntime package.
-4. The app checks the package layout, version, runtime API, .room compatibility, SHA-256 hash, Python syntax and runtime self-test before activating it.
-5. The next Run, Execute or UI event uses the active version.
-6. Choose ROLLBACK in CI Runtime Manager to switch to the previous installed engine or bundled fallback.
+1. Open the Runtime item in the Studio sidebar.
+2. Choose DOWNLOAD LATEST RUNTIME. The Android host checks this repository's GitHub Releases for the newest `ci-runtime-vX.Y.Z` release and downloads its `.ciruntime` asset directly.
+3. The app checks the package layout, version, runtime API, .room format number, SHA-256 hash, Python syntax and runtime self-test before activating it.
+4. The next Run, Execute or UI event uses the active version. The Studio VM status shows the app version and CI Runtime version as separate numbers.
+5. Choose INSTALL FROM FILE to install a locally supplied package, or ROLLBACK to switch to the previous installed engine or bundled fallback.
 
-Runtime package installation is local/offline. No update server or Internet permission is added to ALVM Studio.
+The direct downloader accepts HTTPS release assets only from this repository's GitHub Releases. WebView page networking remains disabled; downloads are performed by the Android host. A runtime release is published by pushing a tag such as `ci-runtime-v1.0.1`, or by manually running the `Publish CI Runtime release` workflow with a version number.
+
+The downloader is only useful after a CI Runtime release has been published. Until then, the app reports that no release exists rather than inventing an available version.
 
 ## Security note
 

@@ -10,6 +10,7 @@ import {
 
 type AndroidBridgeApi = {
   getAppVersion?: () => string;
+  getCiRuntimeVersion?: () => string;
   openWorkspace?: () => void;
   importFile?: () => void;
   showCiRuntimeManager?: () => void;
@@ -18,6 +19,7 @@ type AndroidBridgeApi = {
 declare global {
   interface Window {
     Android?: AndroidBridgeApi;
+    __alvmSetRuntimeVersion?: (version: string) => void;
   }
 }
 
@@ -398,6 +400,7 @@ export default function App() {
   const [compiled, setCompiled] = useState<Program | null>(null);
   const [output, setOutput] = useState<string[]>(['ALVM Studio ready.', 'Edit Main.al, then press Run.']);
   const [appVersion, setAppVersion] = useState('Checking app version...');
+  const [runtimeVersion, setRuntimeVersion] = useState('...');
   const [status, setStatus] = useState('READY');
   const [showReference, setShowReference] = useState(false);
   const [showLibraries, setShowLibraries] = useState(false);
@@ -410,9 +413,16 @@ export default function App() {
       setAppVersion(installedVersion && installedVersion.trim()
         ? installedVersion.trim()
         : 'Web preview');
+      const installedRuntime = window.Android?.getCiRuntimeVersion?.();
+      setRuntimeVersion(installedRuntime && installedRuntime.trim()
+        ? installedRuntime.trim()
+        : 'unavailable');
     } catch {
       setAppVersion('Web preview');
+      setRuntimeVersion('unavailable');
     }
+    window.__alvmSetRuntimeVersion = version => setRuntimeVersion(version || 'unknown');
+    return () => { delete window.__alvmSetRuntimeVersion; };
   }, []);
   useEffect(() => {
     if (!activeControl || !gameScene) return;
@@ -554,7 +564,7 @@ export default function App() {
             <p><span>Source</span><strong>.al</strong></p>
             <p><span>Compiled</span><strong>.room v9</strong></p>
             <p><span>App</span><strong>{appVersion}</strong></p>
-            <p><span>Engine</span><strong>Python CI Runtime</strong></p>
+            <p><span>Engine</span><strong>CI Runtime {runtimeVersion}</strong></p>
           </div>
           <div className="sidebar-foot"><i />Local app execution</div>
         </aside>
