@@ -26,12 +26,23 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 
 ## Current implemented native foundation
 
-- C++17 native lexer, parser, AST, semantic/type analysis, IR lowering, bytecode serialization, verifier and ALVM execution.
-- `.room` version 8 with a real instruction stream and validation.
+- C++17 native lexer, parser, AST, semantic/type analysis, IR lowering and bytecode serialization; the desktop CLI retains the C++ VM for regression coverage.
+- Android ALVM Studio executes verified .room v9 instructions with the separate Python 3.11 CI Runtime through Chaquopy; Java hosts Python and renders native Android Views.
+- `.room` version 9 with a real instruction stream, structural validation and operand-stack verification.
 - Integer, string and boolean scalar values; their primitive arrays support literals, indexing, mutation, length, foreach and sized allocation with default initialization.
 - Functions, recursion, global overloads, classes, fields, objects, constructors, inheritance, explicit base-constructor calls, instance method overloads and derived-to-base assignment.
 - Conditional and loop control flow, switch/case, break and continue.
 - Android ALVM Studio shell with bundled offline UI, local workspace picker and native C++ compiler/VM bridge.
+
+## Python CI Runtime on Android
+
+- Android Run, Execute and AL UI callbacks use the Python CI Runtime; the C++17 compiler remains unchanged and produces .room bytecode.
+- The Python runtime reader validates the ALRM header, v9 layout, counts, opcodes, references, jump targets and stack-depth flow before execution.
+- Implemented runtime operations include scalar values, arrays, functions/calls, objects/fields, arithmetic, control flow and the existing UI calls used by the Android native View bridge.
+- Runtime engine modules are versioned in app-private storage. .ciruntime update packages are checked for layout, version/API compatibility, .room compatibility, SHA-256 integrity, Python syntax and self-test before activation.
+- The CI Runtime Manager provides manual local install and rollback to a previous runtime or bundled fallback. No network update service is enabled.
+- The Python interpreter itself is bundled with the APK. Only the CI Runtime engine module can be hot-updated without an APK release; interpreter, Java host, native ABI or .room-format changes require a new APK.
+- Chaquopy 17.2 requires Android API 24 or later, so the app minSdk is now 24. Runtime update packages contain executable Python and must come from a trusted publisher.
 
 ## Incomplete or not implemented in the native AL language
 

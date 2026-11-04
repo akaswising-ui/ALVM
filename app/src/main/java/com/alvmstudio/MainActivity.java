@@ -52,6 +52,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_WORKSPACE_TREE = 13;
     private static final int REQUEST_IMPORT_FILE = 14;
     private static final int REQUEST_WEB_FILE_CHOOSER = 15;
+    private static final int REQUEST_RUNTIME_UPDATE = 16;
     private static final String PREFS = "alvm_workspace";
     private static final String PREF_TREE_URI = "workspace_tree_uri";
 
@@ -64,6 +65,9 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFileCallback;
     private boolean saveAfterFolderPick = false;
     private boolean openAfterFolderPick = false;
+    private CiRuntimeHost ciRuntime;
+    private String lastRuntimeUiJson = "";
+    private String lastRuntimeVersion = "";
 
     private DocumentFile workspaceRoot;
     private DocumentFile appFolder;
@@ -98,6 +102,7 @@ public class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        ciRuntime = new CiRuntimeHost(this);
         getWindow().setStatusBarColor(Color.rgb(16, 22, 34));
         getWindow().setNavigationBarColor(Color.rgb(9, 13, 21));
         initWorkspaceFolders();
@@ -282,29 +287,37 @@ public class MainActivity extends Activity {
                 : "\nChoose FILE MANAGER and allow a folder to save files permanently.");
     }
 
+    private String runCiRuntime(String entryName, String eventValue) {
+        if (ciRuntime == null) ciRuntime = new CiRuntimeHost(this);
+        JSONObject result = ciRuntime.run(roomPath(), entryName, eventValue);
+        lastRuntimeVersion = result.optString("runtimeVersion", lastRuntimeVersion);
+        JSONObject ui = result.optJSONObject("ui");
+        if (ui != null) lastRuntimeUiJson = ui.toString();
+        publishNativeUi();
+        if (!result.optBoolean("ok", false)) {
+            return "✕ " + result.optString("error", "CI Runtime execution failed.");
+        }
+        return result.optString("output", "");
+    }
+
     private String runNative(String source, String fileName) {
         String result = compileNative(source, fileName);
         if (!compiled) return result;
-        String output = nativeRun(roomPath());
-        if (output == null) output = "";
-        publishNativeUi();
-        return "✓ Program completed in native ALVM.\n\n"
+        String output = runCiRuntime("main", "");
+        if (output.startsWith("✕ ")) return output;
+        return "✓ Program completed in Python CI Runtime v" + lastRuntimeVersion + ".\n\n"
                 + (output.trim().isEmpty() ? "(program produced no console output)" : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
     }
 
     private String executeNativeRoom() {
         File room = new File(roomPath());
         if (!room.exists()) return "✕ No compiled .room file is loaded.";
-        try {
-            String output = nativeRun(roomPath());
-            publishNativeUi();
-            return "✓ .room execution complete.\n\n"
-                    + (output == null || output.trim().isEmpty()
-                    ? "(program produced no console output)"
-                    : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
-        } catch (Exception error) {
-            return "✕ ALVM runtime error: " + error.getMessage();
-        }
+        String output = runCiRuntime("main", "");
+        if (output.startsWith("✕ ")) return output;
+        return "✓ .room execution complete in Python CI Runtime v" + lastRuntimeVersion + ".\n\n"
+                + (output.trim().isEmpty()
+                ? "(program produced no console output)"
+                : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
     }
 
     private String normalizeAlFileName(String name) {
@@ -391,9 +404,9 @@ public class MainActivity extends Activity {
         for (int i = 0; i < files.size(); i++) options[i] = labels.get(i);
         AlertDialog.Builder dialog = new AlertDialog.Builder(this)
                 .setTitle("ALVM Studio  /  File Manager")
-                .setPositiveButton("NEW .AL FILE", (d, which) -> createNewFile())
+                .setPositiveButton("CI RUNTIME", (d, which) -> showCiRuntimeManager())
                 .setNeutralButton("IMPORT FILE", (d, which) -> importExternalFile())
-                .setNegativeButton("CLOSE", null);
+                .setNegativeButton("NEW .AL FILE", (d, which) -> createNewFile());
         if (options.length > 0) {
             DocumentFile[] fileArray = files.toArray(new DocumentFile[0]);
             dialog.setItems(options, (d, which) -> openWorkspaceFile(fileArray[which]));
@@ -568,6 +581,95 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) { }
     }
 
+    private void showCiRuntimeManager() {
+        JSONObject status = ciRuntime.status();
+        String active = status.optString("active_version", "bundled");
+        String bundled = status.optString("bundled_version", "1.0.0");
+        StringBuilder previous = new StringBuilder();
+        JSONArray versions = status.optJSONArray("previous_versions");
+        if (versions != null) {
+            for (int i = 0; i < versions.length(); i++) {
+                if (i > 0) previous.append(", ");
+                previous.append(versions.optString(i));
+            }
+        }
+        String message = "Active CI Runtime: " + active
+                + "\nBundled fallback: " + bundled
+                + "\n.room format: v" + status.optInt("room_format", 9)
+                + "\nRollback versions: " + (previous.length() == 0 ? "none" : previous);
+        new AlertDialog.Builder(this)
+                .setTitle("CI Runtime Manager")
+                .setMessage(message)
+                .setPositiveButton("INSTALL UPDATE", (dialog, which) -> requestCiRuntimeUpdate())
+                .setNeutralButton("ROLLBACK", (dialog, which) -> rollbackCiRuntime())
+                .setNegativeButton("CLOSE", null)
+                .show();
+    }
+
+    private void requestCiRuntimeUpdate() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_RUNTIME_UPDATE);
+        } catch (Exception error) {
+            showOutputInWeb("Could not open the runtime update picker: " + error.getMessage(), "ERROR");
+        }
+    }
+
+    private void installCiRuntimeUpdate(Uri uri) {
+        File packageFile = new File(getCacheDir(), "ci-runtime-update.ciruntime");
+        try (InputStream input = getContentResolver().openInputStream(uri);
+             OutputStream output = new FileOutputStream(packageFile)) {
+            if (input == null) throw new IllegalStateException("Cannot read runtime package");
+            copy(input, output);
+        } catch (Exception error) {
+            showOutputInWeb("Runtime update import failed: " + error.getMessage(), "ERROR");
+            return;
+        }
+
+        JSONObject result = ciRuntime.installUpdate(packageFile.getAbsolutePath());
+        packageFile.delete();
+        if (result.optBoolean("ok", false)) {
+            lastRuntimeVersion = result.optString("active_version", "");
+            String message = "✓ " + result.optString("message", "CI Runtime updated")
+                    + "\nActive version: " + lastRuntimeVersion;
+            showOutputInWeb(message, "SUCCESS");
+            new AlertDialog.Builder(this)
+                    .setTitle("CI Runtime updated")
+                    .setMessage(message + "\n\nThe new runtime will be used by the next .room execution.")
+                    .setPositiveButton("OK", null)
+                    .show();
+        } else {
+            String message = "✕ Runtime update rejected: " + result.optString("error", "Unknown error");
+            showOutputInWeb(message, "ERROR");
+            new AlertDialog.Builder(this)
+                    .setTitle("Runtime update rejected")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show();
+        }
+    }
+
+    private void rollbackCiRuntime() {
+        JSONObject result = ciRuntime.rollback();
+        if (result.optBoolean("ok", false)) {
+            lastRuntimeVersion = result.optString("active_version", "");
+            showOutputInWeb("✓ CI Runtime rolled back to " + lastRuntimeVersion, "SUCCESS");
+            new AlertDialog.Builder(this)
+                    .setTitle("CI Runtime rollback")
+                    .setMessage("Active version: " + lastRuntimeVersion
+                            + "\nThe previous runtime will be used by the next .room execution.")
+                    .setPositiveButton("OK", null)
+                    .show();
+        } else {
+            String message = "Rollback unavailable: " + result.optString("error", "No previous version");
+            showOutputInWeb(message, "ERROR");
+        }
+    }
+
     private void importExternalFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -598,6 +700,10 @@ public class MainActivity extends Activity {
             int colon = name.lastIndexOf(':');
             if (colon >= 0) name = name.substring(colon + 1);
             if (name.isEmpty()) name = "Imported.al";
+            if (name.toLowerCase().endsWith(".ciruntime")) {
+                installCiRuntimeUpdate(uri);
+                return;
+            }
             if (name.toLowerCase().endsWith(".room")) {
                 try (InputStream input = getContentResolver().openInputStream(uri);
                      OutputStream output = new FileOutputStream(roomPath())) {
@@ -626,9 +732,7 @@ public class MainActivity extends Activity {
     }
 
     private void publishNativeUi() {
-        final String json;
-        try { json = nativeGetUiJson(); }
-        catch (Exception error) { return; }
+        final String json = lastRuntimeUiJson;
         if (json == null || json.trim().isEmpty()) return;
         runOnUiThread(() -> showNativeUi(json));
     }
@@ -718,12 +822,12 @@ public class MainActivity extends Activity {
                     buttonGrid.addView(button, params);
                     button.setOnClickListener(view -> {
                         try {
-                            String result = nativeRunUiEvent(roomPath(), callback, id);
+                            String result = runCiRuntime(callback, id);
                             if (result != null && result.trim().length() > 0) {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            showNativeUi(nativeGetUiJson());
+                            if (!lastRuntimeUiJson.isEmpty()) showNativeUi(lastRuntimeUiJson);
                         } catch (Exception error) {
                             showOutputInWeb("AL UI event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
@@ -809,6 +913,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_RUNTIME_UPDATE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                installCiRuntimeUpdate(data.getData());
+            } else {
+                showOutputInWeb("CI Runtime update cancelled.", "READY");
+            }
+            return;
+        }
 
         if (requestCode == REQUEST_WEB_FILE_CHOOSER && pendingFileCallback != null) {
             Uri[] result = resultCode == RESULT_OK && data != null && data.getData() != null
