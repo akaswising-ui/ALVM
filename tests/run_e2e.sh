@@ -47,6 +47,14 @@ test "$("$BIN" run "$TMP/objects.room")" = "$OBJECT_EXPECTED"
 INHERITANCE_EXPECTED="$(printf '7\n1\n7\n7\ntrue\n1')"
 test "$("$BIN" run "$TMP/inheritance.room")" = "$INHERITANCE_EXPECTED"
 
+"$BIN" compile "$ROOT/examples/super_constructor.al" -o "$TMP/super-constructor.room"
+SUPER_EXPECTED="$(printf '42\nALVM')"
+SUPER_ACTUAL="$("$BIN" run "$TMP/super-constructor.room")"
+if [[ "$SUPER_ACTUAL" != "$SUPER_EXPECTED" ]]; then
+  printf 'super expected:\n%s\nsuper actual:\n%s\n' "$SUPER_EXPECTED" "$SUPER_ACTUAL" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/constructor_overloading.al" -o "$TMP/constructor-overloading.room"
 CTOR_OVERLOAD_EXPECTED="$(printf '7\nAL')"
 CTOR_OVERLOAD_ACTUAL="$("$BIN" run "$TMP/constructor-overloading.room")"
@@ -75,7 +83,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate; do
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -93,4 +101,4 @@ fi
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
-echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, foreach, switch and loop control"
+echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, explicit super calls, foreach, switch and loop control"

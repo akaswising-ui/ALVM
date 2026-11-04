@@ -116,3 +116,15 @@ foreach (int item : values) {
 - A derived constructor automatically calls the base class zero-argument constructor. Compilation fails if the base class has no zero-argument constructor.
 - Explicit base-constructor calls such as super(arguments) are not implemented yet.
 - Each constructor is assigned a collision-resistant internal symbol in IR and bytecode.
+
+
+## Explicit base-constructor invocation
+
+- A derived-class constructor may begin with `super(arguments);`.
+- The `super` call must be the first statement in the constructor body.
+- `super` is invalid in a class without a base class and outside a constructor.
+- The argument list is resolved against the base class constructor overloads using static argument types and the standard exact-match preference.
+- No matching or ambiguous base constructor is a compile-time error.
+- If the explicit call is omitted, the compiler automatically invokes the base class zero-argument constructor.
+- If no zero-argument base constructor exists and no explicit `super(arguments)` is supplied, compilation fails.
+- The selected base constructor is emitted as a normal bytecode call with the current object as receiver.

@@ -2,6 +2,20 @@
 
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
+## Stage 13: explicit base-constructor calls
+
+Derived constructors may begin with `super(arguments);` to select a matching base constructor. Arguments are type-checked using the base class's constructor overload set. The call must be the first statement and can appear only in a derived-class constructor. When omitted, the compiler inserts the base class zero-argument constructor call; compilation fails if no such constructor exists.
+
+```al
+class Base {
+    int value;
+    Base(int value) { this.value = value; }
+}
+class Child extends Base {
+    Child(int value) { super(value); }
+}
+```
+
 ## Stage 12: constructor overloading
 
 Classes can declare multiple constructors with distinct parameter type lists. `new ClassName(arguments)` resolves the matching constructor using the same exact-match preference and ambiguity rejection used by function and method calls. The compiler assigns each constructor a collision-resistant internal symbol. Derived constructors still invoke the base class zero-argument constructor automatically; explicit `super(arguments)` remains pending.
@@ -103,7 +117,7 @@ room Main {
 
 ## Still pending
 
-constructors with `super(arguments)`, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+virtual overriding, method overriding/virtual dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
 
 ## Build
 
