@@ -4,7 +4,7 @@
 
 The Android app packages the complete ALVM Studio interface and its local UI runtime in the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
 
-- The UI opens from `file:///android_asset/index.html`; it does not load the AppDeploy-hosted page.
+- The UI opens from the local `https://appassets.androidplatform.net/assets/index.html` WebViewAssetLoader mapping (served from APK assets, not the Internet); it does not load the AppDeploy-hosted page.
 - The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
 - The Android manifest has no Internet or network-state permission. WebView network loads are blocked.
 - Ordinary AL source Run/Compile and native `.room` execution continue through the existing C++17 compiler/ALVM JNI bridge.
