@@ -29,7 +29,7 @@ static std::vector<Token> lex(const std::string& src) {
     if(std::isalpha(static_cast<unsigned char>(c))||c=='_'){while(i<src.size()&&(std::isalnum(static_cast<unsigned char>(src[i]))||src[i]=='_'))t+=advance();}
     else if(std::isdigit(static_cast<unsigned char>(c))){while(i<src.size()&&std::isdigit(static_cast<unsigned char>(src[i])))t+=advance();}
     else if(c=='"'){advance();bool closed=false;while(i<src.size()){char x=advance();if(x=='"'){closed=true;break;}if(x=='\\'){if(i>=src.size())break;char e=advance();switch(e){case 'n':t+='\n';break;case 't':t+='\t';break;case 'r':t+='\r';break;case '"':t+='"';break;case '\\':t+='\\';break;default:throw Error("Unknown string escape at "+std::to_string(line)+":"+std::to_string(col));}}else t+=x;}if(!closed)throw Error("Unterminated string at "+std::to_string(sl)+":"+std::to_string(sc));t="\x01"+t;}
-    else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||"}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
+    else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||"}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.[],").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
     out.push_back({t,sl,sc});
   }
   out.push_back({"<eof>",line,col});return out;
