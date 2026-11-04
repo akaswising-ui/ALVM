@@ -213,7 +213,7 @@ class IRGenerator {
     statement(*fn.body);
     if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
     else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
-    FunctionIR item;item.name=fn.name;item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
+    FunctionIR item;item.name=fn.ownerClass.empty()?fn.name:fn.ownerClass+"."+fn.name;item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
   }
 public:
   IRProgram generate(const Program& p){
@@ -226,15 +226,18 @@ public:
     return out;
   }
 };struct Bytecode { Op op; int64_t arg=0; std::string text; };
-struct FunctionBC { std::string name; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
+struct ClassBC { std::string name; std::vector<Type> fieldTypes; };
+struct FunctionBC { std::string name; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
+struct BytecodeProgram { std::vector<ClassBC> classes; std::vector<FunctionBC> functions; };
 class BytecodeLowerer {
 public:
-  std::vector<FunctionBC> lower(const std::vector<FunctionIR>& ir){
-    std::vector<FunctionBC> out;
-    for(const auto& fn:ir){
-      FunctionBC b;b.name=fn.name;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
+  BytecodeProgram lower(const IRProgram& ir){
+    BytecodeProgram out;
+    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.fieldTypes});
+    for(const auto& fn:ir.functions){
+      FunctionBC b;b.name=fn.name;b.ownerClassId=fn.ownerClassId;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
       for(const auto& i:fn.code)b.code.push_back({i.op,i.arg,i.text});
-      out.push_back(std::move(b));
+      out.functions.push_back(std::move(b));
     }
     return out;
   }
@@ -245,60 +248,69 @@ static void writeU64(std::ofstream& f,uint64_t x){for(int i=0;i<8;++i)f.put((cha
 static uint64_t readU64(std::ifstream& f){uint64_t x=0;for(int i=0;i<8;++i){int c=f.get();if(c==EOF)throw Error("Truncated .room file");x|=(uint64_t)(uint8_t)c<<(8*i);}return x;}
 static void writeString(std::ofstream& f,const std::string& value){if(value.size()>1000000)throw Error("String too long for .room file");writeU32(f,(uint32_t)value.size());f.write(value.data(),(std::streamsize)value.size());}
 static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
-static void saveRoom(const std::string& path,const std::vector<FunctionBC>& functions){
+static void saveRoom(const std::string& path,const BytecodeProgram& program){
   std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
-  f.write("ALRM",4);writeU32(f,4);writeU32(f,(uint32_t)functions.size());
-  for(const auto& fn:functions){
-    writeString(f,fn.name);f.put((char)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
+  f.write("ALRM",4);writeU32(f,5);writeU32(f,(uint32_t)program.classes.size());
+  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
+  writeU32(f,(uint32_t)program.functions.size());
+  for(const auto& fn:program.functions){
+    writeString(f,fn.name);writeU32(f,(uint32_t)fn.ownerClassId);writeU32(f,(uint32_t)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
     for(const auto& i:fn.code){f.put((char)i.op);writeU64(f,(uint64_t)i.arg);writeString(f,i.text);}
   }
   if(!f)throw Error("Failed writing .room file");
 }
-static std::vector<FunctionBC> loadRoom(const std::string& path){
+static BytecodeProgram loadRoom(const std::string& path){
   std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
   char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
-  if(readU32(f)!=4)throw Error("Unsupported .room version (expected 4)");
-  uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");
-  std::vector<FunctionBC> functions;functions.reserve(n);
+  if(readU32(f)!=5)throw Error("Unsupported .room version (expected 5)");
+  BytecodeProgram program;uint32_t classCount=readU32(f);if(classCount>10000)throw Error("Class count limit exceeded");
+  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v5");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
+  uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
   for(uint32_t j=0;j<n;++j){
-    FunctionBC fn;fn.name=readString(f);int ty=f.get();if(ty<0||ty>(int)Type::Unknown)throw Error("Invalid function return type");fn.returnType=(Type)ty;
+    FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>255)throw Error("Invalid function return type");fn.returnType=(Type)ty;
     fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
     uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
-    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::Ret)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
-    functions.push_back(std::move(fn));
+    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::SetField)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
+    program.functions.push_back(std::move(fn));
   }
   if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");
-  return functions;
+  return program;
 }
 static int stackDelta(Op op){
   switch(op){
-    case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:return 1;
+    case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:case Op::NewObject:return 1;
     case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;
     case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;
     case Op::ArraySet:return -3;
+    case Op::SetField:return -2;
     default:return 0;
   }
 }
-static void verify(const std::vector<FunctionBC>& functions){
-  if(functions.empty()||functions[0].name!="main")throw Error(".room must start with main function");
+static void verify(const BytecodeProgram& program){
+  const auto& functions=program.functions;
+  if(functions.empty()||functions[0].name!="main"||functions[0].ownerClassId!=-1)throw Error(".room must start with global main function");
   if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
   std::map<std::string,bool> names;
-  for(const auto& fn:functions){if(fn.name.empty()||names.count(fn.name))throw Error("Empty or duplicate function name");names[fn.name]=true;}
+  for(const auto& cls:program.classes)if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");else names["class:"+cls.name]=true;
+  for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size())throw Error("Invalid method owner class");}
   for(size_t fi=0;fi<functions.size();++fi){
     const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
+    if(fn.ownerClassId>=0&&fn.localCount<fn.parameterCount+1)throw Error("Method does not have room for its this parameter");
     std::vector<int> depth(fn.code.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);
     while(!q.empty()){
       size_t pc=q.front();q.pop();const auto& i=fn.code[pc];
       if((i.op==Op::Load||i.op==Op::Store)&&(i.arg<0||(uint64_t)i.arg>=fn.localCount))throw Error("Invalid local slot");
+      if(i.op==Op::NewObject&&(i.arg<0||(uint64_t)i.arg>=program.classes.size()))throw Error("Invalid class allocation target");
+      if((i.op==Op::GetField||i.op==Op::SetField)&&(i.arg<0||i.arg>100000))throw Error("Invalid field index");
       int before=depth[pc],need=0,delta=stackDelta(i.op);
       switch(i.op){
-        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:need=1;break;
-        case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:need=2;break;
+        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:case Op::GetField:need=1;break;
+        case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:case Op::SetField:need=2;break;
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
-          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount;delta=(target.returnType==Type::Void?0:1)-(int)target.parameterCount;break;
+          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
         }
         case Op::Ret:need=fn.returnType==Type::Void?0:1;break;
         default:break;
@@ -315,24 +327,26 @@ static void verify(const std::vector<FunctionBC>& functions){
   }
 }
 struct Array;
+struct Object;
 using ArrayPtr=std::shared_ptr<Array>;
-using Value=std::variant<int64_t,std::string,bool,ArrayPtr>;
+using ObjectPtr=std::shared_ptr<Object>;
+using Value=std::variant<int64_t,std::string,bool,ArrayPtr,ObjectPtr>;
 struct Array { std::vector<Value> items; size_t elementKind=std::numeric_limits<size_t>::max(); };
-static std::string show(const Value& v){if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);if(auto x=std::get_if<std::string>(&v))return *x;if(auto x=std::get_if<bool>(&v))return *x?"true":"false";auto a=std::get<ArrayPtr>(v);return "[array length="+std::to_string(a->items.size())+"]";}
+struct Object { size_t classId=0; std::vector<Value> fields; };
+static std::string show(const Value& v){if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);if(auto x=std::get_if<std::string>(&v))return *x;if(auto x=std::get_if<bool>(&v))return *x?"true":"false";if(auto a=std::get_if<ArrayPtr>(&v))return "[array length="+std::to_string((*a)->items.size())+"]";return "[object]";}
 static int64_t integer(const Value& v){if(auto x=std::get_if<int64_t>(&v))return *x;throw Error("Runtime type error: expected int");}
 static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;throw Error("Runtime type error: expected boolean");}
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
-static void execute(const std::vector<FunctionBC>& functions){
-  verify(functions);
+static void execute(const BytecodeProgram& program){
+  verify(program);const auto& functions=program.functions;const auto& classes=program.classes;
   struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
   std::vector<Value> stack;
   auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
   Frame entry;entry.function=0;entry.locals.resize(functions[0].localCount);std::vector<Frame> frames;frames.push_back(std::move(entry));
   while(!frames.empty()){
-    Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");
-    const auto& i=fn.code[frame.pc++];
+    Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
     switch(i.op){
       case Op::PushInt:stack.emplace_back(i.arg);break;
       case Op::PushString:stack.emplace_back(i.text);break;
@@ -354,17 +368,16 @@ static void execute(const std::vector<FunctionBC>& functions){
       case Op::ArrayGet:{auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array access on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");stack.push_back((*a)->items[(size_t)index]);break;}
       case Op::ArraySet:{Value value=pop();auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array assignment on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");if((*a)->elementKind==std::numeric_limits<size_t>::max())(*a)->elementKind=value.index();if(value.index()!=(*a)->elementKind)throw Error("Array element type mismatch");(*a)->items[(size_t)index]=std::move(value);break;}
       case Op::ArrayLength:{Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error(".length on non-array value");stack.emplace_back((int64_t)(*a)->items.size());break;}
+      case Op::NewObject:{if(i.arg<0||(uint64_t)i.arg>=classes.size())throw Error("Invalid class allocation");auto obj=std::make_shared<Object>();obj->classId=(size_t)i.arg;for(Type type:classes[obj->classId].fieldTypes){if(type==Type::Int)obj->fields.emplace_back((int64_t)0);else if(type==Type::String)obj->fields.emplace_back(std::string());else if(type==Type::Bool)obj->fields.emplace_back(false);else throw Error("Unsupported object field type");}stack.emplace_back(obj);break;}
+      case Op::GetField:{Value base=pop();auto obj=std::get_if<ObjectPtr>(&base);if(!obj||!*obj)throw Error("Field read on non-object value");if(i.arg<0||(uint64_t)i.arg>=(*obj)->fields.size())throw Error("Object field index out of bounds");stack.push_back((*obj)->fields[(size_t)i.arg]);break;}
+      case Op::SetField:{Value value=pop(),base=pop();auto obj=std::get_if<ObjectPtr>(&base);if(!obj||!*obj)throw Error("Field write on non-object value");if(i.arg<0||(uint64_t)i.arg>=(*obj)->fields.size())throw Error("Object field index out of bounds");Type expected=classes[(*obj)->classId].fieldTypes[(size_t)i.arg];size_t actual=value.index();size_t expectedIndex=expected==Type::Int?0:expected==Type::String?1:2;if(actual!=expectedIndex)throw Error("Object field type mismatch");(*obj)->fields[(size_t)i.arg]=std::move(value);break;}
       case Op::Call:{
         size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
-        std::vector<Value> args(callee.parameterCount);for(size_t k=callee.parameterCount;k>0;--k)args[k-1]=pop();
-        Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);
-        frames.push_back(std::move(next));break;
+        size_t count=(size_t)callee.parameterCount+(callee.ownerClassId>=0?1:0);std::vector<Value> args(count);for(size_t k=count;k>0;--k)args[k-1]=pop();
+        if(callee.ownerClassId>=0){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||(*obj)->classId!=(size_t)callee.ownerClassId)throw Error("Instance method called with wrong receiver object");}
+        Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);frames.push_back(std::move(next));break;
       }
-      case Op::Ret:{
-        bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;
-        frames.pop_back();if(frames.empty())return;
-        if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;
-      }
+      case Op::Ret:{bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;frames.pop_back();if(frames.empty())return;if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;}
       case Op::Jump:frame.pc=(size_t)i.arg;break;
       case Op::JumpFalse:{bool cond=boolean(pop());if(!cond)frame.pc=(size_t)i.arg;break;}
       case Op::Halt:return;
