@@ -1,39 +1,52 @@
 # ALVM Studio
 
-The ALVM repository was empty when inspected. This branch creates the first editable Stage 1 compiler/VM foundation; it does not overwrite a previous implementation.
+AL is an independent language and runtime project. Its identity is fixed as:
+- **Vocabulary and keyword spelling:** Python-influenced and approachable.
+- **Source writing style:** Java-like braces, declarations and methods.
+- **Language rules:** strict and C++-influenced.
+- **Implementation:** its own lexer, parser, AST, semantic checker, IR, bytecode, verifier and VM. It is not Python, Java or JavaScript with a renamed extension.
 
-## AL language identity
+The native top-level declaration is `room Main`. `class Main` is accepted as an early compatibility spelling.
 
-- Word/keyword spelling: Python-influenced and approachable.
-- Writing style: Java-like braces, declarations and method structure.
-- Rules: strict, C++-influenced typing and compile-time discipline.
-- AL is not Python, Java or JavaScript under a different extension. It has its own lexer, parser, compiler, bytecode, verifier and VM.
+## Stage 2 implementation
 
-The native top-level declaration is `room Main`. The early `class Main` spelling is accepted for compatibility.
+The current engine is a C++17 command-line compiler and virtual machine. The implemented path is:
 
-## Implemented in Stage 1
+`.al source -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowering -> binary .room -> verifier -> ALVM runtime`
 
-- C++17 lexer and parser with line/column diagnostics.
-- `room Main { public static void main() { ... } }` entry point.
-- `int`, `var`, and `string` local declarations.
-- Integer literals, string literals, variable reads and assignments.
-- Integer arithmetic: `+`, `-`, `*`, `/`, unary minus and parentheses.
-- `AL.print(expression);`.
-- Real binary `.room` format: ALRM magic, version, instruction count, opcode, operand and constant payload.
-- Bytecode loader, validation, stack verifier and bytecode interpreter.
-- CLI: compile, run, disasm.
-- Automated end-to-end test for output 30.
+Working features:
+- Lexer with line/column positions, line and block comments, integer/string/boolean literals, escaped strings and multi-character operators.
+- AST for declarations, assignments, expressions, print, return, blocks, if/else, while and for.
+- Static type checks for `int`, `string`, `boolean` and inferred `var`.
+- Arithmetic, string concatenation, comparisons, equality, logical operators and unary operators.
+- Short-circuit evaluation for `&&` and `||`.
+- `if/else`, `while` and `for` bytecode control flow.
+- Explicit IR generation and a separate bytecode-lowering pass.
+- Binary `.room` v2 format with ALRM magic, version, instruction table, 64-bit operands and bounded string constants.
+- Bytecode control-flow stack verifier, runtime type guards, overflow checks and division-by-zero checks.
+- CLI commands: `compile`, `run` and `disasm`.
+- Automated positive, negative and control-flow end-to-end tests.
 
 ## Not implemented yet
 
-Conditions, loops, functions/recursion, arrays, classes/objects, inheritance, interfaces, exceptions, modules, graphics/game APIs, .AL packaging, and graphical IDE. These are planned, not claimed as working.
+The project is not a complete language, IDE or Android app. These major features are still pending:
+- Arrays, indexing, collections and generics.
+- User-defined functions, parameters, call frames, recursion and overloads.
+- Classes/objects, constructors, inheritance, interfaces, polymorphism and access control.
+- Exceptions and modules/imports.
+- Standard libraries for files, networking and databases.
+- Graphics, UI, audio, input, physics and game APIs.
+- Graphical ALVM Studio editor, project explorer, terminal and debugger.
+- `.AL` application packaging and Android APK build/signing.
+
+Do not mark a feature complete until implementation and tests support it.
 
 ## Build and run
 
-Requirements: C++17 compiler, CMake 3.16+, Bash for the supplied test.
+Requirements: C++17 compiler, CMake 3.16+ and Bash for the end-to-end tests.
 
 ```bash
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ./build/alvm compile examples/hello.al
 ./build/alvm run examples/hello.room
@@ -41,29 +54,24 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Expected output: `30`.
+The hello example prints `30`. The control-flow example exercises loops and conditional branches.
 
-## Execution pipeline
+## .room v2 binary format
 
-`hello.al` -> Lexer -> Parser -> compiler/code generator -> binary .room -> verifier -> ALVM -> runtime output.
+All integer fields are little-endian:
+1. Four-byte magic: `ALRM`.
+2. uint32 format version: `2`.
+3. uint32 instruction count.
+4. For each instruction: uint8 opcode, uint64 operand, uint32 UTF-8 payload length, payload bytes.
 
-The VM executes the compiled .room file. It does not re-read or interpret .al source at runtime.
+Version 1 files are not currently accepted by the Stage 2 loader. The VM loads and executes the compiled `.room` bytecode; it does not interpret `.al` source at runtime.
 
-## .room v1
+## Next engineering stages
 
-Little-endian fields: 4-byte ALRM magic; uint32 version (1); uint32 instruction count; then each instruction has uint8 opcode, uint32 operand, uint32 UTF-8 constant length, and constant bytes. Opcode definitions are in src/alvm.cpp.
-
-## Roadmap
-
-1. Lexer/parser/AST and complete basic syntax.
-2. Explicit IR and expanded bytecode.
-3. Harden room format, verifier and VM.
-4. Conditions and loops.
-5. Functions, call frames, recursion and overloads.
-6. Classes and object model.
-7. Arrays and collections.
-8. Exceptions and standard libraries.
-9. Graphics/game APIs.
-10. .AL packaging and graphical IDE.
-
-Do not mark a feature complete until implementation and tests support it.
+1. Arrays, element types, indexing, mutation and bounds-safe runtime operations.
+2. Functions, parameter/return checking, call frames and recursion.
+3. Complete object model: classes, fields, methods, constructors and inheritance.
+4. Exceptions, modules and standard library.
+5. Graphics/game/audio APIs and a real-time runtime loop.
+6. Graphical editor/IDE, project model, diagnostics and debugging.
+7. `.AL` packaging, Android integration and a tested APK pipeline.
