@@ -217,7 +217,7 @@ public:
     currentClass.clear();
   }
 };
-enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField,Dup };
+enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField,Dup,GetStaticField,SetStaticField };
 struct IR { Op op; int64_t arg=0; std::string text; };
 struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; std::vector<Type> staticFieldTypes; };
 struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; bool isStatic=false; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
@@ -314,16 +314,16 @@ public:
     return out;
   }
 };struct Bytecode { Op op; int64_t arg=0; std::string text; };
-struct ClassBC { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
-struct FunctionBC { std::string name; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
+struct ClassBC { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; std::vector<Type> staticFieldTypes; };
+struct FunctionBC { std::string name; int32_t ownerClassId=-1; Type returnType=Type::Void; bool isStatic=false; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
 struct BytecodeProgram { std::vector<ClassBC> classes; std::vector<FunctionBC> functions; };
 class BytecodeLowerer {
 public:
   BytecodeProgram lower(const IRProgram& ir){
     BytecodeProgram out;
-    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.baseClassId,cls.fieldTypes});
+    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.baseClassId,cls.fieldTypes,cls.staticFieldTypes});
     for(const auto& fn:ir.functions){
-      FunctionBC b;b.name=fn.name;b.ownerClassId=fn.ownerClassId;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
+      FunctionBC b;b.name=fn.name;b.ownerClassId=fn.ownerClassId;b.returnType=fn.returnType;b.isStatic=fn.isStatic;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
       for(const auto& i:fn.code)b.code.push_back({i.op,i.arg,i.text});
       out.functions.push_back(std::move(b));
     }
@@ -338,11 +338,11 @@ static void writeString(std::ofstream& f,const std::string& value){if(value.size
 static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
 static void saveRoom(const std::string& path,const BytecodeProgram& program){
   std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
-  f.write("ALRM",4);writeU32(f,7);writeU32(f,(uint32_t)program.classes.size());
-  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.baseClassId);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
+  f.write("ALRM",4);writeU32(f,8);writeU32(f,(uint32_t)program.classes.size());
+  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.baseClassId);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);writeU32(f,(uint32_t)cls.staticFieldTypes.size());for(Type type:cls.staticFieldTypes)writeU32(f,(uint32_t)type);}
   writeU32(f,(uint32_t)program.functions.size());
   for(const auto& fn:program.functions){
-    writeString(f,fn.name);writeU32(f,(uint32_t)fn.ownerClassId);writeU32(f,(uint32_t)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
+    writeString(f,fn.name);writeU32(f,(uint32_t)fn.ownerClassId);writeU32(f,(uint32_t)fn.returnType);writeU32(f,fn.isStatic?1u:0u);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
     for(const auto& i:fn.code){f.put((char)i.op);writeU64(f,(uint64_t)i.arg);writeString(f,i.text);}
   }
   if(!f)throw Error("Failed writing .room file");
@@ -350,15 +350,15 @@ static void saveRoom(const std::string& path,const BytecodeProgram& program){
 static BytecodeProgram loadRoom(const std::string& path){
   std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
   char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
-  if(readU32(f)!=7)throw Error("Unsupported .room version (expected 7)");
+  if(readU32(f)!=8)throw Error("Unsupported .room version (expected 8)");
   BytecodeProgram program;uint32_t classCount=readU32(f);if(classCount>10000)throw Error("Class count limit exceeded");
-  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v6");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
+  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v6");cls.fieldTypes.push_back((Type)type);}uint32_t staticFields=readU32(f);if(staticFields>100000)throw Error("Static field count limit exceeded");for(uint32_t j=0;j<staticFields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar static fields are supported");cls.staticFieldTypes.push_back((Type)type);}if(cls.baseClassId>=0){const auto& base=program.classes[(size_t)cls.baseClassId];if(cls.fieldTypes.size()<base.fieldTypes.size()||cls.staticFieldTypes.size()<base.staticFieldTypes.size())throw Error("Derived class member layout is shorter than base layout");}program.classes.push_back(std::move(cls));}
   uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
   for(uint32_t j=0;j<n;++j){
-    FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;
+    FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;uint32_t staticFlag=readU32(f);if(staticFlag>1)throw Error("Invalid static method flag");fn.isStatic=staticFlag!=0;
     fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
     uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
-    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::Dup)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
+    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::SetStaticField)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
     program.functions.push_back(std::move(fn));
   }
   if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");
