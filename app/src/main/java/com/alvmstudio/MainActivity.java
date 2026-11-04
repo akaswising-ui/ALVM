@@ -683,12 +683,16 @@ public class MainActivity extends Activity {
                     button.setTextColor(Color.WHITE);
                     button.setTextSize(18);
                     button.setBackground(roundDrawable(Color.rgb(55, 68, 103), dp(12)));
+                    button.setMinHeight(dp(52));
+                    button.setPadding(dp(2), dp(2), dp(2), dp(2));
+                    button.setIncludeFontPadding(false);
                     GridLayout.LayoutParams params = new GridLayout.LayoutParams(
-                            GridLayout.spec(GridLayout.UNDEFINED, 1f),
-                            GridLayout.spec(GridLayout.UNDEFINED));
+                            GridLayout.spec(GridLayout.UNDEFINED),
+                            GridLayout.spec(GridLayout.UNDEFINED, 1f));
                     params.width = 0;
-                    params.height = dp(56);
-                    params.setMargins(dp(3), dp(3), dp(3), dp(3));
+                    params.height = dp(58);
+                    params.setMargins(dp(4), dp(4), dp(4), dp(4));
+                    params.setGravity(Gravity.FILL);
                     buttonGrid.addView(button, params);
                     button.setOnClickListener(view -> {
                         try {
@@ -721,9 +725,11 @@ public class MainActivity extends Activity {
             if (!nativeUiDialog.isShowing()) nativeUiDialog.show();
             if (nativeUiDialog.getWindow() != null) {
                 nativeUiDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-                nativeUiDialog.getWindow().setLayout(
-                        Math.min(getResources().getDisplayMetrics().widthPixels - dp(28), dp(430)),
-                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                int screenWidth = getResources().getDisplayMetrics().widthPixels;
+                int screenHeight = getResources().getDisplayMetrics().heightPixels;
+                int dialogWidth = Math.min(screenWidth - dp(28), dp(430));
+                int dialogHeight = Math.min((int) (screenHeight * 0.78f), dp(620));
+                nativeUiDialog.getWindow().setLayout(dialogWidth, dialogHeight);
             }
         } catch (Exception error) {
             showOutputInWeb("Could not render AL UI: " + error.getMessage(), "ERROR");
