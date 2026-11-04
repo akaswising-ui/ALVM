@@ -140,4 +140,11 @@ if [[ "$QUIZ_EVENTS" != *'"id":"score","text":"30"'* ]]; then
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/2d_shapes.al" -o "$TMP/2d-shapes.room"
+GAME_UI="$("$BIN" ui "$TMP/2d-shapes.room")"
+if [[ "$GAME_UI" != *'"title":"AL 2D Engine Demo"'* || "$GAME_UI" != *'"kind":"rect"'* || "$GAME_UI" != *'"kind":"circle"'* || "$GAME_UI" != *'"kind":"line"'* || "$GAME_UI" != *'"x":80'* ]]; then
+  printf 'AL 2D graphics API failed:\\n%s\\n' "$GAME_UI" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, explicit super calls, foreach, switch and loop control"
