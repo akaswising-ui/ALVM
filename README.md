@@ -1,5 +1,9 @@
 # ALVM Studio
 
+## Development roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the implemented-feature matrix and staged plan for native GUI, runtime APIs, OOP, collections and Android project packaging.
+
 ## Android app UI: offline bundle
 
 The Android app packages the complete ALVM Studio interface and its local UI runtime in the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
@@ -160,4 +164,4 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The `.room` binary format remains v7 because this stage uses existing jump instructions and adds no bytecode opcodes. Recompile source when the file format changes in later stages.
+The `.room` binary format is v8. Stage 14 adds the `NewArraySized` opcode; recompile version 7 bytecode from its `.al` source.
