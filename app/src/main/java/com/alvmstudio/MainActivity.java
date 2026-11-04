@@ -304,6 +304,7 @@ public class MainActivity extends Activity {
         String result = compileNative(source, fileName);
         if (!compiled) return result;
         String output = runCiRuntime("main", "");
+        if (output.startsWith("✕ ")) return output;
         return "✓ Program completed in Python CI Runtime v" + lastRuntimeVersion + ".\n\n"
                 + (output.trim().isEmpty() ? "(program produced no console output)" : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
     }
