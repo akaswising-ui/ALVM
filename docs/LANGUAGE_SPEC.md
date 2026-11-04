@@ -88,3 +88,17 @@ foreach (int item : values) {
 - `main()` is a unique entry point and cannot be overloaded or called as an ordinary function.
 - The compiler assigns each overload a stable internal symbol; the source-level function name remains unchanged.
 - This stage implements global function overloading. Method and constructor overloading are not yet implemented.
+
+
+## Instance method overloading
+
+- A class may declare multiple instance methods with the same name when their ordered parameter type lists differ.
+- Calls are resolved from the receiver's static class type and argument types.
+- A candidate is viable only when its arity matches and each argument is assignable to the corresponding parameter type.
+- The compiler prefers the viable candidate with the greatest number of exact argument-to-parameter type matches.
+- No viable candidate or a tie for the best score is a compile-time error.
+- Return type alone cannot distinguish overloads. A repeated parameter type list is a duplicate signature.
+- A derived class inherits all visible overload signatures from its base class. A new overload with a different parameter list may be added in the derived class.
+- A same-signature method in a derived class is rejected until virtual overriding is implemented.
+- The selected implementation is stored as a collision-resistant internal symbol in IR and bytecode.
+- Constructor overloading is not part of this stage.
