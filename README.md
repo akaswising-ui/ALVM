@@ -8,32 +8,33 @@ AL is an independent language and runtime project. Its identity is fixed as:
 
 The native top-level declaration is `room Main`. `class Main` is accepted as an early compatibility spelling.
 
-## Stage 2 implementation
+## Stage 3 implementation
 
 The current engine is a C++17 command-line compiler and virtual machine. The implemented path is:
 
 `.al source -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowering -> binary .room -> verifier -> ALVM runtime`
 
 Working features:
-- Lexer with line/column positions, line and block comments, integer/string/boolean literals, escaped strings and multi-character operators.
-- AST for declarations, assignments, expressions, print, return, blocks, if/else, while and for.
-- Static type checks for `int`, `string`, `boolean` and inferred `var`.
+- Lexer with line/column positions, line and block comments, integer/string/boolean literals, escaped strings, punctuation and multi-character operators.
+- AST for declarations, assignments, expressions, array literals, indexing, array mutation, print, return, blocks, if/else, while and for.
+- Static type checks for `int`, `string`, `boolean`, `int[]`, `string[]`, `boolean[]` and inferred `var`.
 - Arithmetic, string concatenation, comparisons, equality, logical operators and unary operators.
 - Short-circuit evaluation for `&&` and `||`.
 - `if/else`, `while` and `for` bytecode control flow.
-- Explicit IR generation and a separate bytecode-lowering pass.
-- Binary `.room` v2 format with ALRM magic, version, instruction table, 64-bit operands and bounded string constants.
+- Arrays with typed literals, indexing, mutation and `.length`.
+- Runtime array bounds and element-type checks. Arrays are reference values, so assigning one array variable to another shares its array.
+- Explicit AST, semantic/type analysis, IR generation and bytecode-lowering passes.
+- Binary `.room` v3 format with ALRM magic, version, instruction table, 64-bit operands and bounded string constants.
 - Bytecode control-flow stack verifier, runtime type guards, overflow checks and division-by-zero checks.
 - CLI commands: `compile`, `run` and `disasm`.
-- Automated positive, negative and control-flow end-to-end tests.
+- Automated positive, negative, array, bounds, control-flow and short-circuit end-to-end tests.
 
 ## Not implemented yet
 
 The project is not a complete language, IDE or Android app. These major features are still pending:
-- Arrays, indexing, collections and generics.
 - User-defined functions, parameters, call frames, recursion and overloads.
-- Classes/objects, constructors, inheritance, interfaces, polymorphism and access control.
-- Exceptions and modules/imports.
+- Classes/objects, constructors, fields, methods, inheritance, interfaces, polymorphism and access control.
+- Generics, exceptions and modules/imports.
 - Standard libraries for files, networking and databases.
 - Graphics, UI, audio, input, physics and game APIs.
 - Graphical ALVM Studio editor, project explorer, terminal and debugger.
@@ -54,24 +55,23 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The hello example prints `30`. The control-flow example exercises loops and conditional branches.
+The hello example prints `30`. The control-flow and arrays examples exercise loops, branches and typed mutable arrays.
 
-## .room v2 binary format
+## .room v3 binary format
 
 All integer fields are little-endian:
 1. Four-byte magic: `ALRM`.
-2. uint32 format version: `2`.
+2. uint32 format version: `3`.
 3. uint32 instruction count.
 4. For each instruction: uint8 opcode, uint64 operand, uint32 UTF-8 payload length, payload bytes.
 
-Version 1 files are not currently accepted by the Stage 2 loader. The VM loads and executes the compiled `.room` bytecode; it does not interpret `.al` source at runtime.
+Version 1 and 2 files are not currently accepted by the Stage 3 loader. Recompile their `.al` source to generate version 3. The VM loads and executes compiled `.room` bytecode; it does not interpret `.al` source at runtime.
 
 ## Next engineering stages
 
-1. Arrays, element types, indexing, mutation and bounds-safe runtime operations.
-2. Functions, parameter/return checking, call frames and recursion.
-3. Complete object model: classes, fields, methods, constructors and inheritance.
-4. Exceptions, modules and standard library.
-5. Graphics/game/audio APIs and a real-time runtime loop.
-6. Graphical editor/IDE, project model, diagnostics and debugging.
-7. `.AL` packaging, Android integration and a tested APK pipeline.
+1. User functions, parameters, returns, call frames and recursion.
+2. Classes, fields, methods, constructors and inheritance.
+3. Interfaces, generics, exceptions, modules and standard library.
+4. Graphics/game/audio APIs and a real-time runtime loop.
+5. Graphical editor/IDE, project model, diagnostics and debugging.
+6. `.AL` packaging, Android integration and a tested APK pipeline.
