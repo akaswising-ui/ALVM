@@ -102,3 +102,17 @@ foreach (int item : values) {
 - A same-signature method in a derived class is rejected until virtual overriding is implemented.
 - The selected implementation is stored as a collision-resistant internal symbol in IR and bytecode.
 - Constructor overloading is not part of this stage.
+
+
+## Constructor overloading
+
+- A class may declare multiple constructors when their ordered parameter type lists differ.
+- An object creation expression resolves its constructor using the static types of its arguments.
+- A candidate is viable only when arity matches and each argument is assignable to the corresponding parameter type.
+- The compiler prefers the viable constructor with the greatest number of exact argument-to-parameter type matches.
+- No viable constructor or a tie for the best score is a compile-time error.
+- Return type does not apply to constructors. Repeating the same parameter type list is a duplicate constructor signature.
+- If a class declares no constructor, the parser supplies a zero-argument constructor.
+- A derived constructor automatically calls the base class zero-argument constructor. Compilation fails if the base class has no zero-argument constructor.
+- Explicit base-constructor calls such as super(arguments) are not implemented yet.
+- Each constructor is assigned a collision-resistant internal symbol in IR and bytecode.
