@@ -74,17 +74,19 @@ def _module_from_file(path: Path, cache_key: str) -> ModuleType:
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
+        _validate_runtime_module(module)
     except Exception:
         sys.modules.pop(module_name, None)
         raise
-    _validate_runtime_module(module)
     _MODULE_CACHE[cache_key] = module
     return module
 
 
-def _validate_runtime_module(module: ModuleType) -> None:
+def _validate_runtime_module(module: ModuleType, expected_version: str | None = None) -> None:
     if getattr(module, "RUNTIME_API_VERSION", None) != RUNTIME_API_VERSION:
         raise RuntimeError("Runtime API version mismatch")
+    if expected_version is not None and getattr(module, "RUNTIME_VERSION", None) != expected_version:
+        raise RuntimeError("Runtime code version does not match its manifest")
     if not callable(getattr(module, "run_room", None)):
         raise RuntimeError("Runtime package is missing run_room()")
     test = getattr(module, "self_test", None)
@@ -157,6 +159,11 @@ def status_json(runtime_root: str) -> str:
             _read_manifest(root / "versions" / active)
         except Exception:
             active = "bundled"
+    try:
+        _engine, active = _load_engine(root)
+        state = _read_state(root)
+    except Exception:
+        active = "bundled"
     return json.dumps({
         "ok": True,
         "active_version": active,
@@ -239,7 +246,7 @@ def install_update(package_path: str, runtime_root: str) -> str:
             )
             # Verify the module interface and self-test before activating it.
             candidate = _module_from_file(stage / "runtime.py", "staged_" + version)
-            _validate_runtime_module(candidate)
+            _validate_runtime_module(candidate, version)
             os.replace(str(stage), str(destination))
 
         state = _read_state(root)
