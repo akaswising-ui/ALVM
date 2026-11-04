@@ -19,6 +19,21 @@ test "$("$BIN" run "$TMP/logic.room")" = "short circuit ok"
 ARRAY_EXPECTED="$(printf '10\n3\n18\n7\nAL Bytecode\n2\nflags ok')"
 test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
 
+
+"$BIN" compile "$ROOT/examples/array_allocation.al" -o "$TMP/array-allocation.room"
+ARRAY_ALLOCATION_EXPECTED="$(printf '5\n10\n0\n50\n\nAL\n0\nfalse\ntrue')"
+ARRAY_ALLOCATION_ACTUAL="$("$BIN" run "$TMP/array-allocation.room")"
+if [[ "$ARRAY_ALLOCATION_ACTUAL" != "$ARRAY_ALLOCATION_EXPECTED" ]]; then
+  printf 'array allocation expected:\n%s\narray allocation actual:\n%s\n' "$ARRAY_ALLOCATION_EXPECTED" "$ARRAY_ALLOCATION_ACTUAL" >&2
+  exit 1
+fi
+
+"$BIN" compile "$ROOT/tests/array_negative_length.al" -o "$TMP/array-negative-length.room"
+if "$BIN" run "$TMP/array-negative-length.room" >/dev/null 2>&1; then
+  echo "FAIL: negative array length was accepted" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/overloading.al" -o "$TMP/overloading.room"
 OVERLOAD_EXPECTED="$(printf '5\nAL\n10')"
 OVERLOAD_ACTUAL="$("$BIN" run "$TMP/overloading.room")"
@@ -83,7 +98,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base; do
+for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1

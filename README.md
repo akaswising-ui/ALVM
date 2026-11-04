@@ -1,5 +1,9 @@
 # ALVM Studio
 
+## Development roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the implemented-feature matrix and staged plan for native GUI, runtime APIs, OOP, collections and Android project packaging.
+
 ## Android app UI: offline bundle
 
 The Android app packages the complete ALVM Studio interface and its local UI runtime in the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
@@ -26,6 +30,26 @@ class Child extends Base {
     Child(int value) { super(value); }
 }
 ```
+
+## Stage 14: sized primitive-array allocation
+
+AL supports runtime-sized allocations for the three currently implemented primitive array types:
+
+```al
+int[] scores = new int[5];
+string[] names = new string[2];
+boolean[] flags = new boolean[3];
+
+scores[0] = 10;
+AL.print(scores.length); // 5
+AL.print(scores[1]);     // 0 (default)
+AL.print(names[0]);      // empty string (default)
+AL.print(flags[0]);      // false (default)
+```
+
+The compiler type-checks the length expression as `int` and emits the `NewArraySized` instruction. The verifier checks the encoded element type and stack effect. The VM allocates the array and initializes each slot to the type's default value. Runtime lengths must be between 0 and 100000 inclusive. This stage adds a real opcode and advances the binary `.room` format from version 7 to version 8. Existing version 7 files must be recompiled from their `.al` sources.
+
+This stage does **not** add object arrays, multidimensional arrays, generics, lists, maps or sets.
 
 ## Stage 12: constructor overloading
 
@@ -66,7 +90,7 @@ This stage adds global function overloading. Instance method and constructor ove
 
 ## Stage 9: array foreach iteration
 
-AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, so `.room` v7 does not need an ABI change.
+AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, and uses the existing foreach lowering in `.room` v8 without a dedicated foreach opcode.
 
 ```al
 int[] scores = [10, 20, 30];
@@ -79,7 +103,7 @@ foreach (int score : scores) {
 
 Current C++17 compiler pipeline:
 
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v8 -> verifier -> ALVM`
 
 Implemented:
 - Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
@@ -128,7 +152,7 @@ room Main {
 
 ## Still pending
 
-Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, generics, enums, exceptions, modules, full standard libraries, graphics/game/audio APIs, graphical IDE, `.AL` packaging and Android APK generation remain pending.
+Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, multidimensional arrays, generics, enums, exceptions, modules, full standard libraries, AL-native GUI and Android controls, touch/gesture APIs, graphics/audio engine, database/networking APIs, `.AL` application packaging and building a user AL program into an Android APK remain pending. The ALVM Studio Android app itself already has an offline APK build; that is not the same as generating APKs from AL programs.
 
 ## Build
 
@@ -140,4 +164,4 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The `.room` binary format remains v7 because this stage uses existing jump instructions and adds no bytecode opcodes. Recompile source when the file format changes in later stages.
+The `.room` binary format is v8. Stage 14 adds the `NewArraySized` opcode; recompile version 7 bytecode from its `.al` source.
