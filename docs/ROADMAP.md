@@ -1,5 +1,27 @@
 # ALVM Studio development roadmap
 
+## Library Store inventory
+
+The Library Store contains **12 module cards** after the missing modules were added. Existing modules were retained; only the absent audio and system modules were added.
+
+| AL library area | Existing Library Store entry |
+|---|---|
+| AL.Core | AL Compiler + AL Virtual Machine |
+| AL.Math | Standard Library |
+| AL.String | Standard Library |
+| AL.Collections | Standard Library |
+| AL.Files | File System Library |
+| AL.Network | Networking Library |
+| AL.Database | Database Library |
+| AL.UI | GUI Framework |
+| AL.Graphics | Graphics Library |
+| AL.Game | Game Development Library |
+| AL.Audio | Newly added |
+| AL.System | Newly added |
+
+The Website Development Library remains an additional tool outside this 12-area AL runtime library set. The Library Store cards and snippets are catalog/documentation unless a native implementation is explicitly listed below. Adding a catalog entry does not make its API executable.
+
+
 This roadmap distinguishes the native AL language engine from the Android IDE shell and from browser-only previews. A UI example or snippet is not an executable AL standard-library API.
 
 ## Current implemented native foundation
