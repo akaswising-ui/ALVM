@@ -1,101 +1,67 @@
 # ALVM Studio
 
-AL is an independent language and runtime project:
-- Vocabulary and keyword spelling: Python-influenced.
-- Source writing style: Java-like.
-- Rules: strict and C++-influenced.
-- Implementation: its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM. It is not another language under a renamed extension.
+AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
-The native top-level declaration is `room Main`. `class Main` remains an early compatibility spelling.
+## Stage 6: inheritance
 
-## Stage 5 implementation
+The current C++17 compiler pipeline is:
 
-Current engine: C++17 compiler and bytecode VM.
-
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowering -> binary .room v5 -> verifier -> ALVM`
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v6 -> verifier -> ALVM`
 
 Implemented:
-- Line/column lexer diagnostics, comments, escaped strings, integer/string/boolean literals and multi-character operators.
-- Scalar and array type checks: `int`, `string`, `boolean`, `int[]`, `string[]`, `boolean[]`, plus inferred `var`.
-- Arithmetic, string concatenation, comparisons, equality, logical operators and short-circuit evaluation.
-- `if/else`, `while`, `for`.
-- Typed arrays with literals, indexing, mutation, `.length`, aliasing and bounds checks.
-- User-defined functions, typed parameters, return values, direct calls and recursion.
-- Class declarations inside a room, scalar instance fields, object creation with `new ClassName()`, field reads/writes, `this`, instance method calls and object references.
-- Compile-time validation of field names, field types, method names, method argument counts and method argument types.
-- Per-function local slots and VM call frames. Recursive call depth is limited to 1024.
-- Binary `.room` v5 class/function tables, verifier control-flow checks, call target/local checks and runtime object-field guards.
-- CLI commands: `compile`, `run`, `disasm`.
-- End-to-end tests for control flow, arrays, functions, recursion, object state, aliasing and invalid types.
+- Scalar types, typed arrays, arithmetic, conditions, loops and short-circuit boolean operators.
+- Typed functions, parameters, return values, nested calls and recursion.
+- Classes, scalar instance fields, object creation, field access, `this`, instance methods and object references.
+- Single inheritance using `class Dog extends Animal`.
+- Inherited fields and methods; a derived object may be used as a base-type variable, parameter or return value.
+- Runtime class ancestry checks for inherited method receivers.
+- Inherited field layouts are flattened in the object representation.
+- Compile-time rejection of unknown base classes, invalid downcasts, inherited field collisions and method overrides.
+- `.room` v6 class hierarchy metadata and verifier checks.
 
-## Object example
+Parent classes must be declared before child classes in the same room. Multi-generation inheritance works when this ordering is followed. Method overriding and virtual dispatch are not implemented, so a child cannot redeclare an inherited method. Static members, access control, constructors, interfaces and abstract classes remain pending.
+
+## Example
 
 ```al
 room Main {
     public static void main() {
-        Player player = new Player();
-        player.addHealth(25);
-        AL.print(player.health);
+        Dog dog = new Dog();
+        dog.setAge(7);
+        Animal animal = dog;
+        AL.print(animal.getAge());
+        AL.print(dog.bark());
     }
 
-    class Player {
-        int health;
+    class Animal {
+        int age;
+        public void setAge(int value) { this.age = value; }
+        public int getAge() { return this.age; }
+    }
 
-        public void addHealth(int amount) {
-            this.health = this.health + amount;
-        }
+    class Dog extends Animal {
+        int trained;
+        public int bark() { return 1; }
     }
 }
 ```
 
-Class fields currently support scalar `int`, `string` and `boolean` types. Fields receive defaults of `0`, empty string and `false`. There are no custom constructors yet. Object assignment copies the reference, so aliases share field changes. Instance methods use a hidden `this` local.
+## Not implemented
 
-Access modifiers (`public`, `private`, `protected`) and `static` are accepted syntactically but are not enforced. All class methods currently use instance-call semantics.
+Function/method overloading, virtual overriding, interfaces, abstract classes, constructors, static fields/methods, enforced access modifiers, object arrays, generics, enums, exceptions, modules, complete standard libraries, graphics/game/audio APIs, GUI IDE, `.AL` application packaging and Android APK generation are still pending.
 
-## Not implemented yet
-
-This is not a complete language, IDE or Android app. Pending features include:
-- Inheritance, `extends`, `implements`, interfaces, polymorphism, abstract classes and enforced access control.
-- Custom constructors, static class methods, class-level/static fields and object arrays.
-- Function/method overloading, lambdas, closures, generics and enums.
-- Exceptions and modules/imports.
-- Additional numeric types (`float`, `double`, `long`, `short`, `byte`), `char` and more collections.
-- Standard libraries for math, strings, files, networking and databases.
-- Graphics, UI, audio, input, physics and game APIs.
-- Graphical ALVM Studio editor, project explorer, terminal, debugger and Android integration.
-- `.AL` packaging and Android APK build/signing.
-
-Do not mark a feature complete until implementation and tests support it.
-
-## Build and run
-
-Requirements: C++17 compiler, CMake 3.16+ and Bash for tests.
+## Build
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/alvm compile examples/hello.al
-./build/alvm run examples/hello.room
-./build/alvm compile examples/functions.al
-./build/alvm run examples/functions.room
-./build/alvm compile examples/objects.al
-./build/alvm run examples/objects.room
+./build/alvm compile examples/inheritance.al
+./build/alvm run examples/inheritance.room
 ctest --test-dir build --output-on-failure
 ```
 
-The object example demonstrates typed fields, instance methods, `this`, field mutation and reference aliasing.
+## .room v6 format
 
-## .room v5
+Little-endian format: `ALRM` magic, version 6, class count; each class stores its name, signed base-class id (-1 for none), flattened field count and field type tags; then function count and function entries. A function stores its name, owner class id, return type, parameter count, local count and instructions. Each instruction stores opcode, 64-bit operand and length-prefixed payload.
 
-Little-endian fields: 4-byte `ALRM` magic; uint32 version 5; uint32 class count; each class has a length-prefixed UTF-8 name, uint32 field count and uint32 scalar type tags; then uint32 function count; each function has name, signed owner-class id, return type, parameter count, local count and instruction count; each instruction has uint8 opcode, uint64 operand and length-prefixed payload.
-
-Versions 1 through 4 are not accepted by the v5 loader. Recompile the original `.al` files. The VM executes compiled `.room` bytecode and never interprets source at runtime.
-
-## Roadmap
-
-1. Inheritance, interfaces, constructors, static members and object arrays.
-2. Overloading, generics, enums, exceptions and modules.
-3. Standard library APIs for system, files, networking and data.
-4. Graphics/game/audio APIs and a real-time runtime loop.
-5. Graphical IDE, project model, diagnostics and debugging.
-6. `.AL` packaging, Android integration and tested APK pipeline.
+Base class ids must point to an earlier class entry. The loader rejects invalid parent references and old .room v1-v5 files. Recompile the original `.al` source. The VM executes compiled bytecode only.
