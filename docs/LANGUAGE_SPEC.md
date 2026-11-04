@@ -174,3 +174,25 @@ UI.button("one", "1", "onButton");
 - Button clicks pass the button ID to the AL callback. The C++ VM executes the callback, while the Android Java host creates and updates native Android Views.
 
 The `.room` format is version 9. The `UiCall` opcode carries UI commands to the VM. `examples/calculator.al` is a complete AL-authored calculator sample; neither its layout nor arithmetic is preloaded in the Android host.
+
+## Stage 16: Native 2D drawing API
+
+AL programs can create a native Android 2D drawing surface:
+
+```al
+UI.game("My 2D Game");
+UI.rect("ground", 0, 400, 320, 80, 4278255360);
+UI.circle("player", 80, 360, 18, 4294901760);
+UI.line("platform", 10, 350, 300, 350, 4294967295);
+UI.remove("player");
+```
+
+- The logical drawing surface is 320 by 480 units and scales to the available Android view.
+- `UI.game(string title)` sets the game title and clears current UI elements.
+- `UI.rect(string id, int x, int y, int width, int height, int argb)` draws a filled rectangle.
+- `UI.circle(string id, int centerX, int centerY, int radius, int argb)` draws a filled circle.
+- `UI.line(string id, int x1, int y1, int x2, int y2, int argb)` draws a line.
+- Colors are ARGB integer values. For example, opaque red is 4294901760.
+- Reusing an ID updates that drawing object. `UI.remove(string id)` removes it.
+- The C++ ALVM executes drawing calls and serializes scene objects; Android renders them using a native Canvas-backed View.
+- This stage provides a static 2D scene renderer. A timed game loop, sprite/image loading, touch callbacks, physics, and collision APIs are not implemented yet.
