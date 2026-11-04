@@ -368,6 +368,7 @@ using ObjectPtr=std::shared_ptr<Object>;
 using Value=std::variant<int64_t,std::string,bool,ArrayPtr,ObjectPtr>;
 struct Array { std::vector<Value> items; size_t elementKind=std::numeric_limits<size_t>::max(); };
 struct Object { size_t classId=0; std::vector<Value> fields; };
+static bool isInstanceOf(size_t actual,size_t expected,const std::vector<ClassBC>& classes){while(actual<classes.size()){if(actual==expected)return true;int32_t parent=classes[actual].baseClassId;if(parent<0)return false;actual=(size_t)parent;}return false;}
 static std::string show(const Value& v){if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);if(auto x=std::get_if<std::string>(&v))return *x;if(auto x=std::get_if<bool>(&v))return *x?"true":"false";if(auto a=std::get_if<ArrayPtr>(&v))return "[array length="+std::to_string((*a)->items.size())+"]";return "[object]";}
 static int64_t integer(const Value& v){if(auto x=std::get_if<int64_t>(&v))return *x;throw Error("Runtime type error: expected int");}
 static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;throw Error("Runtime type error: expected boolean");}
@@ -409,7 +410,7 @@ static void execute(const BytecodeProgram& program){
       case Op::Call:{
         size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
         size_t count=(size_t)callee.parameterCount+(callee.ownerClassId>=0?1:0);std::vector<Value> args(count);for(size_t k=count;k>0;--k)args[k-1]=pop();
-        if(callee.ownerClassId>=0){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||(*obj)->classId!=(size_t)callee.ownerClassId)throw Error("Instance method called with wrong receiver object");}
+        if(callee.ownerClassId>=0){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||!isInstanceOf((*obj)->classId,(size_t)callee.ownerClassId,classes))throw Error("Instance method called with incompatible receiver object");}
         Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);frames.push_back(std::move(next));break;
       }
       case Op::Ret:{bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;frames.pop_back();if(frames.empty())return;if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;}
