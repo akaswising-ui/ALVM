@@ -115,6 +115,7 @@ const modules: Module[] = [
       { id: 'exit', title: 'Exit application', description: 'Request a normal application exit.', snippet: 'System.exit();' }
     ]
   },
+  {
     id: 'database', name: 'Database Library', group: 'Data libraries', status: 'Planned',
     detail: 'Structured storage, tables, queries, indexes and persistence.',
     entries: [
