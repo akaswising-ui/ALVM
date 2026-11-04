@@ -3,6 +3,7 @@ package com.alvmstudio;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -46,6 +47,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
 
@@ -66,6 +69,7 @@ public class MainActivity extends Activity {
     private boolean saveAfterFolderPick = false;
     private boolean openAfterFolderPick = false;
     private CiRuntimeHost ciRuntime;
+    private final ExecutorService runtimeUpdateExecutor = Executors.newSingleThreadExecutor();
     private String lastRuntimeUiJson = "";
     private String lastRuntimeVersion = "";
 
@@ -581,29 +585,137 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) { }
     }
 
+    private String currentCiRuntimeVersion() {
+        JSONObject status = ciRuntime.status();
+        String active = status.optString("active_version", "bundled");
+        return "bundled".equals(active)
+                ? status.optString("bundled_version", "1.0.0") : active;
+    }
+
+    private String installedAppVersion() {
+        try {
+            String value = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            return value == null || value.trim().isEmpty() ? "unknown" : value;
+        } catch (Exception error) {
+            return "unknown";
+        }
+    }
+
+    private void publishRuntimeVersion() {
+        if (webView == null) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("version", currentCiRuntimeVersion());
+            webView.evaluateJavascript(
+                    "(function(p){if(window.__alvmSetRuntimeVersion)window.__alvmSetRuntimeVersion(p.version);})("
+                            + payload.toString() + ");", null);
+        } catch (Exception ignored) { }
+    }
+
     private void showCiRuntimeManager() {
         JSONObject status = ciRuntime.status();
         String active = status.optString("active_version", "bundled");
-        String bundled = status.optString("bundled_version", "1.0.0");
+        if ("bundled".equals(active)) active = status.optString("bundled_version", "1.0.0");
         StringBuilder previous = new StringBuilder();
         JSONArray versions = status.optJSONArray("previous_versions");
         if (versions != null) {
             for (int i = 0; i < versions.length(); i++) {
                 if (i > 0) previous.append(", ");
-                previous.append(versions.optString(i));
+                String version = versions.optString(i);
+                previous.append("bundled".equals(version)
+                        ? status.optString("bundled_version", "1.0.0") : version);
             }
         }
-        String message = "Active CI Runtime: " + active
-                + "\nBundled fallback: " + bundled
-                + "\n.room format: v" + status.optInt("room_format", 9)
-                + "\nRollback versions: " + (previous.length() == 0 ? "none" : previous);
+        String message = "App version: " + installedAppVersion()
+                + "\nCI Runtime: " + active
+                + "\n.room format: " + status.optInt("room_format", 9)
+                + "\nRuntime history: " + (previous.length() == 0 ? "none" : previous);
+        String[] actions = {
+                "DOWNLOAD LATEST RUNTIME",
+                "INSTALL FROM FILE",
+                "ROLLBACK",
+                "CLOSE"
+        };
         new AlertDialog.Builder(this)
                 .setTitle("CI Runtime Manager")
                 .setMessage(message)
-                .setPositiveButton("INSTALL UPDATE", (dialog, which) -> requestCiRuntimeUpdate())
-                .setNeutralButton("ROLLBACK", (dialog, which) -> rollbackCiRuntime())
-                .setNegativeButton("CLOSE", null)
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) downloadLatestCiRuntime();
+                    else if (which == 1) requestCiRuntimeUpdate();
+                    else if (which == 2) rollbackCiRuntime();
+                })
                 .show();
+    }
+
+    private void downloadLatestCiRuntime() {
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle("CI Runtime");
+        progress.setMessage("Checking published Runtime versions...");
+        progress.setIndeterminate(true);
+        progress.setCancelable(false);
+        progress.show();
+
+        runtimeUpdateExecutor.execute(() -> {
+            File packageFile = null;
+            try {
+                CiRuntimeUpdater.Release latest = CiRuntimeUpdater.findLatest();
+                if (latest == null) {
+                    throw new IllegalStateException("No CI Runtime release has been published yet.");
+                }
+                String installed = currentCiRuntimeVersion();
+                if (CiRuntimeUpdater.compareVersions(latest.version, installed) <= 0) {
+                    runOnUiThread(() -> {
+                        if (!isFinishing()) {
+                            progress.dismiss();
+                            new AlertDialog.Builder(this)
+                                    .setTitle("CI Runtime")
+                                    .setMessage("Installed: " + installed + "\nLatest: " + latest.version
+                                            + "\n\nNo newer Runtime version is available.")
+                                    .setPositiveButton("OK", null)
+                                    .show();
+                        }
+                    });
+                    return;
+                }
+
+                packageFile = new File(getCacheDir(), "ci-runtime-" + latest.version + ".ciruntime");
+                CiRuntimeUpdater.download(latest, packageFile);
+                JSONObject result = ciRuntime.installUpdate(packageFile.getAbsolutePath());
+                if (!result.optBoolean("ok", false)) {
+                    throw new IllegalStateException(result.optString("error", "Runtime installation failed"));
+                }
+                String activeVersion = result.optString("active_version", latest.version);
+                runOnUiThread(() -> {
+                    if (!isFinishing()) {
+                        progress.dismiss();
+                        publishRuntimeVersion();
+                        String message = "CI Runtime " + activeVersion + " downloaded and installed.\n"
+                                + "The next .room execution will use this version.";
+                        showOutputInWeb("✓ " + message, "SUCCESS");
+                        new AlertDialog.Builder(this)
+                                .setTitle("CI Runtime updated")
+                                .setMessage(message)
+                                .setPositiveButton("OK", null)
+                                .show();
+                    }
+                });
+            } catch (Exception error) {
+                String errorMessage = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+                runOnUiThread(() -> {
+                    if (!isFinishing()) {
+                        progress.dismiss();
+                        showOutputInWeb("✕ CI Runtime download failed: " + errorMessage, "ERROR");
+                        new AlertDialog.Builder(this)
+                                .setTitle("CI Runtime download failed")
+                                .setMessage(errorMessage)
+                                .setPositiveButton("OK", null)
+                                .show();
+                    }
+                });
+            } finally {
+                if (packageFile != null) packageFile.delete();
+            }
+        });
     }
 
     private void requestCiRuntimeUpdate() {
@@ -634,6 +746,7 @@ public class MainActivity extends Activity {
         packageFile.delete();
         if (result.optBoolean("ok", false)) {
             lastRuntimeVersion = result.optString("active_version", "");
+            publishRuntimeVersion();
             String message = "✓ " + result.optString("message", "CI Runtime updated")
                     + "\nActive version: " + lastRuntimeVersion;
             showOutputInWeb(message, "SUCCESS");
@@ -657,6 +770,7 @@ public class MainActivity extends Activity {
         JSONObject result = ciRuntime.rollback();
         if (result.optBoolean("ok", false)) {
             lastRuntimeVersion = result.optString("active_version", "");
+            publishRuntimeVersion();
             showOutputInWeb("✓ CI Runtime rolled back to " + lastRuntimeVersion, "SUCCESS");
             new AlertDialog.Builder(this)
                     .setTitle("CI Runtime rollback")
@@ -926,6 +1040,12 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String getCiRuntimeVersion() {
+            try { return currentCiRuntimeVersion(); }
+            catch (Exception error) { return "unknown"; }
+        }
+
+        @JavascriptInterface
         public void createNewFile() {
             runOnUiThread(() -> MainActivity.this.createNewFile());
         }
@@ -1003,6 +1123,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        runtimeUpdateExecutor.shutdownNow();
         if (nativeUiDialog != null) { nativeUiDialog.dismiss(); nativeUiDialog = null; }
         if (webView != null) {
             webView.removeJavascriptInterface("Android");
