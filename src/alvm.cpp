@@ -36,25 +36,31 @@ static std::vector<Token> lex(const std::string& src) {
   out.push_back({"<eof>",line,col});return out;
 }
 
-enum class Type { Int, String, Bool, IntArray, StringArray, BoolArray, Void, Unknown };
-static std::string typeName(Type t){switch(t){case Type::Int:return"int";case Type::String:return"string";case Type::Bool:return"boolean";case Type::IntArray:return"int[]";case Type::StringArray:return"string[]";case Type::BoolArray:return"boolean[]";case Type::Void:return"void";default:return"unknown";}}
+enum class Type : int { Int, String, Bool, IntArray, StringArray, BoolArray, Void, Unknown, UserBase=100 };
+static std::vector<std::string> userTypeNames;
+static std::map<std::string,Type> userTypeMap;
+static Type registerUserType(const std::string& name){auto f=userTypeMap.find(name);if(f!=userTypeMap.end())return f->second;Type t=(Type)(100+(int)userTypeNames.size());userTypeNames.push_back(name);userTypeMap[name]=t;return t;}
+static bool isUserType(Type t){return (int)t>=100&&(int)t<100+(int)userTypeNames.size();}
+static std::string typeName(Type t){switch(t){case Type::Int:return"int";case Type::String:return"string";case Type::Bool:return"boolean";case Type::IntArray:return"int[]";case Type::StringArray:return"string[]";case Type::BoolArray:return"boolean[]";case Type::Void:return"void";default:if(isUserType(t))return userTypeNames[(int)t-100];return"unknown";}}
 static bool isArray(Type t){return t==Type::IntArray||t==Type::StringArray||t==Type::BoolArray;}
 static Type arrayOf(Type t){if(t==Type::Int)return Type::IntArray;if(t==Type::String)return Type::StringArray;if(t==Type::Bool)return Type::BoolArray;return Type::Unknown;}
 static Type elementOf(Type t){if(t==Type::IntArray)return Type::Int;if(t==Type::StringArray)return Type::String;if(t==Type::BoolArray)return Type::Bool;return Type::Unknown;}
 struct Expr {
-  enum Kind { Integer, String, Boolean, Variable, Unary, Binary, ArrayLiteral, Index, Length, Call } kind;
+  enum Kind { Integer, String, Boolean, Variable, This, NewObject, FieldAccess, MethodCall, Unary, Binary, ArrayLiteral, Index, Length, Call } kind;
   Token token; int64_t number=0; bool boolean=false; std::string text; std::unique_ptr<Expr> left,right; std::vector<std::unique_ptr<Expr>> elements; Type inferred=Type::Unknown;
 };
 struct Stmt {
-  enum Kind { Block, Declare, Assign, ArrayAssign, ExprStatement, Print, Return, If, While, For } kind;
+  enum Kind { Block, Declare, Assign, ArrayAssign, FieldAssign, ExprStatement, Print, Return, If, While, For } kind;
   Token token; std::string name; Type declared=Type::Unknown;
   std::unique_ptr<Expr> expr, condition, incrementExpr;
   std::unique_ptr<Stmt> first, second, third;
   std::vector<std::unique_ptr<Stmt>> children;
 };
 struct Parameter { std::string name; Type type=Type::Unknown; };
-struct Function { std::string name; Type returnType=Type::Void; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
-struct Program { std::string name; std::vector<Function> functions; };
+struct Function { std::string name; std::string ownerClass; Type returnType=Type::Void; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
+struct Field { std::string name; Type type=Type::Unknown; };
+struct ClassDecl { std::string name; std::vector<Field> fields; std::vector<Function> methods; };
+struct Program { std::string name; std::vector<ClassDecl> classes; std::vector<Function> functions; };
 
 class Parser {
   std::vector<Token> t; size_t p=0;
