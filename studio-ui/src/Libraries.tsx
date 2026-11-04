@@ -95,7 +95,6 @@ const modules: Module[] = [
     ]
   },
   {
-  {
     id: 'audio', name: 'AL.Audio', group: 'System libraries', status: 'Planned',
     detail: 'Native audio playback, sound effects, volume control and audio resource management. These APIs remain planned until the AL runtime and Android host implement and test them.',
     entries: [
