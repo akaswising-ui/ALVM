@@ -1,55 +1,59 @@
-# AL Language Specification: Stage 8
+# AL Language Specification: Stage 9
 
-## Control-flow syntax
+## Identity
+
+AL uses Python-influenced vocabulary, Java-like source structure, and strict C++-influenced rules. It owns its compiler and bytecode VM.
+
+## Static member syntax
 
 ```al
-switch (expression) {
-    case value:
-        statements
-        break;
-    default:
-        statements
-}
+room Main {
+    public static void main() {
+        Counter.value = 10;
+        Counter.increment(5);
+        AL.print(Counter.value);
+    }
 
-do {
-    statements
-} while (condition);
+    class Counter {
+        static int value;
+
+        static void increment(int amount) {
+            Counter.value = Counter.value + amount;
+        }
+    }
+}
 ```
 
-The language also supports `break;` and `continue;` inside their valid contexts.
+## Static member rules
 
-## Switch semantics
+- A class field may be declared with the `static` modifier.
+- A class method may be declared with the `static` modifier.
+- Static fields and methods are accessed using the class name: `ClassName.field` and `ClassName.method(args)`.
+- Static fields currently support scalar `int`, `string` and `boolean` only. Defaults are `0`, empty string and `false`.
+- Static values are stored once per declaring class in VM class storage, not in individual object instances.
+- Static field values are shared across function calls and object instances for the lifetime of one program execution.
+- A static method has no hidden receiver and no implicit `this`. Using `this` in a static method is a compile-time error.
+- Static methods support typed parameters, return values, normal calls and recursion using the existing call-frame runtime.
+- Static fields and methods are inherited. An inherited static field access resolves to the declaring class's storage, so reading or writing it through a subclass does not create a second copy.
+- Static fields cannot be accessed through an object instance. Instance fields cannot be accessed through a class name.
+- Static methods cannot be invoked through an object instance. Instance methods cannot be invoked through a class name.
+- A class cannot declare a static and instance field with the same name. A static and instance method with the same name are also rejected.
+- Inherited member-name collisions are rejected. Method overriding is not implemented.
+- Access modifiers are not enforced yet. The `static` modifier is implemented for fields and methods; access modifiers remain syntax-only.
+- Static field initializers and static initializer blocks are not implemented.
 
-- The switch expression must have type `int`, `string` or `boolean`.
-- Every case expression must have the same type as the switch expression.
-- A switch can contain at most one `default` label.
-- The switch expression is evaluated once and stored in a compiler-generated local slot.
-- Case expressions are tested in source order using equality.
-- If a case matches, execution begins at that case body.
-- Case bodies fall through into the next case unless they execute `break;` or otherwise leave the switch.
-- If no case matches, execution transfers to the default body. Without a default, the switch ends.
-- `break;` exits the nearest enclosing loop or switch.
+## Existing language support
 
-## Loop control
+Stage 9 retains typed variables, arrays, functions, recursion, classes, objects, constructors, single inheritance, switch/case/default, while/do-while/for loops, break/continue, arithmetic, strings and boolean operations.
 
-- `do { ... } while (condition);` executes its body at least once. Its condition must be boolean.
-- `continue;` in a `while` loop transfers to its condition check.
-- `continue;` in a `do/while` loop transfers to the trailing condition check.
-- `continue;` in a `for` loop transfers to the increment expression, then to the condition check.
-- `break;` is valid only inside a loop or switch.
-- `continue;` is valid only inside a loop. A switch nested inside a loop does not change the continue target; continue still applies to the nearest enclosing loop.
-- A switch nested in a loop has its own break target, so break exits the switch and not the outer loop.
+## Compiler and .room v8
 
-## Existing language features
+`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode lowerer -> .room v8 -> verifier -> ALVM`
 
-Stage 8 keeps the previous stages' supported scalar and array types, functions and recursion, classes and objects, constructors, single inheritance, field/method access, arithmetic, boolean operations, `if/else`, `while`, `for`, and typed mutable arrays.
+The v8 class table stores instance and static field type arrays. Function records store a static flag. New bytecode instructions read and write class storage using a class-id and static-field-slot operand. The verifier checks static field references and stack effects before the VM runs.
 
-The current C++17 pipeline is:
-
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v7 -> verifier -> ALVM`
-
-Switch and loop control lower to existing jump instructions. The .room v7 binary layout remains unchanged.
+Stage 9 rejects .room v1-v7. Recompile source files. The runtime executes compiled bytecode only.
 
 ## Not implemented
 
-`foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, method overloading, constructors with explicit `super(arguments)`, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, full standard library modules, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android APK integration are future features.
+Enforced `public/private/protected` access control, static initializers, constructors with explicit `super(args)`, overloading, virtual methods, interfaces, abstract classes, object arrays, object-valued fields, generics, enums, exceptions, modules, full standard libraries, file/network/database APIs, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android APK support remain future work.
