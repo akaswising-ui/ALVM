@@ -96,7 +96,7 @@ public:
 
 class SemanticAnalyzer {
   struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; };
-  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; };
+  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; Signature constructor; bool hasConstructor=false; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,ClassInfo> classes;
   std::vector<std::map<std::string,Type>> scopes;
@@ -120,7 +120,7 @@ class SemanticAnalyzer {
       case Expr::Boolean:e.inferred=Type::Bool;break;
       case Expr::Variable:e.inferred=lookup(e.text);break;
       case Expr::This:if(currentClass.empty())throw Error("'this' can only be used inside an instance method");e.inferred=classes.at(currentClass).type;break;
-      case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);e.inferred=it->second.type;break;}
+      case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);const auto& ctor=it->second.constructor;if(e.elements.size()!=ctor.params.size())throw Error("Wrong argument count for constructor "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,ctor.params[i]))throw Error("Constructor argument "+std::to_string(i+1)+" must be "+typeName(ctor.params[i]));}e.resolvedFunction=e.text+".$ctor";e.inferred=it->second.type;break;}
       case Expr::FieldAccess:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(e.text);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+e.text+"' on "+typeName(objectType));e.resolvedField=it->second;e.inferred=cls.fieldTypes[(size_t)it->second];break;}
       case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,sig.params[i]))throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
       case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto fn=signatures.find(e.text);if(fn==signatures.end())throw Error("Unknown function: "+e.text);if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,fn->second.params[i]))throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));}e.resolvedFunction=e.text;e.inferred=fn->second.result;break;}
@@ -172,8 +172,16 @@ public:
       auto& info=classes.at(cls.name);
       if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
       for(const auto& method:cls.methods){
+        Signature sig=signature(method);
+        if(method.isConstructor){
+          if(info.hasConstructor)throw Error("Duplicate constructor in class "+cls.name);
+          if(!cls.baseClass.empty()&&classes.at(cls.baseClass).constructor.params.size()!=0)throw Error("Base class "+cls.baseClass+" has no zero-argument constructor; explicit super constructor calls are not supported yet");
+          info.constructor=sig;info.hasConstructor=true;
+          std::string key=cls.name+".$ctor";if(signatures.count(key))throw Error("Duplicate constructor signature");signatures.emplace(key,std::move(sig));
+          continue;
+        }
         if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
-        Signature sig=signature(method);info.methods.emplace(method.name,sig);
+        info.methods.emplace(method.name,sig);
         std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
       }
     }
