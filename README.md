@@ -2,18 +2,16 @@
 
 ## Android app UI: offline bundle
 
-The Android app packages the ALVM Studio interface inside the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
+The Android app packages the complete ALVM Studio interface and its local UI runtime in the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
 
-- No AppDeploy-hosted page is loaded at runtime.
-- No AppDeploy branding or PWA install button is included in the Android UI.
-- The Android manifest does not request Internet or network-state permissions.
-- The WebView blocks network loads and opens the local `file:///android_asset/index.html` bundle.
-- Run, Compile and Execute actions use the existing native C++17 AL compiler and ALVM bridge.
-- The interface, editor, libraries page and website builder assets are packaged locally. Installing/downloading the APK is the only step that needs an Internet connection.
+- The UI opens from the local `https://appassets.androidplatform.net/assets/index.html` WebViewAssetLoader mapping (served from APK assets, not the Internet); it does not load the AppDeploy-hosted page.
+- The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
+- The Android manifest has no Internet or network-state permission. WebView network loads are blocked.
+- Ordinary AL source Run/Compile and native `.room` execution continue through the existing C++17 compiler/ALVM JNI bridge.
+- The prior local Studio browser runtime, touch-game preview and Chess preview are kept in the bundled UI for the commands they already handled. They do not require a server connection.
+- The editor, UI libraries page, website builder, local export and file-picker interface are included in the offline assets.
 
-The UI package intentionally does not replace the native compiler with the prototype browser compiler. Unsupported language features remain unsupported until they are implemented in the native engine and covered by tests.
-
-AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
+The native C++ compiler/VM source is not replaced by the browser prototype compiler. Unsupported native language features remain unsupported until implemented and tested in the native engine. The local game preview is a Studio runtime feature, not evidence that AL's native graphics/game APIs are implemented.
 
 ## Stage 13: explicit base-constructor calls
 
