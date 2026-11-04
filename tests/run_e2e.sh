@@ -23,7 +23,11 @@ test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
 FUNCTION_EXPECTED="$(printf '30\n120\nHello AL\n15')"
 test "$("$BIN" run "$TMP/functions.room")" = "$FUNCTION_EXPECTED"
 
-for fixture in type_error array_type_error function_type_error missing_return; do
+"$BIN" compile "$ROOT/examples/objects.al" -o "$TMP/objects.room"
+OBJECT_EXPECTED="$(printf '75\n90\n95\nALVM\ntrue\n100')"
+test "$("$BIN" run "$TMP/objects.room")" = "$OBJECT_EXPECTED"
+
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -37,5 +41,6 @@ if "$BIN" run "$TMP/bounds.room" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$BIN" disasm "$TMP/functions.room" | grep -q 'function factorial'
-echo "PASS: compiler pipeline, arrays, typed functions, recursion and VM call frames"
+"$BIN" disasm "$TMP/objects.room" | grep -q 'class Player'
+"$BIN" disasm "$TMP/objects.room" | grep -q 'function Player.add'
+echo "PASS: functions, recursion, arrays, classes, objects, instance methods and runtime"

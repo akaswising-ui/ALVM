@@ -1,7 +1,7 @@
-name: ALVM Stage 1
+name: ALVM Build and Test
 on:
   push:
-    branches: [main, feature/alvm-stage1-engine]
+    branches: [main, "feature/**"]
   pull_request:
   workflow_dispatch:
 jobs:
@@ -9,6 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build build --parallel 2
-      - run: ctest --test-dir build --output-on-failure
+      - name: Configure C++17 build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile ALVM
+        run: cmake --build build --parallel 2
+      - name: Run compiler and VM regression tests
+        run: ctest --test-dir build --output-on-failure
