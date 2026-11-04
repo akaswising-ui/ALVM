@@ -4,20 +4,20 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.provider.DocumentsContract;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.Button;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.ValueCallback;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
@@ -37,10 +37,12 @@ import java.util.Comparator;
 import java.util.List;
 
 public class MainActivity extends Activity {
-    private static final int REQUEST_OPEN_AL = 10;
-    private static final int REQUEST_EXPORT_AL = 11;
-    private static final int REQUEST_EXPORT_ROOM = 12;
+    private static final String APP_URL = "https://alvm-studio-e8a74s.v2.appdeploy.ai/";
+    private static final String APP_HOST = "alvm-studio-e8a74s.v2.appdeploy.ai";
+
     private static final int REQUEST_WORKSPACE_TREE = 13;
+    private static final int REQUEST_IMPORT_FILE = 14;
+    private static final int REQUEST_WEB_FILE_CHOOSER = 15;
     private static final String PREFS = "alvm_workspace";
     private static final String PREF_TREE_URI = "workspace_tree_uri";
 
@@ -48,11 +50,10 @@ public class MainActivity extends Activity {
         System.loadLibrary("alvm");
     }
 
-    private EditText editor;
-    private TextView console;
-    private TextView editorLabel;
-    private boolean compiled = false;
+    private WebView webView;
+    private ValueCallback<Uri[]> pendingFileCallback;
     private boolean saveAfterFolderPick = false;
+    private boolean openAfterFolderPick = false;
 
     private DocumentFile workspaceRoot;
     private DocumentFile appFolder;
@@ -60,7 +61,10 @@ public class MainActivity extends Activity {
     private DocumentFile dataFolder;
     private DocumentFile buildFolder;
     private DocumentFile currentDocument;
+
     private String currentFileName = "Main.al";
+    private String pendingSource = "";
+    private boolean compiled = false;
 
     private static native String nativeCompile(String source, String filesDir);
     private static native String nativeRun(String roomPath);
@@ -81,163 +85,221 @@ public class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(Color.rgb(16, 22, 34));
+        getWindow().setNavigationBarColor(Color.rgb(9, 13, 21));
         initWorkspaceFolders();
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(12), dp(8), dp(12), dp(10));
-        root.setBackgroundColor(Color.rgb(17, 20, 27));
+        webView = new WebView(this);
+        webView.setBackgroundColor(Color.rgb(9, 13, 21));
 
-        TextView heading = new TextView(this);
-        heading.setText("ALVM STUDIO  •  ANDROID");
-        heading.setTextColor(Color.rgb(235, 239, 247));
-        heading.setTextSize(19);
-        heading.setTypeface(Typeface.DEFAULT_BOLD);
-        heading.setPadding(dp(2), dp(6), dp(2), dp(10));
-        root.addView(heading);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setLoadsImagesAutomatically(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(true);
 
-        addActionRow(root,
-                new String[]{"FILE MANAGER", "NEW .AL", "SAVE"},
-                new View.OnClickListener[]{
-                        view -> openFileManager(),
-                        view -> createNewFile(),
-                        view -> saveProjectFile()
-                });
-
-        addActionRow(root,
-                new String[]{"OPEN .AL", "EXPORT .AL", "EXPORT .ROOM"},
-                new View.OnClickListener[]{
-                        view -> openAlFile(),
-                        view -> exportAlFile(),
-                        view -> exportRoomFile()
-                });
-
-        addActionRow(root,
-                new String[]{"COMPILE", "RUN", "BYTECODE"},
-                new View.OnClickListener[]{
-                        view -> compileSource(),
-                        view -> runProgram(),
-                        view -> showBytecode()
-                });
-
-        editorLabel = new TextView(this);
-        editorLabel.setText("SOURCE  •  " + currentFileName);
-        editorLabel.setTextColor(Color.rgb(151, 170, 197));
-        editorLabel.setTextSize(12);
-        editorLabel.setPadding(dp(2), dp(10), dp(2), dp(5));
-        root.addView(editorLabel);
-
-        editor = new EditText(this);
-        editor.setGravity(Gravity.TOP | Gravity.START);
-        editor.setTextSize(13);
-        editor.setTypeface(Typeface.MONOSPACE);
-        editor.setTextColor(Color.rgb(226, 232, 242));
-        editor.setHintTextColor(Color.rgb(111, 125, 146));
-        editor.setHint("Write AL code here...");
-        editor.setPadding(dp(12), dp(12), dp(12), dp(12));
-        editor.setBackgroundColor(Color.rgb(28, 34, 45));
-        editor.setSingleLine(false);
-        editor.setHorizontallyScrolling(true);
-        editor.setMinLines(10);
-        editor.setText(loadInitialSource());
-        root.addView(editor, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        editor.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                compiled = false;
+        webView.addJavascriptInterface(new AndroidBridge(), "Android");
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (APP_HOST.equalsIgnoreCase(uri.getHost())) return false;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                } catch (Exception ignored) { }
+                return true;
             }
-            @Override public void afterTextChanged(Editable editable) {}
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                if (url != null && url.startsWith(APP_URL)) installNativeUiHooks();
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) {
+                    showOutputInWeb("Cannot load ALVM Studio. Connect to the internet and reopen the app.", "ERROR");
+                }
+            }
+        });
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
+                                              FileChooserParams params) {
+                if (pendingFileCallback != null) pendingFileCallback.onReceiveValue(null);
+                pendingFileCallback = callback;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                try {
+                    startActivityForResult(intent, REQUEST_WEB_FILE_CHOOSER);
+                    return true;
+                } catch (Exception error) {
+                    pendingFileCallback = null;
+                    return false;
+                }
+            }
         });
 
-        TextView outputLabel = new TextView(this);
-        outputLabel.setText("OUTPUT / ERRORS");
-        outputLabel.setTextColor(Color.rgb(151, 170, 197));
-        outputLabel.setTextSize(12);
-        outputLabel.setPadding(dp(2), dp(10), dp(2), dp(5));
-        root.addView(outputLabel);
-
-        ScrollView outputScroll = new ScrollView(this);
-        outputScroll.setBackgroundColor(Color.rgb(8, 11, 16));
-        console = new TextView(this);
-        console.setTextColor(Color.rgb(169, 220, 181));
-        console.setTextSize(12);
-        console.setTypeface(Typeface.MONOSPACE);
-        console.setPadding(dp(10), dp(10), dp(10), dp(10));
-        console.setText("ALVM ready. Choose FILE MANAGER to grant access to a workspace folder.");
-        outputScroll.addView(console);
-        root.addView(outputScroll, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(118)));
-
-        setContentView(root);
+        setContentView(webView);
+        webView.loadUrl(APP_URL);
     }
 
-    private String sampleSource() {
-        return "room Main {\n" +
-                "    public static void main() {\n" +
-                "        int a = 10;\n" +
-                "        int b = 20;\n" +
-                "        int result = a + b;\n" +
-                "        AL.print(result);\n" +
-                "    }\n" +
-                "}\n";
+    private void installNativeUiHooks() {
+        String script = "(function(){"
+                + "if(window.__alvmNativeHooksInstalled)return;"
+                + "window.__alvmNativeHooksInstalled=true;"
+                + "window.__alvmShowOutput=function(message,status){"
+                + "var area=document.querySelector('.console-output');"
+                + "if(area){area.replaceChildren();String(message||'(no output)').split('\\n').forEach(function(line){"
+                + "var row=document.createElement('div');row.textContent=line||' ';"
+                + "if(line.indexOf('✕')===0||line.toLowerCase().indexOf('error')>=0)row.className='error-line';"
+                + "else if(line.indexOf('✓')===0)row.className='success-line';"
+                + "else if(line.indexOf('AL OUTPUT')===0)row.className='program-output';"
+                + "area.appendChild(row);});}"
+                + "var badge=document.querySelector('.console-title .status');"
+                + "if(badge){badge.textContent=status||'READY';badge.className='status'+(status==='SUCCESS'?' success':((status||'').indexOf('ERROR')>=0?' error':''));}"
+                + "};"
+                + "document.addEventListener('click',function(event){"
+                + "var button=event.target&&event.target.closest?event.target.closest('button'):null;"
+                + "if(!button)return;"
+                + "var sourceNode=document.querySelector('.editor-area textarea');"
+                + "var source=sourceNode?sourceNode.value:'';"
+                + "var fileNode=document.querySelector('.file-item.active span');"
+                + "var fileName=fileNode?fileNode.textContent:'Main.al';"
+                + "if(button.matches('.run-button')){"
+                + "if(/\\bChess\\s*\\.\\s*start\\s*\\(|\\bGame\\s*\\./.test(source))return;"
+                + "event.preventDefault();event.stopImmediatePropagation();"
+                + "var result=Android.runSource(source,fileName);"
+                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
+                + "if(button.matches('.compile-button')){"
+                + "if(/\\bChess\\s*\\.\\s*start\\s*\\(|\\bGame\\s*\\./.test(source))return;"
+                + "event.preventDefault();event.stopImmediatePropagation();"
+                + "var result=Android.compileSource(source,fileName);"
+                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'COMPILE ERROR':'COMPILED');return;}"
+                + "if(button.matches('.execute-button')){"
+                + "event.preventDefault();event.stopImmediatePropagation();"
+                + "var result=Android.executeRoom();"
+                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
+                + "if(button.closest('.file-actions')){"
+                + "var label=(button.innerText||button.textContent||'').toLowerCase();"
+                + "if(label.indexOf('save')>=0){event.preventDefault();event.stopImmediatePropagation();"
+                + "var saved=Android.saveSource(source,fileName);window.__alvmShowOutput(saved,saved.indexOf('error')>=0?'ERROR':'READY');return;}"
+                + "if(label.indexOf('open')>=0){event.preventDefault();event.stopImmediatePropagation();Android.openWorkspace();return;}}"
+                + "if(button.classList.contains('side-button')){"
+                + "var label=(button.innerText||button.textContent||'').toLowerCase();"
+                + "if(label.indexOf('new file')>=0){event.preventDefault();event.stopImmediatePropagation();Android.createNewFile();return;}"
+                + "if(label.indexOf('open file')>=0){event.preventDefault();event.stopImmediatePropagation();Android.openWorkspace();return;}}"
+                + "},true);"
+                + "})();";
+        webView.evaluateJavascript(script, null);
     }
 
-    private String loadInitialSource() {
-        File file = new File(sourcePath());
-        if (!file.exists()) return sampleSource();
-        try (InputStream input = new FileInputStream(file)) {
-            return new String(readAll(input), StandardCharsets.UTF_8);
+    private void showOutputInWeb(String message, String status) {
+        if (webView == null) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("message", message == null ? "" : message);
+            payload.put("status", status == null ? "READY" : status);
+            webView.evaluateJavascript(
+                    "(function(p){if(window.__alvmShowOutput)window.__alvmShowOutput(p.message,p.status);})("
+                            + payload.toString() + ");", null);
+        } catch (Exception ignored) { }
+    }
+
+    private void loadAlIntoWebApp(String source, String name) {
+        if (webView == null) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("source", source);
+            payload.put("name", name);
+            webView.evaluateJavascript(
+                    "(function(p){var input=document.querySelector('input[type=file]');"
+                            + "if(!input||!window.DataTransfer||!window.File)return;"
+                            + "var transfer=new DataTransfer();"
+                            + "transfer.items.add(new File([p.source],p.name,{type:'text/plain'}));"
+                            + "input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));"
+                            + "})((" + payload.toString() + "));", null);
         } catch (Exception error) {
-            return sampleSource();
+            showOutputInWeb("Could not load file into editor: " + error.getMessage(), "ERROR");
         }
     }
 
-    private byte[] readAll(InputStream input) throws Exception {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[4096];
-        int count;
-        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-        return output.toByteArray();
+    private String normalizeForNativeAl(String source) {
+        return source.replaceAll("\\bRoom\\b", "room")
+                .replaceAll("\\bString\\b", "string");
     }
 
-    private void addActionRow(LinearLayout parent, String[] labels,
-                              View.OnClickListener[] listeners) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        for (int index = 0; index < labels.length; index++) {
-            Button button = makeButton(labels[index], listeners[index]);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    0, dp(43), 1f);
-            params.setMargins(dp(2), dp(2), dp(2), dp(2));
-            row.addView(button, params);
+    private String compileNative(String source, String fileName) {
+        currentFileName = normalizeAlFileName(fileName);
+        pendingSource = source;
+        saveInternal(source);
+        String result = nativeCompile(normalizeForNativeAl(source), getFilesDir().getAbsolutePath());
+        compiled = result != null && result.startsWith("Compiled ");
+        if (!compiled) return "✕ " + result;
+
+        if (initWorkspaceFolders()) {
+            saveProjectSourceNow(source);
+            saveBuildFile();
         }
-        parent.addView(row);
+        return "✓ AL compilation successful\n" + result
+                + (initWorkspaceFolders() ? "\nSaved: Projects/" + currentFileName
+                + "\nBytecode: Build/" + buildFileName()
+                : "\nChoose FILE MANAGER and allow a folder to save files permanently.");
     }
 
-    private Button makeButton(String label, View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setTextSize(10);
-        button.setTextColor(Color.WHITE);
-        button.setAllCaps(false);
-        button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                Color.rgb(48, 91, 151)));
-        button.setOnClickListener(listener);
-        return button;
+    private String runNative(String source, String fileName) {
+        String result = compileNative(source, fileName);
+        if (!compiled) return result;
+        String output = nativeRun(roomPath());
+        if (output == null) output = "";
+        return "✓ Program completed in native ALVM.\n\n"
+                + (output.trim().isEmpty() ? "(program produced no console output)" : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
     }
 
-    private void setOutput(String value) {
-        console.setText(value == null || value.isEmpty() ? "(no output)" : value);
+    private String executeNativeRoom() {
+        File room = new File(roomPath());
+        if (!room.exists()) return "✕ No compiled .room file is loaded.";
+        try {
+            String output = nativeRun(roomPath());
+            return "✓ .room execution complete.\n\n"
+                    + (output == null || output.trim().isEmpty()
+                    ? "(program produced no console output)"
+                    : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
+        } catch (Exception error) {
+            return "✕ ALVM runtime error: " + error.getMessage();
+        }
     }
 
-    private void updateEditorLabel() {
-        if (editorLabel != null) editorLabel.setText("SOURCE  •  " + currentFileName);
+    private String normalizeAlFileName(String name) {
+        if (name == null || name.trim().isEmpty()) return "Main.al";
+        String clean = name.trim();
+        if (!clean.toLowerCase().endsWith(".al")) clean = clean.replaceFirst("(?i)\\.room$", "") + ".al";
+        return clean;
     }
 
-    // Android's Storage Access Framework grants access only to the folder the user selects.
-    // No broad MANAGE_EXTERNAL_STORAGE permission is requested.
+    private String buildFileName() {
+        return currentFileName.replaceFirst("(?i)\\.al$", "") + ".room";
+    }
+
+    private void saveInternal(String source) {
+        try (FileOutputStream output = new FileOutputStream(sourcePath())) {
+            output.write(source.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) { }
+    }
+
+    // The user chooses the workspace folder once. Access is persisted by Android's Storage Access Framework.
     private void requestWorkspaceFolder() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -250,7 +312,6 @@ public class MainActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String savedUri = prefs.getString(PREF_TREE_URI, null);
         if (savedUri == null) return false;
-
         try {
             Uri uri = Uri.parse(savedUri);
             workspaceRoot = DocumentFile.fromTreeUri(this, uri);
@@ -258,12 +319,10 @@ public class MainActivity extends Activity {
                 clearWorkspaceReferences();
                 return false;
             }
-
             appFolder = findOrCreateDirectory(workspaceRoot, "ALVM Studio");
             projectsFolder = findOrCreateDirectory(appFolder, "Projects");
             dataFolder = findOrCreateDirectory(appFolder, "Data");
             buildFolder = findOrCreateDirectory(appFolder, "Build");
-
             if (appFolder == null || projectsFolder == null || dataFolder == null || buildFolder == null) {
                 clearWorkspaceReferences();
                 return false;
@@ -292,42 +351,35 @@ public class MainActivity extends Activity {
 
     private void openFileManager() {
         if (!initWorkspaceFolders()) {
-            setOutput("Select a storage folder. Android will ask you to allow ALVM Studio access.");
+            openAfterFolderPick = true;
+            showOutputInWeb("Choose a storage folder. Android will ask you to allow ALVM Studio access.", "READY");
             requestWorkspaceFolder();
             return;
         }
 
         List<DocumentFile> files = new ArrayList<>();
         List<String> labels = new ArrayList<>();
-        addFilesFromFolder(projectsFolder, "Projects", files, labels);
-        addFilesFromFolder(buildFolder, "Build", files, labels);
+        addFilesFromFolder(projectsFolder, "Projects", files, labels, ".al");
+        addFilesFromFolder(buildFolder, "Build", files, labels, ".room");
 
-        if (files.isEmpty()) {
-            new AlertDialog.Builder(this)
-                    .setTitle("ALVM Studio / File Manager")
-                    .setMessage("Workspace is ready.\n\nProjects: .al source files\nBuild: .room bytecode files\nData: workspace.json")
-                    .setPositiveButton("NEW .AL FILE", (dialog, which) -> createNewFile())
-                    .setNeutralButton("CHANGE FOLDER", (dialog, which) -> requestWorkspaceFolder())
-                    .setNegativeButton("CLOSE", null)
-                    .show();
-            setOutput("Workspace ready: ALVM Studio/Projects, Build and Data");
-            return;
+        String[] options = new String[files.size()];
+        for (int i = 0; i < files.size(); i++) options[i] = labels.get(i);
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this)
+                .setTitle("ALVM Studio  /  File Manager")
+                .setPositiveButton("NEW .AL FILE", (d, which) -> createNewFile())
+                .setNeutralButton("IMPORT FILE", (d, which) -> importExternalFile())
+                .setNegativeButton("CLOSE", null);
+        if (options.length > 0) {
+            DocumentFile[] fileArray = files.toArray(new DocumentFile[0]);
+            dialog.setItems(options, (d, which) -> openWorkspaceFile(fileArray[which]));
+        } else {
+            dialog.setMessage("Workspace is ready.\n\nProjects  /  .al source files\nBuild  /  .room bytecode\nData  /  workspace.json");
         }
-
-        DocumentFile[] fileArray = files.toArray(new DocumentFile[0]);
-        String[] labelArray = labels.toArray(new String[0]);
-        new AlertDialog.Builder(this)
-                .setTitle("ALVM Studio / File Manager")
-                .setItems(labelArray, (dialog, which) -> openWorkspaceFile(fileArray[which]))
-                .setPositiveButton("NEW .AL FILE", (dialog, which) -> createNewFile())
-                .setNeutralButton("CHANGE FOLDER", (dialog, which) -> requestWorkspaceFolder())
-                .setNegativeButton("CLOSE", null)
-                .show();
-        setOutput("File Manager: " + files.size() + " file(s) in Projects and Build");
+        dialog.show();
     }
 
     private void addFilesFromFolder(DocumentFile folder, String prefix,
-                                    List<DocumentFile> files, List<String> labels) {
+                                    List<DocumentFile> files, List<String> labels, String suffix) {
         if (folder == null) return;
         DocumentFile[] found = folder.listFiles();
         List<DocumentFile> sorted = new ArrayList<>();
@@ -335,10 +387,10 @@ public class MainActivity extends Activity {
         Collections.sort(sorted, Comparator.comparing(
                 (DocumentFile item) -> item.getName() == null ? "" : item.getName().toLowerCase()));
         for (DocumentFile file : sorted) {
-            if (file.isFile()) {
-                String name = file.getName() == null ? "Unnamed file" : file.getName();
+            String name = file.getName();
+            if (file.isFile() && name != null && name.toLowerCase().endsWith(suffix)) {
                 files.add(file);
-                labels.add(prefix + " / " + name);
+                labels.add(prefix + "  /  " + name);
             }
         }
     }
@@ -348,116 +400,128 @@ public class MainActivity extends Activity {
         String name = file.getName();
         try {
             if (name.toLowerCase().endsWith(".al")) {
+                String source;
                 try (InputStream input = getContentResolver().openInputStream(file.getUri())) {
                     if (input == null) throw new IllegalStateException("Cannot open source file");
-                    editor.setText(new String(readAll(input), StandardCharsets.UTF_8));
+                    source = new String(readAll(input), StandardCharsets.UTF_8);
                 }
                 currentDocument = file;
                 currentFileName = name;
                 compiled = false;
-                updateEditorLabel();
-                saveInternalQuietly();
+                saveInternal(source);
+                loadAlIntoWebApp(source, name);
                 writeWorkspaceData();
-                setOutput("Opened " + name);
+                showOutputInWeb("Opened source file: " + name, "READY");
             } else if (name.toLowerCase().endsWith(".room")) {
                 try (InputStream input = getContentResolver().openInputStream(file.getUri());
                      OutputStream output = new FileOutputStream(roomPath())) {
                     if (input == null) throw new IllegalStateException("Cannot open bytecode file");
-                    byte[] buffer = new byte[4096];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    copy(input, output);
                 }
                 compiled = true;
-                setOutput("Loaded " + name + ". Press RUN or BYTECODE.");
+                showOutputInWeb("Loaded bytecode: " + name + "\nPress Execute .room to run it.", "LOADED");
             } else {
-                setOutput("Unsupported file type: " + name);
+                showOutputInWeb("Unsupported file type: " + name, "ERROR");
             }
         } catch (Exception error) {
-            setOutput("Open error: " + error.getMessage());
+            showOutputInWeb("Open error: " + error.getMessage(), "ERROR");
         }
     }
 
     private void createNewFile() {
         if (!initWorkspaceFolders()) {
-            setOutput("Choose a workspace folder before creating a project file.");
+            openAfterFolderPick = true;
             requestWorkspaceFolder();
             return;
         }
-
         EditText nameInput = new EditText(this);
         nameInput.setSingleLine(true);
         nameInput.setText("Main.al");
         nameInput.setSelection(nameInput.getText().length());
-        int padding = dp(18);
         LinearLayout wrapper = new LinearLayout(this);
-        wrapper.setPadding(padding, dp(4), padding, 0);
+        wrapper.setPadding(dp(18), dp(4), dp(18), 0);
         wrapper.addView(nameInput);
-
         new AlertDialog.Builder(this)
                 .setTitle("Create AL source file")
-                .setMessage("The file will be saved in ALVM Studio/Projects.")
+                .setMessage("Saved in ALVM Studio/Projects.")
                 .setView(wrapper)
                 .setPositiveButton("CREATE", (dialog, which) -> {
-                    String name = nameInput.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        setOutput("File name cannot be empty.");
+                    String name = normalizeAlFileName(nameInput.getText().toString());
+                    if (name.contains("/") || name.contains("\\\\") || name.equals(".al")) {
+                        showOutputInWeb("Use a simple file name.", "ERROR");
                         return;
                     }
-                    if (name.contains("/") || name.contains("\\") || name.equals(".") || name.equals("..")) {
-                        setOutput("Use a simple file name without folder separators.");
-                        return;
-                    }
-                    if (!name.toLowerCase().endsWith(".al")) name += ".al";
-                    DocumentFile existing = projectsFolder.findFile(name);
-                    if (existing != null) {
-                        setOutput("A file with that name already exists: " + name);
+                    if (projectsFolder.findFile(name) != null) {
+                        showOutputInWeb("File already exists: " + name, "ERROR");
                         return;
                     }
                     DocumentFile created = projectsFolder.createFile("text/plain", name);
                     if (created == null) {
-                        setOutput("Could not create " + name);
+                        showOutputInWeb("Could not create " + name, "ERROR");
                         return;
                     }
                     currentDocument = created;
                     currentFileName = name;
-                    editor.setText("");
-                    compiled = false;
-                    updateEditorLabel();
-                    saveProjectFile();
-                    setOutput("Created " + name + " in ALVM Studio/Projects");
+                    String source = "room Main {\n    public static void main() {\n        AL.print(42);\n    }\n}\n";
+                    saveProjectSourceNow(source);
+                    loadAlIntoWebApp(source, name);
+                    showOutputInWeb("Created " + name + " in Projects.", "READY");
                 })
                 .setNegativeButton("CANCEL", null)
                 .show();
     }
 
-    private boolean saveProjectFile() {
-        if (!initWorkspaceFolders()) {
-            saveAfterFolderPick = true;
-            setOutput("Choose a folder and grant ALVM Studio access to save project files.");
-            requestWorkspaceFolder();
-            return false;
-        }
-
+    private boolean saveProjectSourceNow(String source) {
+        if (!initWorkspaceFolders()) return false;
         try {
             if (currentDocument == null || !currentDocument.canWrite()) {
                 currentDocument = projectsFolder.findFile(currentFileName);
-                if (currentDocument == null) {
-                    currentDocument = projectsFolder.createFile("text/plain", currentFileName);
-                }
             }
-            if (currentDocument == null) throw new IllegalStateException("Could not create project file");
-
+            if (currentDocument == null) currentDocument = projectsFolder.createFile("text/plain", currentFileName);
+            if (currentDocument == null) throw new IllegalStateException("Could not create source file");
             try (OutputStream output = getContentResolver().openOutputStream(currentDocument.getUri(), "wt")) {
-                if (output == null) throw new IllegalStateException("Storage provider did not open the file");
-                output.write(editor.getText().toString().getBytes(StandardCharsets.UTF_8));
+                if (output == null) throw new IllegalStateException("Cannot write project file");
+                output.write(source.getBytes(StandardCharsets.UTF_8));
             }
-            saveInternalQuietly();
+            saveInternal(source);
             writeWorkspaceData();
-            setOutput("Saved: ALVM Studio/Projects/" + currentFileName);
             return true;
         } catch (Exception error) {
-            setOutput("Save error: " + error.getMessage());
+            showOutputInWeb("Save error: " + error.getMessage(), "ERROR");
             return false;
+        }
+    }
+
+    private String saveProjectSource(String source, String name) {
+        currentFileName = normalizeAlFileName(name);
+        pendingSource = source == null ? "" : source;
+        saveInternal(pendingSource);
+        if (!initWorkspaceFolders()) {
+            saveAfterFolderPick = true;
+            runOnUiThread(() -> {
+                showOutputInWeb("Choose a workspace folder and allow access to save your project.", "READY");
+                requestWorkspaceFolder();
+            });
+            return "Folder permission required. Choose a folder in the Android picker.";
+        }
+        return saveProjectSourceNow(pendingSource)
+                ? "✓ Saved: ALVM Studio/Projects/" + currentFileName
+                : "✕ Could not save the project file.";
+    }
+
+    private void saveBuildFile() {
+        if (!initWorkspaceFolders()) return;
+        DocumentFile existing = buildFolder.findFile(buildFileName());
+        if (existing != null) existing.delete();
+        DocumentFile outputFile = buildFolder.createFile("application/octet-stream", buildFileName());
+        if (outputFile == null) return;
+        try (InputStream input = new FileInputStream(roomPath());
+             OutputStream output = getContentResolver().openOutputStream(outputFile.getUri(), "wt")) {
+            if (output == null) throw new IllegalStateException("Cannot write .room file");
+            copy(input, output);
+            writeWorkspaceData();
+        } catch (Exception error) {
+            showOutputInWeb("Bytecode saved locally, but Build export failed: " + error.getMessage(), "ERROR");
         }
     }
 
@@ -470,194 +534,180 @@ public class MainActivity extends Activity {
             state.put("activeSource", currentFileName);
             state.put("buildFile", buildFileName());
             state.put("savedAtEpochMillis", System.currentTimeMillis());
-
             DocumentFile metadata = dataFolder.findFile("workspace.json");
             if (metadata == null) metadata = dataFolder.createFile("application/json", "workspace.json");
-            if (metadata == null) throw new IllegalStateException("Cannot create workspace.json");
+            if (metadata == null) return;
             try (OutputStream output = getContentResolver().openOutputStream(metadata.getUri(), "wt")) {
-                if (output == null) throw new IllegalStateException("Cannot write workspace.json");
-                output.write(state.toString(2).getBytes(StandardCharsets.UTF_8));
+                if (output != null) output.write(state.toString(2).getBytes(StandardCharsets.UTF_8));
             }
-        } catch (Exception error) {
-            setOutput("Project saved, but Data/workspace.json update failed: " + error.getMessage());
-        }
+        } catch (Exception ignored) { }
     }
 
-    private String buildFileName() {
-        String base = currentFileName.replaceFirst("(?i)\\.al$", "");
-        return base + ".room";
-    }
-
-    private void saveBuildFile() {
-        if (buildFolder == null) return;
-        DocumentFile existing = buildFolder.findFile(buildFileName());
-        if (existing != null) existing.delete();
-        DocumentFile outputFile = buildFolder.createFile("application/octet-stream", buildFileName());
-        if (outputFile == null) {
-            setOutput("Compiled locally, but could not create Build/" + buildFileName());
-            return;
-        }
-
-        try (InputStream input = new FileInputStream(roomPath());
-             OutputStream output = getContentResolver().openOutputStream(outputFile.getUri(), "wt")) {
-            if (output == null) throw new IllegalStateException("Cannot open build output");
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-            writeWorkspaceData();
-            setOutput("Compiled and saved: Build/" + buildFileName());
-        } catch (Exception error) {
-            setOutput("Compiled locally, but build file save failed: " + error.getMessage());
-        }
-    }
-
-    private void openAlFile() {
+    private void importExternalFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_OPEN_AL);
+        startActivityForResult(intent, REQUEST_IMPORT_FILE);
     }
 
-    private void exportAlFile() {
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TITLE, currentFileName);
-        startActivityForResult(intent, REQUEST_EXPORT_AL);
+    private void requestWebFileChooser() {
+        importExternalFile();
     }
 
-    private void exportRoomFile() {
-        File room = new File(roomPath());
-        if (!room.exists()) {
-            setOutput("Compile first. There is no .room file to export.");
-            return;
+    private byte[] readAll(InputStream input) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        copy(input, output);
+        return output.toByteArray();
+    }
+
+    private void copy(InputStream input, OutputStream output) throws Exception {
+        byte[] buffer = new byte[8192];
+        int count;
+        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+    }
+
+    private void showOpenImport(Uri uri) {
+        try {
+            String name = DocumentsContract.getDocumentId(uri);
+            int colon = name.lastIndexOf(':');
+            if (colon >= 0) name = name.substring(colon + 1);
+            if (name.isEmpty()) name = "Imported.al";
+            if (name.toLowerCase().endsWith(".room")) {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     OutputStream output = new FileOutputStream(roomPath())) {
+                    if (input == null) throw new IllegalStateException("Cannot read file");
+                    copy(input, output);
+                }
+                currentFileName = name.replaceFirst("(?i)\\.room$", ".al");
+                compiled = true;
+                showOutputInWeb("Imported bytecode: " + name + "\nPress Execute .room to run it.", "LOADED");
+            } else {
+                String source;
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("Cannot read file");
+                    source = new String(readAll(input), StandardCharsets.UTF_8);
+                }
+                currentFileName = normalizeAlFileName(name);
+                currentDocument = null;
+                compiled = false;
+                saveInternal(source);
+                loadAlIntoWebApp(source, currentFileName);
+                showOutputInWeb("Imported source file: " + currentFileName, "READY");
+            }
+        } catch (Exception error) {
+            showOutputInWeb("Import error: " + error.getMessage(), "ERROR");
         }
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/octet-stream");
-        intent.putExtra(Intent.EXTRA_TITLE, buildFileName());
-        startActivityForResult(intent, REQUEST_EXPORT_ROOM);
+    }
+
+    private final class AndroidBridge {
+        @JavascriptInterface
+        public String runSource(String source, String name) {
+            try {
+                return runNative(source == null ? "" : source, name);
+            } catch (Exception error) {
+                return "✕ ALVM error: " + error.getMessage();
+            }
+        }
+
+        @JavascriptInterface
+        public String compileSource(String source, String name) {
+            try {
+                return compileNative(source == null ? "" : source, name);
+            } catch (Exception error) {
+                return "✕ AL compiler error: " + error.getMessage();
+            }
+        }
+
+        @JavascriptInterface
+        public String executeRoom() {
+            return executeNativeRoom();
+        }
+
+        @JavascriptInterface
+        public String saveSource(String source, String name) {
+            return saveProjectSource(source == null ? "" : source, name);
+        }
+
+        @JavascriptInterface
+        public void openWorkspace() {
+            runOnUiThread(() -> openFileManager());
+        }
+
+        @JavascriptInterface
+        public void createNewFile() {
+            runOnUiThread(() -> MainActivity.this.createNewFile());
+        }
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
+        if (requestCode == REQUEST_WEB_FILE_CHOOSER && pendingFileCallback != null) {
+            Uri[] result = resultCode == RESULT_OK && data != null && data.getData() != null
+                    ? new Uri[]{data.getData()} : null;
+            pendingFileCallback.onReceiveValue(result);
+            pendingFileCallback = null;
+            if (result != null && result.length > 0) showOpenImport(result[0]);
+            return;
+        }
+
         if (requestCode == REQUEST_WORKSPACE_TREE) {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-                setOutput("Folder access was not granted. Choose FILE MANAGER to try again.");
+                showOutputInWeb("Folder access was not granted. Choose Open again to retry.", "ERROR");
                 return;
             }
             Uri treeUri = data.getData();
-            int grantFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             try {
-                getContentResolver().takePersistableUriPermission(treeUri, grantFlags);
+                getContentResolver().takePersistableUriPermission(treeUri, flags);
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString(PREF_TREE_URI, treeUri.toString()).apply();
                 currentDocument = null;
-
-                if (!initWorkspaceFolders()) throw new IllegalStateException("Could not prepare workspace folders");
-                setOutput("Folder permission saved. Created ALVM Studio/Projects, Build and Data.");
+                if (!initWorkspaceFolders()) throw new IllegalStateException("Could not create workspace folders");
+                showOutputInWeb("Folder permission saved. ALVM Studio/Projects, Build and Data are ready.", "READY");
                 if (saveAfterFolderPick) {
                     saveAfterFolderPick = false;
-                    saveProjectFile();
-                } else {
+                    saveProjectSourceNow(pendingSource);
+                    showOutputInWeb("Saved: ALVM Studio/Projects/" + currentFileName, "READY");
+                }
+                if (openAfterFolderPick) {
+                    openAfterFolderPick = false;
                     openFileManager();
                 }
             } catch (Exception error) {
-                setOutput("Folder setup error: " + error.getMessage());
+                showOutputInWeb("Folder setup error: " + error.getMessage(), "ERROR");
             }
             return;
         }
 
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        Uri uri = data.getData();
-        try {
-            if (requestCode == REQUEST_OPEN_AL) {
-                int grantFlags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                try {
-                    getContentResolver().takePersistableUriPermission(uri, grantFlags);
-                } catch (Exception ignored) { }
-                try (InputStream input = getContentResolver().openInputStream(uri)) {
-                    if (input == null) throw new IllegalStateException("Cannot open selected file");
-                    editor.setText(new String(readAll(input), StandardCharsets.UTF_8));
-                }
-                currentDocument = null;
-                currentFileName = "Imported.al";
-                compiled = false;
-                updateEditorLabel();
-                saveInternalQuietly();
-                setOutput("Imported source. Use SAVE to put it into your workspace Projects folder.");
-            } else if (requestCode == REQUEST_EXPORT_AL) {
-                try (OutputStream output = getContentResolver().openOutputStream(uri)) {
-                    if (output == null) throw new IllegalStateException("Cannot write selected file");
-                    output.write(editor.getText().toString().getBytes(StandardCharsets.UTF_8));
-                    setOutput("Exported " + currentFileName);
-                }
-            } else if (requestCode == REQUEST_EXPORT_ROOM) {
-                try (InputStream input = new FileInputStream(roomPath());
-                     OutputStream output = getContentResolver().openOutputStream(uri)) {
-                    if (output == null) throw new IllegalStateException("Cannot write selected file");
-                    byte[] buffer = new byte[4096];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-                    setOutput("Exported " + buildFileName());
-                }
-            }
-        } catch (Exception error) {
-            setOutput("File error: " + error.getMessage());
+        if (requestCode == REQUEST_IMPORT_FILE) {
+            int flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            try { getContentResolver().takePersistableUriPermission(data.getData(), flags); }
+            catch (Exception ignored) { }
+            showOpenImport(data.getData());
         }
     }
 
-    private void compileSource() {
-        saveInternalQuietly();
-        String result = nativeCompile(editor.getText().toString(), getFilesDir().getAbsolutePath());
-        compiled = result.startsWith("Compiled ");
-        setOutput(result);
-        if (compiled && initWorkspaceFolders()) {
-            if (currentDocument == null || !currentDocument.canWrite()) {
-                currentDocument = projectsFolder.findFile(currentFileName);
-            }
-            if (currentDocument == null) {
-                currentDocument = projectsFolder.createFile("text/plain", currentFileName);
-            }
-            try {
-                if (currentDocument != null) {
-                    try (OutputStream output = getContentResolver().openOutputStream(currentDocument.getUri(), "wt")) {
-                        if (output != null) output.write(editor.getText().toString().getBytes(StandardCharsets.UTF_8));
-                    }
-                }
-            } catch (Exception error) {
-                setOutput("Compiled, but source auto-save failed: " + error.getMessage());
-            }
-            saveBuildFile();
-        }
-    }
-
-    private void runProgram() {
-        if (!compiled || !new File(roomPath()).exists()) {
-            setOutput("Compile the current source first, or open a .room file in FILE MANAGER.");
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
             return;
         }
-        setOutput(nativeRun(roomPath()));
+        super.onBackPressed();
     }
 
-    private void showBytecode() {
-        if (!new File(roomPath()).exists()) {
-            setOutput("Compile a source file first or open a .room file in FILE MANAGER.");
-            return;
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.removeJavascriptInterface("Android");
+            webView.destroy();
+            webView = null;
         }
-        setOutput(nativeDisassemble(roomPath()));
-    }
-
-    private void saveInternalQuietly() {
-        try (FileOutputStream output = new FileOutputStream(sourcePath())) {
-            output.write(editor.getText().toString().getBytes(StandardCharsets.UTF_8));
-        } catch (Exception error) {
-            Toast.makeText(this, "Could not save internal source: " + error.getMessage(),
-                    Toast.LENGTH_LONG).show();
-        }
+        super.onDestroy();
     }
 }
