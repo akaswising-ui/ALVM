@@ -156,11 +156,15 @@ public:
     currentClass.clear();
   }
 };
-enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret };
+enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField };
 struct IR { Op op; int64_t arg=0; std::string text; };
-struct FunctionIR { std::string name; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
+struct ClassIR { std::string name; std::vector<Type> fieldTypes; };
+struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
+struct IRProgram { std::vector<ClassIR> classes; std::vector<FunctionIR> functions; };
 class IRGenerator {
-  std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds; int next=0;
+  std::vector<IR> code; std::map<std::string,int> slots; std::map<std::string,int> functionIds, classIds;
+  std::map<std::string,std::map<std::string,int>> fieldSlots;
+  int next=0;
   int emit(Op op,int64_t arg=0,std::string text={}){code.push_back({op,arg,std::move(text)});return (int)code.size()-1;}
   void expression(const Expr& e){
     switch(e.kind){
@@ -168,7 +172,11 @@ class IRGenerator {
       case Expr::String:emit(Op::PushString,0,e.text);break;
       case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;
       case Expr::Variable:emit(Op::Load,slots.at(e.text));break;
-      case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.text));break;
+      case Expr::This:emit(Op::Load,slots.at("this"));break;
+      case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));break;
+      case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
+      case Expr::MethodCall:expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
+      case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;
       case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;
       case Expr::Length:expression(*e.left);emit(Op::ArrayLength);break;
@@ -188,6 +196,7 @@ class IRGenerator {
       case Stmt::Declare:{int slot=next++;slots[s.name]=slot;expression(*s.expr);emit(Op::Store,slot);break;}
       case Stmt::Assign:expression(*s.expr);emit(Op::Store,slots.at(s.name));break;
       case Stmt::ArrayAssign:emit(Op::Load,slots.at(s.name));expression(*s.condition);expression(*s.expr);emit(Op::ArraySet);break;
+      case Stmt::FieldAssign:expression(*s.condition);expression(*s.expr);emit(Op::SetField,(int64_t)s.incrementExpr->number);break;
       case Stmt::ExprStatement:expression(*s.expr);if(s.expr->inferred!=Type::Void)emit(Op::Pop);break;
       case Stmt::Print:expression(*s.expr);emit(Op::Print);break;
       case Stmt::Return:if(s.expr)expression(*s.expr);emit(Op::Ret);break;
@@ -196,18 +205,24 @@ class IRGenerator {
       case Stmt::For:{auto saved=slots;statement(*s.first);int start=(int)code.size();expression(*s.condition);int jf=emit(Op::JumpFalse,-1);statement(*s.third);statement(*s.second);emit(Op::Jump,start);code[jf].arg=(int64_t)code.size();slots=std::move(saved);break;}
     }
   }
+  void compileFunction(const Function& fn,IRProgram& out){
+    code.clear();slots.clear();next=0;
+    int32_t owner=-1;
+    if(!fn.ownerClass.empty()){owner=classIds.at(fn.ownerClass);slots["this"]=next++;}
+    for(const auto& param:fn.params){slots[param.name]=next++;}
+    statement(*fn.body);
+    if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
+    else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
+    FunctionIR item;item.name=fn.name;item.ownerClass=fn.ownerClass;item.ownerClassId=owner;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.functions.push_back(std::move(item));
+  }
 public:
-  std::vector<FunctionIR> generate(const Program& p){
-    for(size_t i=0;i<p.functions.size();++i)functionIds[p.functions[i].name]=(int)i;
-    std::vector<FunctionIR> out;
-    for(const auto& fn:p.functions){
-      code.clear();slots.clear();next=0;
-      for(size_t i=0;i<fn.params.size();++i){slots[fn.params[i].name]=(int)i;++next;}
-      statement(*fn.body);
-      if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
-      else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
-      FunctionIR item;item.name=fn.name;item.returnType=fn.returnType;item.parameterCount=(uint32_t)fn.params.size();item.localCount=(uint32_t)next;item.code=code;out.push_back(std::move(item));
-    }
+  IRProgram generate(const Program& p){
+    IRProgram out;
+    for(size_t i=0;i<p.classes.size();++i){classIds[p.classes[i].name]=(int)i;ClassIR c;c.name=p.classes[i].name;for(const auto& field:p.classes[i].fields)c.fieldTypes.push_back(field.type);out.classes.push_back(std::move(c));for(size_t j=0;j<p.classes[i].fields.size();++j)fieldSlots[p.classes[i].name][p.classes[i].fields[j].name]=(int)j;}
+    int id=0;for(const auto& fn:p.functions)functionIds[fn.name]=id++;
+    for(const auto& cls:p.classes)for(const auto& method:cls.methods)functionIds[cls.name+"."+method.name]=id++;
+    for(const auto& fn:p.functions)compileFunction(fn,out);
+    for(const auto& cls:p.classes)for(const auto& method:cls.methods)compileFunction(method,out);
     return out;
   }
 };struct Bytecode { Op op; int64_t arg=0; std::string text; };
