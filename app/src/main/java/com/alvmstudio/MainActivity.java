@@ -333,7 +333,7 @@ public class MainActivity extends Activity {
         List<DocumentFile> sorted = new ArrayList<>();
         Collections.addAll(sorted, found);
         Collections.sort(sorted, Comparator.comparing(
-                item -> item.getName() == null ? "" : item.getName().toLowerCase()));
+                (DocumentFile item) -> item.getName() == null ? "" : item.getName().toLowerCase()));
         for (DocumentFile file : sorted) {
             if (file.isFile()) {
                 String name = file.getName() == null ? "Unnamed file" : file.getName();
@@ -556,6 +556,7 @@ public class MainActivity extends Activity {
                 getContentResolver().takePersistableUriPermission(treeUri, grantFlags);
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString(PREF_TREE_URI, treeUri.toString()).apply();
+                currentDocument = null;
 
                 if (!initWorkspaceFolders()) throw new IllegalStateException("Could not prepare workspace folders");
                 setOutput("Folder permission saved. Created ALVM Studio/Projects, Build and Data.");
