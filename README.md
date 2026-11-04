@@ -2,6 +2,17 @@
 
 AL is an independent language: Python-influenced vocabulary, Java-like source style, and strict C++-influenced rules. It has its own lexer, parser, AST, semantic analyzer, IR, bytecode, verifier and VM.
 
+## Stage 9: array foreach iteration
+
+AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, so `.room` v7 does not need an ABI change.
+
+```al
+int[] scores = [10, 20, 30];
+foreach (int score : scores) {
+    AL.print(score);
+}
+```
+
 ## Stage 8: control flow
 
 Current C++17 compiler pipeline:
@@ -12,14 +23,14 @@ Implemented:
 - Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
 - Typed functions, parameters, return values and recursion.
 - Classes, fields, objects, constructors, instance methods, `this`, inheritance and derived-to-base assignment.
-- `if/else`, `while`, `for` and `do/while`.
+- `if/else`, `while`, `for`, `do/while` and typed `foreach` array iteration.
 - `switch/case/default` for `int`, `string` and `boolean` expressions.
 - `break` exits the nearest loop or switch.
 - `continue` jumps to the condition of a `while`/do-while loop or the increment clause of a `for` loop.
 - Switch cases use fall-through semantics. Use `break;` to stop at the end of a case.
 - The compiler rejects `break` outside loops/switches, `continue` outside loops, duplicate default labels and mismatched case types.
 - Branches are lowered into jumps and validated by the existing bytecode stack-depth verifier.
-- End-to-end regression tests cover numeric and string switches, loop continue/break and negative cases.
+- End-to-end regression tests cover numeric and string switches, loop continue/break, typed foreach iteration and negative cases.
 
 ## Example
 
