@@ -900,8 +900,29 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String getAppVersion() {
+            try {
+                String version = getPackageManager()
+                        .getPackageInfo(getPackageName(), 0).versionName;
+                return version == null || version.trim().isEmpty() ? "unknown" : version;
+            } catch (Exception error) {
+                return "unknown";
+            }
+        }
+
+        @JavascriptInterface
         public void openWorkspace() {
             runOnUiThread(() -> openFileManager());
+        }
+
+        @JavascriptInterface
+        public void importFile() {
+            runOnUiThread(() -> importExternalFile());
+        }
+
+        @JavascriptInterface
+        public void showCiRuntimeManager() {
+            runOnUiThread(() -> MainActivity.this.showCiRuntimeManager());
         }
 
         @JavascriptInterface

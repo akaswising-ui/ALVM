@@ -587,10 +587,70 @@ footer {
     font-size: 8px;
   }
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: 78px minmax(0, 1fr);
+    align-items: stretch;
   }
   .sidebar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    width: 78px;
+    min-height: calc(100vh - 108px);
+    height: 100%;
+    padding: 9px 5px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-right: 1px solid #263044;
+    background: #101622;
+  }
+  .sidebar .section-label,
+  .sidebar .file-item,
+  .sidebar .info-card,
+  .sidebar .sidebar-foot {
     display: none;
+  }
+  .sidebar .side-button {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    min-height: 62px;
+    margin: 0;
+    padding: 8px 2px;
+    border: 1px solid #29354a;
+    border-radius: 9px;
+    background: #151e2c;
+    color: #b9c5d8;
+    text-align: center;
+    font-size: 8px;
+    line-height: 1.15;
+    letter-spacing: 0;
+  }
+  .sidebar .side-button svg {
+    flex: 0 0 auto;
+    width: 19px;
+    height: 19px;
+    color: #b5a9ff;
+  }
+  .sidebar .side-button span {
+    display: block;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+  .sidebar .side-button:active,
+  .sidebar .side-button:focus-visible {
+    border-color: #7d6ce0;
+    background: #252342;
+    color: #ffffff;
+    outline: none;
   }
   .editor-area {
     min-height: 380px;

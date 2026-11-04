@@ -8,6 +8,19 @@ import {
   Play, Save, Terminal, Upload, X
 } from 'lucide-react';
 
+type AndroidBridgeApi = {
+  getAppVersion?: () => string;
+  openWorkspace?: () => void;
+  importFile?: () => void;
+  showCiRuntimeManager?: () => void;
+};
+
+declare global {
+  interface Window {
+    Android?: AndroidBridgeApi;
+  }
+}
+
 type Value = number | string | boolean;
 type Token = { type: string; value: string; line: number };
 type Instruction = { op: string; arg?: Value | number | { name: string; argc: number } };
@@ -68,7 +81,7 @@ function tokenize(source: string): Token[] {
       continue;
     }
     if (c === '[' || c === ']') {
-      throw new Error('Line ' + line + ': arrays are not supported in ALVM v1.1 yet. Use Chess.start(); to launch the current built-in chess preview.');
+      throw new Error('Line ' + line + ': arrays are not supported by the lightweight browser preview compiler yet.');
     }
     throw new Error('Line ' + line + ': unexpected character ' + c);
   }
@@ -383,13 +396,24 @@ export default function App() {
   const [source, setSource] = useState(() => localStorage.getItem('alvm-source') || sample);
   const [filename, setFilename] = useState('Main.al');
   const [compiled, setCompiled] = useState<Program | null>(null);
-  const [output, setOutput] = useState<string[]>(['ALVM v1.1 ready.', 'Edit Main.al, then press Run.']);
+  const [output, setOutput] = useState<string[]>(['ALVM Studio ready.', 'Edit Main.al, then press Run.']);
+  const [appVersion, setAppVersion] = useState('Checking app version...');
   const [status, setStatus] = useState('READY');
   const [showReference, setShowReference] = useState(false);
   const [showLibraries, setShowLibraries] = useState(false);
   const [showWebsiteBuilder, setShowWebsiteBuilder] = useState(false);
   const [gameScene, setGameScene] = useState<GameScene | null>(null);
   const [activeControl, setActiveControl] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const installedVersion = window.Android?.getAppVersion?.();
+      setAppVersion(installedVersion && installedVersion.trim()
+        ? installedVersion.trim()
+        : 'Web preview');
+    } catch {
+      setAppVersion('Web preview');
+    }
+  }, []);
   useEffect(() => {
     if (!activeControl || !gameScene) return;
     const timer = window.setInterval(() => {
@@ -479,13 +503,34 @@ export default function App() {
     setCompiled(null);
     log(['New AL source file created.']);
   };
+  const openFileManager = () => {
+    if (window.Android?.openWorkspace) {
+      window.Android.openWorkspace();
+      return;
+    }
+    fileInput.current?.click();
+  };
+  const importFile = () => {
+    if (window.Android?.importFile) {
+      window.Android.importFile();
+      return;
+    }
+    fileInput.current?.click();
+  };
+  const openRuntimeManager = () => {
+    if (window.Android?.showCiRuntimeManager) {
+      window.Android.showCiRuntimeManager();
+      return;
+    }
+    log(['CI Runtime Manager is available in the installed Android app.'], 'READY');
+  };
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
           <div className="brand-icon"><Braces size={22} /></div>
-          <div><b>ALVM <span>STUDIO</span></b><small>AL Virtual Machine · v1.1</small></div>
+          <div><b>ALVM <span>STUDIO</span></b><small>APP VERSION · {appVersion}</small></div>
         </div>
         <div className="top-actions">
           <span className="online"><Activity size={14} /> LOCAL VM ENGINE</span>
@@ -493,23 +538,25 @@ export default function App() {
         </div>
       </header>
       <main className="layout">
-        <aside className="sidebar">
+        <aside className="sidebar" aria-label="ALVM Studio navigation">
           <div className="section-label">PROJECT</div>
           <div className="file-item active"><FileCode2 size={16} /><span>{filename}</span></div>
           <div className="section-label tools-label">WORKSPACE</div>
-          <button className="side-button" onClick={newFile}><Code2 size={16} />New file</button>
-          <button className="side-button" onClick={() => { setShowLibraries(true); setShowReference(false); setShowWebsiteBuilder(false); }}><Boxes size={16} />AL Libraries</button>
-          <button className="side-button" onClick={() => { setShowWebsiteBuilder(true); setShowLibraries(false); setShowReference(false); }}><Globe size={16} />Website Builder</button>
-          <button className="side-button" onClick={() => fileInput.current?.click()}><FolderOpen size={16} />Open file</button>
+          <button className="side-button" onClick={newFile} title="Create a new AL file"><Code2 size={18} /><span>New file</span></button>
+          <button className="side-button" onClick={() => { setShowLibraries(true); setShowReference(false); setShowWebsiteBuilder(false); }} title="Open AL libraries"><Boxes size={18} /><span>Libraries</span></button>
+          <button className="side-button" onClick={openRuntimeManager} title="Open CI Runtime Manager"><Activity size={18} /><span>Runtime</span></button>
+          <button className="side-button" onClick={openFileManager} title="Open project File Manager"><FolderOpen size={18} /><span>File Manager</span></button>
+          <button className="side-button" onClick={importFile} title="Import an AL, ROOM or runtime file"><Upload size={18} /><span>File Importer</span></button>
+          <button className="side-button" onClick={() => { setShowWebsiteBuilder(true); setShowLibraries(false); setShowReference(false); }} title="Open Website Builder"><Globe size={18} /><span>Website Builder</span></button>
           <div className="info-card">
             <b><Activity size={15} /> VM STATUS</b>
-            <p><span>Architecture</span><strong>Stack bytecode</strong></p>
+            <p><span>Architecture</span><strong>Verified bytecode</strong></p>
             <p><span>Source</span><strong>.al</strong></p>
-            <p><span>Compiled</span><strong>.room</strong></p>
-            <p><span>Version</span><strong>1.1</strong></p>
-            <p><span>Engine</span><strong>Browser runtime</strong></p>
+            <p><span>Compiled</span><strong>.room v9</strong></p>
+            <p><span>App</span><strong>{appVersion}</strong></p>
+            <p><span>Engine</span><strong>Python CI Runtime</strong></p>
           </div>
-          <div className="sidebar-foot"><i />Local browser execution</div>
+          <div className="sidebar-foot"><i />Local app execution</div>
         </aside>
         <section className="workspace">
           <div className="editor-head">
@@ -550,7 +597,7 @@ export default function App() {
               <button className="compile-button" onClick={compileRoom}><Braces size={15} />Compile .room</button>
               <button className="execute-button" onClick={executeRoom}><Terminal size={15} />Execute .room</button>
             </div>
-            <span>ALVM v1.1</span>
+            <span>ALVM Studio · {appVersion}</span>
           </div>
           {gameScene?.chess && <ChessPlayer />}
           {gameScene && !gameScene.chess && <section style={{ padding: 14, borderTop: '1px solid #263044', background: '#0b111c' }}>
@@ -574,7 +621,7 @@ export default function App() {
           </section>
         </section>
       </main>
-      <footer><span>ALVM STUDIO · ROOM-BASED LANGUAGE RUNTIME</span><span>{lineCount} lines · UTF-8</span></footer>
+      <footer><span>ALVM STUDIO · APP VERSION {appVersion}</span><span>{lineCount} lines · UTF-8</span></footer>
       <input ref={fileInput} type="file" accept=".al,.room,.txt" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void openFile(file); event.currentTarget.value = ''; }} />
     </div>
   );
