@@ -178,7 +178,7 @@ public:
       }
       if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);
     }
-    for(const auto& cls:p.classes){
+    for(auto& cls:p.classes){
       auto& info=classes.at(cls.name);
       if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
       for(auto& method:cls.methods){
