@@ -31,6 +31,14 @@ fi
 FUNCTION_EXPECTED="$(printf '30\n120\nHello AL\n15')"
 test "$("$BIN" run "$TMP/functions.room")" = "$FUNCTION_EXPECTED"
 
+"$BIN" compile "$ROOT/examples/method_overloading.al" -o "$TMP/method-overloading.room"
+METHOD_OVERLOAD_EXPECTED="$(printf '9\nAL\n10')"
+METHOD_OVERLOAD_ACTUAL="$("$BIN" run "$TMP/method-overloading.room")"
+if [[ "$METHOD_OVERLOAD_ACTUAL" != "$METHOD_OVERLOAD_EXPECTED" ]]; then
+  printf 'method overload expected:\n%s\nmethod overload actual:\n%s\n' "$METHOD_OVERLOAD_EXPECTED" "$METHOD_OVERLOAD_ACTUAL" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/objects.al" -o "$TMP/objects.room"
 OBJECT_EXPECTED="$(printf '75\n90\n95\nALVM\ntrue\n100')"
 test "$("$BIN" run "$TMP/objects.room")" = "$OBJECT_EXPECTED"
@@ -59,7 +67,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature; do
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -77,4 +85,4 @@ fi
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
-echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function overloading, foreach, switch and loop control"
+echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function and method overloading, foreach, switch and loop control"
