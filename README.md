@@ -90,7 +90,7 @@ This stage adds global function overloading. Instance method and constructor ove
 
 ## Stage 9: array foreach iteration
 
-AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, so `.room` v7 does not need an ABI change.
+AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, and uses the existing foreach lowering in `.room` v8 without a dedicated foreach opcode.
 
 ```al
 int[] scores = [10, 20, 30];
