@@ -12,7 +12,7 @@ type Value = number | string | boolean;
 type Token = { type: string; value: string; line: number };
 type Instruction = { op: string; arg?: Value | number | { name: string; argc: number } };
 type GameObject = { id: string; kind: 'rect' | 'circle' | 'text'; x: number; y: number; w: number; h: number; color: string; text?: string; size?: number };
-type GameScene = { width: number; height: number; background: string; objects: GameObject[]; buttons: { id: string; label: string }[]; controls: { button: string; target: string; dx: number; dy: number }[]; chess?: boolean };
+type GameScene = { width: number; height: number; background: string; objects: GameObject[]; buttons: { id: string; label: string }[]; controls: { button: string; target: string; dx: number; dy: number }[]; chess?: boolean; calculator?: boolean };
 type VarInfo = { name: string; type: 'int' | 'String' | 'boolean'; slot: number };
 type Program = { code: Instruction[]; vars: VarInfo[] };
 
@@ -293,6 +293,7 @@ function runVM(code: Instruction[], vars: VarInfo[]) {
       const values = stack.splice(stack.length - call.argc, call.argc);
       const [a, b, c, d, e, f] = values;
       if (call.name === 'Chess.start' && values.length === 0) game.chess = true;
+      else if (call.name === 'Game.calculator' && values.length === 0) game.calculator = true;
       else if (call.name === 'Game.start' && values.length === 2) { game.width = Number(a); game.height = Number(b); }
       else if (call.name === 'Game.background' && values.length === 1) game.background = String(a);
       else if (call.name === 'Game.rect' && values.length === 6) game.objects.push({ id: String(a), kind: 'rect', x: Number(b), y: Number(c), w: Number(d), h: Number(e), color: String(f) });
@@ -377,6 +378,58 @@ async function decodeRoom(file: File): Promise<Program> {
   const allowed = new Set(['PUSH', 'LOAD', 'STORE', 'PRINT', 'GAME_CALL', 'JMP', 'JMP_FALSE', 'NEG', 'NOT', 'ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'LT', 'GT', 'EQ', 'NE', 'LE', 'GE', 'AND', 'OR', 'HALT']);
   if (parsed.code.some(item => !item || !allowed.has(item.op))) throw new Error('Invalid opcode in .room bytecode');
   return { code: parsed.code, vars: parsed.vars };
+}
+
+function CalculatorPreview() {
+  const [display, setDisplay] = useState('0');
+  const [stored, setStored] = useState<number | null>(null);
+  const [operator, setOperator] = useState<string | null>(null);
+  const [replace, setReplace] = useState(false);
+  const [history, setHistory] = useState('');
+
+  const number = (digit: string) => {
+    setDisplay(current => replace || current === '0' ? digit : current.length < 14 ? current + digit : current);
+    setReplace(false);
+  };
+  const chooseOperator = (next: string) => {
+    const value = Number(display);
+    if (!Number.isFinite(value)) return;
+    if (stored !== null && operator && !replace) {
+      const result = operator === '+' ? stored + value : operator === '-' ? stored - value : operator === '×' ? stored * value : value === 0 ? NaN : stored / value;
+      if (!Number.isFinite(result)) { setDisplay('Error'); setStored(null); setOperator(null); setReplace(true); return; }
+      setStored(result); setDisplay(String(Number(result.toPrecision(10))));
+    } else setStored(value);
+    setOperator(next); setHistory(String(value) + ' ' + next); setReplace(true);
+  };
+  const equals = () => {
+    if (stored === null || !operator) return;
+    const right = Number(display);
+    const result = operator === '+' ? stored + right : operator === '-' ? stored - right : operator === '×' ? stored * right : right === 0 ? NaN : stored / right;
+    setHistory(String(stored) + ' ' + operator + ' ' + String(right) + ' =');
+    setDisplay(Number.isFinite(result) ? String(Number(result.toPrecision(10))) : 'Error');
+    setStored(null); setOperator(null); setReplace(true);
+  };
+  const clear = () => { setDisplay('0'); setStored(null); setOperator(null); setReplace(false); setHistory(''); };
+  const backspace = () => { if (replace || display === 'Error') { setDisplay('0'); setReplace(false); return; } setDisplay(value => value.length <= 1 || (value.length === 2 && value[0] === '-') ? '0' : value.slice(0, -1)); };
+  const decimal = () => { if (replace || display === 'Error') { setDisplay('0.'); setReplace(false); } else if (!display.includes('.')) setDisplay(value => value + '.'); };
+  const keys = [
+    { label: 'AC', action: clear, kind: 'muted' }, { label: '⌫', action: backspace, kind: 'muted' }, { label: '÷', action: () => chooseOperator('÷'), kind: 'operator' }, { label: '×', action: () => chooseOperator('×'), kind: 'operator' },
+    { label: '7', action: () => number('7') }, { label: '8', action: () => number('8') }, { label: '9', action: () => number('9') }, { label: '−', action: () => chooseOperator('-'), kind: 'operator' },
+    { label: '4', action: () => number('4') }, { label: '5', action: () => number('5') }, { label: '6', action: () => number('6') }, { label: '+', action: () => chooseOperator('+'), kind: 'operator' },
+    { label: '1', action: () => number('1') }, { label: '2', action: () => number('2') }, { label: '3', action: () => number('3') }, { label: '=', action: equals, kind: 'equal', tall: true },
+    { label: '±', action: () => setDisplay(value => value === '0' || value === 'Error' ? value : value.startsWith('-') ? value.slice(1) : '-' + value) }, { label: '0', action: () => number('0'), wide: true }, { label: '.', action: decimal }
+  ];
+  return <section style={{ padding: 16, borderTop: '1px solid #263044', background: '#0b111c' }}>
+    <div style={{ maxWidth: 380, margin: '0 auto', border: '1px solid #344158', borderRadius: 20, padding: 16, background: '#111a29', boxShadow: '0 12px 35px #0005' }}>
+      <div style={{ color: '#91a0b8', fontSize: 12, letterSpacing: 2, fontWeight: 700 }}>AL SMART CALCULATOR</div>
+      <div style={{ minHeight: 24, color: '#8998af', textAlign: 'right', fontSize: 14, paddingTop: 22 }}>{history || ' '}</div>
+      <div aria-live="polite" style={{ minHeight: 66, color: '#f4f7ff', textAlign: 'right', fontSize: 'clamp(34px, 10vw, 48px)', fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', padding: '4px 0 14px' }}>{display}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 9 }}>
+        {keys.map((key, index) => <button key={key.label + index} onClick={key.action} style={{ minHeight: 62, gridColumn: key.wide ? 'span 2' : undefined, gridRow: key.tall ? 'span 2' : undefined, border: '1px solid #344158', borderRadius: 14, background: key.kind === 'equal' ? '#715ce0' : key.kind === 'operator' ? '#293650' : key.kind === 'muted' ? '#354158' : '#1b273a', color: 'white', fontSize: 23, fontWeight: 600, cursor: 'pointer', touchAction: 'manipulation' }}>{key.label}</button>)}
+      </div>
+      <div style={{ textAlign: 'center', color: '#8493aa', fontSize: 11, marginTop: 14 }}>Powered by ALVM Game UI</div>
+    </div>
+  </section>;
 }
 
 export default function App() {
@@ -552,7 +605,8 @@ export default function App() {
             </div>
             <span>ALVM v1.1</span>
           </div>
-          {gameScene?.chess && <ChessPlayer />}
+          {gameScene?.calculator && <CalculatorPreview />}
+          {gameScene?.chess && !gameScene.calculator && <ChessPlayer />}
           {gameScene && !gameScene.chess && <section style={{ padding: 14, borderTop: '1px solid #263044', background: '#0b111c' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><b style={{ fontSize: 12 }}>🎮 AL GAME PLAYER</b><button className="icon-button" onClick={() => { setGameScene(null); setActiveControl(null); }}>Close game</button></div>
             <div style={{ width: 'min(100%, 360px)', margin: '0 auto' }}>
