@@ -29,10 +29,10 @@ room Main {
         UI.text("message", "Hello from AL");
         UI.button("tap", "Tap me", "onTap");
     }
-}
 
-void onTap(string buttonId) {
-    UI.setText("message", "AL button clicked: " + buttonId);
+    void onTap(string buttonId) {
+        UI.setText("message", "AL button clicked: " + buttonId);
+    }
 }
 ```
 
