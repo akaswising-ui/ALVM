@@ -9,6 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python for CI Runtime tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Python CI Runtime regression tests
+        run: python tests/test_ci_runtime.py
       - name: Configure C++17 build
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Compile ALVM
