@@ -59,7 +59,7 @@ struct Stmt {
 struct Parameter { std::string name; Type type=Type::Unknown; };
 struct Function { std::string name; std::string ownerClass; Type returnType=Type::Void; std::vector<Parameter> params; std::unique_ptr<Stmt> body; };
 struct Field { std::string name; Type type=Type::Unknown; };
-struct ClassDecl { std::string name; std::vector<Field> fields; std::vector<Function> methods; };
+struct ClassDecl { std::string name; std::string baseClass; std::vector<Field> fields; std::vector<Function> methods; };
 struct Program { std::string name; std::vector<ClassDecl> classes; std::vector<Function> functions; };
 
 class Parser {
@@ -90,13 +90,13 @@ class Parser {
 public:
   explicit Parser(const std::string& src):t(lex(src)){}
   Function parseFunction(const std::string& owner){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Function fn;fn.returnType=parseType();fn.name=take().text;fn.ownerClass=owner;if(fn.name=="<eof>")throw Error("Expected function name");need("(");if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;if(param.name=="<eof>")throw Error("Expected parameter name");fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();return fn;}
-  ClassDecl parseClass(){need("class");ClassDecl cls;cls.name=take().text;if(userTypeMap.find(cls.name)==userTypeMap.end())registerUserType(cls.name);need("{");while(cur()!="}"&&cur()!="<eof>"){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Type ty=parseType();Token name=take();if(name.text=="<eof>")throw Error("Expected class member name");if(eat("(")){Function fn;fn.ownerClass=cls.name;fn.name=name.text;fn.returnType=ty;if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();cls.methods.push_back(std::move(fn));}else{if(ty==Type::Void)throw Error("Class field cannot have type void");need(";");for(const auto& field:cls.fields)if(field.name==name.text)throw Error("Duplicate field: "+name.text);cls.fields.push_back({name.text,ty});}}need("}");return cls;}
+  ClassDecl parseClass(){need("class");ClassDecl cls;cls.name=take().text;if(userTypeMap.find(cls.name)==userTypeMap.end())registerUserType(cls.name);if(eat("extends")){cls.baseClass=take().text;if(userTypeMap.find(cls.baseClass)==userTypeMap.end())throw Error("Unknown base class: "+cls.baseClass);if(cls.baseClass==cls.name)throw Error("A class cannot extend itself");}need("{");while(cur()!="}"&&cur()!="<eof>"){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Type ty=parseType();Token name=take();if(name.text=="<eof>")throw Error("Expected class member name");if(eat("(")){Function fn;fn.ownerClass=cls.name;fn.name=name.text;fn.returnType=ty;if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();cls.methods.push_back(std::move(fn));}else{if(ty==Type::Void)throw Error("Class field cannot have type void");need(";");for(const auto& field:cls.fields)if(field.name==name.text)throw Error("Duplicate field: "+name.text);cls.fields.push_back({name.text,ty});}}need("}");return cls;}
   Program parse(){if(!(eat("room")||eat("class")))throw Error("Program must start with room");Program out;out.name=take().text;need("{");userTypeNames.clear();userTypeMap.clear();for(size_t q=p;q+1<t.size();++q)if(t[q].text=="class"&&t[q+1].text!="<eof>")registerUserType(t[q+1].text);while(cur()!="}"&&cur()!="<eof>"){if(cur()=="class")out.classes.push_back(parseClass());else out.functions.push_back(parseFunction(""));}need("}");if(cur()!="<eof>")throw Error("Unexpected token after program end: "+cur());auto mainIt=std::find_if(out.functions.begin(),out.functions.end(),[](const Function& fn){return fn.name=="main";});if(mainIt==out.functions.end())throw Error("Program must declare main()");if(mainIt!=out.functions.begin())std::iter_swap(out.functions.begin(),mainIt);return out;}
 };
 
 class SemanticAnalyzer {
   struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; };
-  struct ClassInfo { Type type=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; };
+  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,Signature> methods; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,ClassInfo> classes;
   std::vector<std::map<std::string,Type>> scopes;
@@ -104,9 +104,15 @@ class SemanticAnalyzer {
   std::string currentClass;
   void push(){scopes.emplace_back();}
   void pop(){scopes.pop_back();}
-  Type lookup(const std::string& n){for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto f=i->find(n);if(f!=i->end())return f->second;}throw Error("Unknown variable: "+n);}
   void declare(const std::string& n,Type t){auto& scope=scopes.back();if(scope.count(n))throw Error("Duplicate variable in scope: "+n);scope[n]=t;}
+  Type lookup(const std::string& n){for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto f=i->find(n);if(f!=i->end())return f->second;}throw Error("Unknown variable: "+n);}
   ClassInfo& classFor(Type t){for(auto& item:classes)if(item.second.type==t)return item.second;throw Error("Expected a class object, got "+typeName(t));}
+  bool isAssignable(Type actual,Type expected)const{
+    if(actual==expected)return true;
+    if(!isUserType(actual)||!isUserType(expected))return false;
+    for(const auto& item:classes)if(item.second.type==actual){Type base=item.second.baseType;while(base!=Type::Unknown){if(base==expected)return true;bool found=false;for(const auto& parent:classes)if(parent.second.type==base){base=parent.second.baseType;found=true;break;}if(!found)break;}return false;}
+    return false;
+  }
   Type checkExpr(Expr& e){
     switch(e.kind){
       case Expr::Integer:e.inferred=Type::Int;break;
@@ -116,26 +122,26 @@ class SemanticAnalyzer {
       case Expr::This:if(currentClass.empty())throw Error("'this' can only be used inside an instance method");e.inferred=classes.at(currentClass).type;break;
       case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);e.inferred=it->second.type;break;}
       case Expr::FieldAccess:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(e.text);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+e.text+"' on "+typeName(objectType));e.resolvedField=it->second;e.inferred=cls.fieldTypes[(size_t)it->second];break;}
-      case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(actual!=sig.params[i])throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
-      case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto fn=signatures.find(e.text);if(fn==signatures.end())throw Error("Unknown function: "+e.text);if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(actual!=fn->second.params[i])throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));}e.resolvedFunction=e.text;e.inferred=fn->second.result;break;}
+      case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));const auto& sig=it->second;if(e.elements.size()!=sig.params.size())throw Error("Wrong argument count for method "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,sig.params[i]))throw Error("Argument "+std::to_string(i+1)+" of method "+e.text+" must be "+typeName(sig.params[i]));}e.resolvedFunction=sig.ownerClass+"."+e.text;e.inferred=sig.result;break;}
+      case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto fn=signatures.find(e.text);if(fn==signatures.end())throw Error("Unknown function: "+e.text);if(e.elements.size()!=fn->second.params.size())throw Error("Wrong argument count for function: "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,fn->second.params[i]))throw Error("Argument "+std::to_string(i+1)+" of "+e.text+" must be "+typeName(fn->second.params[i]));}e.resolvedFunction=e.text;e.inferred=fn->second.result;break;}
       case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}
       case Expr::Index:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error("Indexing requires an array");if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");e.inferred=elementOf(base);break;}
       case Expr::Length:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error(".length requires an array");e.inferred=Type::Int;break;}
-      case Expr::Unary:{Type a=checkExpr(*e.left);if(e.text=="-"&&a!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&a!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}
-      case Expr::Binary:{Type a=checkExpr(*e.left),b=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&a==Type::String&&b==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(a!=Type::Int||b!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(a!=Type::Int||b!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(a!=b)throw Error("Equality operands must have the same type");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(a!=Type::Bool||b!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}
+      case Expr::Unary:{Type x=checkExpr(*e.left);if(e.text=="-"&&x!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&x!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}
+      case Expr::Binary:{Type x=checkExpr(*e.left),y=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&x==Type::String&&y==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(x!=Type::Int||y!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(x!=Type::Int||y!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(x!=y&&!(isAssignable(x,y)||isAssignable(y,x)))throw Error("Equality operands must have compatible types");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(x!=Type::Bool||y!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}
     }
     return e.inferred;
   }
   void checkStmt(Stmt& s){
     switch(s.kind){
       case Stmt::Block:push();for(auto& child:s.children)checkStmt(*child);pop();break;
-      case Stmt::Declare:{Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;if(actual!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");declare(s.name,actual);break;}
-      case Stmt::Assign:{Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);if(lhs!=rhs)throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");break;}
+      case Stmt::Declare:{Type rhs=checkExpr(*s.expr);Type actual=s.declared==Type::Unknown?rhs:s.declared;if(!isAssignable(rhs,actual))throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(actual)+" variable '"+s.name+"'");declare(s.name,actual);break;}
+      case Stmt::Assign:{Type lhs=lookup(s.name),rhs=checkExpr(*s.expr);if(!isAssignable(rhs,lhs))throw Error("Cannot assign "+typeName(rhs)+" to "+typeName(lhs)+" variable '"+s.name+"'");break;}
       case Stmt::ArrayAssign:{Type arr=lookup(s.name);if(!isArray(arr))throw Error("Indexed assignment requires an array variable: "+s.name);if(checkExpr(*s.condition)!=Type::Int)throw Error("Array index must be int");Type rhs=checkExpr(*s.expr);if(rhs!=elementOf(arr))throw Error("Cannot store "+typeName(rhs)+" in "+typeName(arr));break;}
-      case Stmt::FieldAssign:{Type objectType=checkExpr(*s.condition);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(s.name);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+s.name+"' on "+typeName(objectType));Type expected=cls.fieldTypes[(size_t)it->second],actual=checkExpr(*s.expr);if(expected!=actual)throw Error("Cannot assign "+typeName(actual)+" to field "+s.name+" of type "+typeName(expected));s.incrementExpr=std::make_unique<Expr>();s.incrementExpr->number=it->second;break;}
+      case Stmt::FieldAssign:{Type objectType=checkExpr(*s.condition);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(s.name);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+s.name+"' on "+typeName(objectType));Type expected=cls.fieldTypes[(size_t)it->second],actual=checkExpr(*s.expr);if(!isAssignable(actual,expected))throw Error("Cannot assign "+typeName(actual)+" to field "+s.name+" of type "+typeName(expected));s.incrementExpr=std::make_unique<Expr>();s.incrementExpr->number=it->second;break;}
       case Stmt::ExprStatement:checkExpr(*s.expr);break;
       case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
-      case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(actual!=currentReturn)throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
+      case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(!isAssignable(actual,currentReturn))throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
       case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
       case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");checkStmt(*s.first);break;
       case Stmt::For:push();checkStmt(*s.first);if(checkExpr(*s.condition)!=Type::Bool)throw Error("for condition must be boolean");checkStmt(*s.second);checkStmt(*s.third);pop();break;
@@ -148,8 +154,29 @@ public:
   void analyze(Program& p){
     if(p.functions.empty()||p.functions[0].name!="main")throw Error("Missing main() entry function");
     if(p.functions[0].returnType!=Type::Void||!p.functions[0].params.empty())throw Error("main() must be declared as void main() with no parameters");
-    for(const auto& cls:p.classes){ClassInfo info;info.type=userTypeMap.at(cls.name);for(size_t i=0;i<cls.fields.size();++i){if(cls.fields[i].type==Type::Void||isArray(cls.fields[i].type))throw Error("Class fields currently support scalar types only");info.fieldSlots[cls.fields[i].name]=(int)i;info.fieldTypes.push_back(cls.fields[i].type);}if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);}
-    for(const auto& cls:p.classes){auto& info=classes.at(cls.name);for(const auto& method:cls.methods){if(info.methods.count(method.name))throw Error("Duplicate method: "+method.name);Signature sig=signature(method);info.methods.emplace(method.name,sig);std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));}}
+    for(const auto& cls:p.classes){
+      ClassInfo info;info.type=userTypeMap.at(cls.name);
+      if(!cls.baseClass.empty()){
+        auto parent=classes.find(cls.baseClass);
+        if(parent==classes.end())throw Error("Base class '"+cls.baseClass+"' must be declared before derived class '"+cls.name+"'");
+        info.baseType=parent->second.type;info.fieldSlots=parent->second.fieldSlots;info.fieldTypes=parent->second.fieldTypes;info.methods=parent->second.methods;
+      }
+      for(const auto& field:cls.fields){
+        if(field.type==Type::Void||isArray(field.type)||isUserType(field.type))throw Error("Class fields currently support scalar int, string or boolean types only");
+        if(info.fieldSlots.count(field.name))throw Error("Field '"+field.name+"' conflicts with an inherited field in "+cls.name);
+        info.fieldSlots[field.name]=(int)info.fieldTypes.size();info.fieldTypes.push_back(field.type);
+      }
+      if(!classes.emplace(cls.name,std::move(info)).second)throw Error("Duplicate class declaration: "+cls.name);
+    }
+    for(const auto& cls:p.classes){
+      auto& info=classes.at(cls.name);
+      if(!cls.baseClass.empty())info.methods=classes.at(cls.baseClass).methods;
+      for(const auto& method:cls.methods){
+        if(info.methods.count(method.name))throw Error("Method '"+method.name+"' conflicts with inherited method in "+cls.name+"; overriding is not implemented yet");
+        Signature sig=signature(method);info.methods.emplace(method.name,sig);
+        std::string key=cls.name+"."+method.name;if(signatures.count(key))throw Error("Duplicate method signature");signatures.emplace(key,std::move(sig));
+      }
+    }
     for(const auto& fn:p.functions){if(signatures.count(fn.name))throw Error("Duplicate function name: "+fn.name);signatures.emplace(fn.name,signature(fn));}
     for(auto& fn:p.functions)analyzeFunction(fn);
     for(auto& cls:p.classes)for(auto& method:cls.methods)analyzeFunction(method);
@@ -158,7 +185,7 @@ public:
 };
 enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField };
 struct IR { Op op; int64_t arg=0; std::string text; };
-struct ClassIR { std::string name; std::vector<Type> fieldTypes; };
+struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
 struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
 struct IRProgram { std::vector<ClassIR> classes; std::vector<FunctionIR> functions; };
 class IRGenerator {
@@ -218,7 +245,16 @@ class IRGenerator {
 public:
   IRProgram generate(const Program& p){
     IRProgram out;
-    for(size_t i=0;i<p.classes.size();++i){classIds[p.classes[i].name]=(int)i;ClassIR c;c.name=p.classes[i].name;for(const auto& field:p.classes[i].fields)c.fieldTypes.push_back(field.type);out.classes.push_back(std::move(c));for(size_t j=0;j<p.classes[i].fields.size();++j)fieldSlots[p.classes[i].name][p.classes[i].fields[j].name]=(int)j;}
+    for(size_t i=0;i<p.classes.size();++i)classIds[p.classes[i].name]=(int)i;
+    for(size_t i=0;i<p.classes.size();++i){
+      const auto& decl=p.classes[i];ClassIR c;c.name=decl.name;
+      if(!decl.baseClass.empty()){
+        int base=classIds.at(decl.baseClass);if(base>=(int)i)throw Error("Base class must appear before derived class");
+        c.baseClassId=base;c.fieldTypes=out.classes[(size_t)base].fieldTypes;fieldSlots[decl.name]=fieldSlots[decl.baseClass];
+      }
+      for(const auto& field:decl.fields){fieldSlots[decl.name][field.name]=(int)c.fieldTypes.size();c.fieldTypes.push_back(field.type);}
+      out.classes.push_back(std::move(c));
+    }
     int id=0;for(const auto& fn:p.functions)functionIds[fn.name]=id++;
     for(const auto& cls:p.classes)for(const auto& method:cls.methods)functionIds[cls.name+"."+method.name]=id++;
     for(const auto& fn:p.functions)compileFunction(fn,out);
@@ -226,14 +262,14 @@ public:
     return out;
   }
 };struct Bytecode { Op op; int64_t arg=0; std::string text; };
-struct ClassBC { std::string name; std::vector<Type> fieldTypes; };
+struct ClassBC { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
 struct FunctionBC { std::string name; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<Bytecode> code; };
 struct BytecodeProgram { std::vector<ClassBC> classes; std::vector<FunctionBC> functions; };
 class BytecodeLowerer {
 public:
   BytecodeProgram lower(const IRProgram& ir){
     BytecodeProgram out;
-    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.fieldTypes});
+    for(const auto& cls:ir.classes)out.classes.push_back({cls.name,cls.baseClassId,cls.fieldTypes});
     for(const auto& fn:ir.functions){
       FunctionBC b;b.name=fn.name;b.ownerClassId=fn.ownerClassId;b.returnType=fn.returnType;b.parameterCount=fn.parameterCount;b.localCount=fn.localCount;
       for(const auto& i:fn.code)b.code.push_back({i.op,i.arg,i.text});
@@ -250,8 +286,8 @@ static void writeString(std::ofstream& f,const std::string& value){if(value.size
 static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
 static void saveRoom(const std::string& path,const BytecodeProgram& program){
   std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
-  f.write("ALRM",4);writeU32(f,5);writeU32(f,(uint32_t)program.classes.size());
-  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
+  f.write("ALRM",4);writeU32(f,6);writeU32(f,(uint32_t)program.classes.size());
+  for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.baseClassId);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
   writeU32(f,(uint32_t)program.functions.size());
   for(const auto& fn:program.functions){
     writeString(f,fn.name);writeU32(f,(uint32_t)fn.ownerClassId);writeU32(f,(uint32_t)fn.returnType);writeU32(f,fn.parameterCount);writeU32(f,fn.localCount);writeU32(f,(uint32_t)fn.code.size());
@@ -262,9 +298,9 @@ static void saveRoom(const std::string& path,const BytecodeProgram& program){
 static BytecodeProgram loadRoom(const std::string& path){
   std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
   char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
-  if(readU32(f)!=5)throw Error("Unsupported .room version (expected 5)");
+  if(readU32(f)!=6)throw Error("Unsupported .room version (expected 6)");
   BytecodeProgram program;uint32_t classCount=readU32(f);if(classCount>10000)throw Error("Class count limit exceeded");
-  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v5");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
+  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v6");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
   uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
   for(uint32_t j=0;j<n;++j){
     FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;
@@ -291,7 +327,7 @@ static void verify(const BytecodeProgram& program){
   if(functions.empty()||functions[0].name!="main"||functions[0].ownerClassId!=-1)throw Error(".room must start with global main function");
   if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
   std::map<std::string,bool> names;
-  for(const auto& cls:program.classes)if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");else names["class:"+cls.name]=true;
+  for(size_t ci=0;ci<program.classes.size();++ci){const auto& cls=program.classes[ci];if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");names["class:"+cls.name]=true;if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=ci))throw Error("Invalid class inheritance graph");}
   for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId < -1 || (fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size()))throw Error("Invalid method owner class");}
   for(size_t fi=0;fi<functions.size();++fi){
     const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
@@ -333,6 +369,7 @@ using ObjectPtr=std::shared_ptr<Object>;
 using Value=std::variant<int64_t,std::string,bool,ArrayPtr,ObjectPtr>;
 struct Array { std::vector<Value> items; size_t elementKind=std::numeric_limits<size_t>::max(); };
 struct Object { size_t classId=0; std::vector<Value> fields; };
+static bool isInstanceOf(size_t actual,size_t expected,const std::vector<ClassBC>& classes){while(actual<classes.size()){if(actual==expected)return true;int32_t parent=classes[actual].baseClassId;if(parent<0)return false;actual=(size_t)parent;}return false;}
 static std::string show(const Value& v){if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);if(auto x=std::get_if<std::string>(&v))return *x;if(auto x=std::get_if<bool>(&v))return *x?"true":"false";if(auto a=std::get_if<ArrayPtr>(&v))return "[array length="+std::to_string((*a)->items.size())+"]";return "[object]";}
 static int64_t integer(const Value& v){if(auto x=std::get_if<int64_t>(&v))return *x;throw Error("Runtime type error: expected int");}
 static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;throw Error("Runtime type error: expected boolean");}
@@ -374,7 +411,7 @@ static void execute(const BytecodeProgram& program){
       case Op::Call:{
         size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
         size_t count=(size_t)callee.parameterCount+(callee.ownerClassId>=0?1:0);std::vector<Value> args(count);for(size_t k=count;k>0;--k)args[k-1]=pop();
-        if(callee.ownerClassId>=0){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||(*obj)->classId!=(size_t)callee.ownerClassId)throw Error("Instance method called with wrong receiver object");}
+        if(callee.ownerClassId>=0){auto obj=std::get_if<ObjectPtr>(&args[0]);if(!obj||!*obj||!isInstanceOf((*obj)->classId,(size_t)callee.ownerClassId,classes))throw Error("Instance method called with incompatible receiver object");}
         Frame next;next.function=target;next.locals.resize(callee.localCount);next.stackBase=stack.size();for(size_t k=0;k<args.size();++k)next.locals[k]=std::move(args[k]);frames.push_back(std::move(next));break;
       }
       case Op::Ret:{bool returns=fn.returnType!=Type::Void;Value result;if(returns)result=pop();size_t base=frame.stackBase;frames.pop_back();if(frames.empty())return;if(stack.size()<base)throw Error("Call frame stack underflow");stack.resize(base);if(returns)stack.push_back(std::move(result));break;}
