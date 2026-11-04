@@ -9,8 +9,8 @@ trap 'rm -rf "$TMP"' EXIT
 test "$("$BIN" run "$TMP/hello.room")" = "30"
 
 "$BIN" compile "$ROOT/examples/control_flow.al" -o "$TMP/control.room"
-EXPECTED="$(printf 'sum is ten\n10')"
-test "$("$BIN" run "$TMP/control.room")" = "$EXPECTED"
+CONTROL_EXPECTED="$(printf 'sum is ten\n10')"
+test "$("$BIN" run "$TMP/control.room")" = "$CONTROL_EXPECTED"
 
 "$BIN" compile "$ROOT/examples/short_circuit.al" -o "$TMP/logic.room"
 test "$("$BIN" run "$TMP/logic.room")" = "short circuit ok"
@@ -19,16 +19,17 @@ test "$("$BIN" run "$TMP/logic.room")" = "short circuit ok"
 ARRAY_EXPECTED="$(printf '10\n3\n18\n7\nAL Bytecode\n2\nflags ok')"
 test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
 
-if "$BIN" compile "$ROOT/tests/type_error.al" -o "$TMP/type-invalid.room" 2>/dev/null; then
-  echo "FAIL: scalar type error was accepted" >&2
-  exit 1
-fi
-if "$BIN" compile "$ROOT/tests/array_type_error.al" -o "$TMP/array-invalid.room" 2>/dev/null; then
-  echo "FAIL: array type error was accepted" >&2
-  exit 1
-fi
-test ! -e "$TMP/type-invalid.room"
-test ! -e "$TMP/array-invalid.room"
+"$BIN" compile "$ROOT/examples/functions.al" -o "$TMP/functions.room"
+FUNCTION_EXPECTED="$(printf '30\n120\nHello AL\n15')"
+test "$("$BIN" run "$TMP/functions.room")" = "$FUNCTION_EXPECTED"
+
+for fixture in type_error array_type_error function_type_error missing_return; do
+  if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
+    echo "FAIL: $fixture was accepted" >&2
+    exit 1
+  fi
+  test ! -e "$TMP/$fixture.room"
+done
 
 "$BIN" compile "$ROOT/tests/bounds_error.al" -o "$TMP/bounds.room"
 if "$BIN" run "$TMP/bounds.room" >/dev/null 2>&1; then
@@ -36,5 +37,5 @@ if "$BIN" run "$TMP/bounds.room" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$BIN" disasm "$TMP/arrays.room" | grep -q 'op='
-echo "PASS: typed arrays, bounds checks, AST, type analysis, IR and .room v3"
+"$BIN" disasm "$TMP/functions.room" | grep -q 'function factorial'
+echo "PASS: compiler pipeline, arrays, typed functions, recursion and VM call frames"
