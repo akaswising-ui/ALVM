@@ -23,9 +23,8 @@ room Main {
         UI.button("equals", "=", "onKey");
         UI.button("plus", "+", "onKey");
     }
-}
 
-void onKey(string key) {
+    void onKey(string key) {
     int value = UI.getInt("value", 0);
     boolean failed = false;
 
@@ -92,4 +91,6 @@ void onKey(string key) {
 
     UI.setInt("value", value);
     UI.setText("display", value);
+}
+
 }
