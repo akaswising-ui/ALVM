@@ -53,3 +53,24 @@ Switch and loop control lower to existing jump instructions. The .room v7 binary
 ## Not implemented
 
 `foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, method overloading, constructors with explicit `super(arguments)`, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, full standard library modules, graphics/game/audio APIs, GUI IDE, `.AL` packaging and Android APK integration are future features.
+
+
+## Foreach array iteration
+
+Syntax:
+
+```al
+foreach (int item : values) {
+    AL.print(item);
+}
+```
+
+- The source expression must have type `int[]`, `string[]` or `boolean[]`.
+- The iteration variable must match the array element type. `var` infers that type.
+- The source expression is evaluated once before iteration begins.
+- Elements are visited in ascending index order from zero through `length - 1`.
+- The iteration variable is scoped to the foreach statement and cannot be referenced after it.
+- `break;` exits the foreach loop.
+- `continue;` advances to the next element.
+- The compiler lowers foreach to ordinary array length, indexed read, arithmetic and jump instructions. No special foreach opcode is embedded in .room v7.
+- Empty arrays are not yet expressible as array literals; a future array allocation feature will make zero-element iteration directly testable.
