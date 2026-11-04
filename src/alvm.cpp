@@ -365,7 +365,111 @@ static BytecodeProgram loadRoom(const std::string& path){
 static int stackDelta(Op op){
   switch(op){
     case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:case Op::NewObject:return 1;
-    case Op::Store:case Op::JumpFalse:case Op::Print:std::cout<<show(pop())<<'\n';break;
+    case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;
+    case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;
+    case Op::ArraySet:return -3;
+    case Op::SetField:return -2;
+    case Op::Dup:return 1;
+    default:return 0;
+  }
+}
+static void verify(const BytecodeProgram& program){
+  const auto& functions=program.functions;
+  if(functions.empty()||functions[0].name!="main"||functions[0].ownerClassId!=-1)throw Error(".room must start with global main function");
+  if(functions[0].returnType!=Type::Void||functions[0].parameterCount!=0)throw Error("Invalid main function signature");
+  std::map<std::string,bool> names;
+  for(size_t ci=0;ci<program.classes.size();++ci){const auto& cls=program.classes[ci];if(cls.name.empty()||names.count("class:"+cls.name))throw Error("Duplicate or empty class name");names["class:"+cls.name]=true;if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=ci))throw Error("Invalid class inheritance graph");}
+  for(const auto& fn:functions){if(fn.name.empty()||names.count("function:"+fn.name))throw Error("Empty or duplicate function name");names["function:"+fn.name]=true;if(fn.ownerClassId < -1 || (fn.ownerClassId>=0&&(uint32_t)fn.ownerClassId>=program.classes.size()))throw Error("Invalid method owner class");}
+  for(size_t fi=0;fi<functions.size();++fi){
+    const auto& fn=functions[fi];if(fn.code.empty())throw Error("Empty function body: "+fn.name);
+    if(fn.ownerClassId>=0&&fn.localCount<fn.parameterCount+1)throw Error("Method does not have room for its this parameter");
+    std::vector<int> depth(fn.code.size(),-1);std::queue<size_t> q;depth[0]=0;q.push(0);
+    while(!q.empty()){
+      size_t pc=q.front();q.pop();const auto& i=fn.code[pc];
+      if((i.op==Op::Load||i.op==Op::Store)&&(i.arg<0||(uint64_t)i.arg>=fn.localCount))throw Error("Invalid local slot");
+      if(i.op==Op::NewObject&&(i.arg<0||(uint64_t)i.arg>=program.classes.size()))throw Error("Invalid class allocation target");
+      if((i.op==Op::GetField||i.op==Op::SetField)&&(i.arg<0||i.arg>100000))throw Error("Invalid field index");
+      int before=depth[pc],need=0,delta=stackDelta(i.op);
+      switch(i.op){
+        case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:case Op::ArrayLength:case Op::GetField:case Op::Dup:need=1;break;
+        case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:case Op::SetField:need=2;break;
+        case Op::ArraySet:need=3;break;
+        case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
+        case Op::NewArraySized:if(i.arg<(int64_t)Type::Int||i.arg>(int64_t)Type::Bool)throw Error("Invalid sized-array element type");need=1;delta=0;break;
+        case Op::UiCall:if(i.arg<0||i.arg>3)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=i.text=="getInt"?1-(int)i.arg:-(int)i.arg;break;
+        case Op::Call:{
+          if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
+          const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
+        }
+        case Op::Ret:need=fn.returnType==Type::Void?0:1;break;
+        default:break;
+      }
+      if(before<need)throw Error("Bytecode stack underflow at "+fn.name+" instruction "+std::to_string(pc));
+      if(i.op==Op::Ret){if(before!=need)throw Error("Invalid stack at RET in function "+fn.name);continue;}
+      if(i.op==Op::Halt){if(fn.name!="main"||before!=0)throw Error("Invalid HALT in bytecode");continue;}
+      int after=before+delta;
+      auto visit=[&](int64_t dest){if(dest<0||(uint64_t)dest>=fn.code.size())throw Error("Invalid jump target");size_t d=(size_t)dest;if(depth[d]==-1){depth[d]=after;q.push(d);}else if(depth[d]!=after)throw Error("Inconsistent stack depth at control-flow join");};
+      if(i.op==Op::Jump)visit(i.arg);
+      else if(i.op==Op::JumpFalse){visit(i.arg);if(pc+1<fn.code.size())visit((int64_t)pc+1);}
+      else if(i.op!=Op::Halt){if(pc+1>=fn.code.size())throw Error("Execution can fall off end of function "+fn.name);visit((int64_t)pc+1);}
+    }
+  }
+}
+struct Array;
+struct Object;
+using ArrayPtr=std::shared_ptr<Array>;
+using ObjectPtr=std::shared_ptr<Object>;
+using Value=std::variant<int64_t,std::string,bool,ArrayPtr,ObjectPtr>;
+struct Array { std::vector<Value> items; size_t elementKind=std::numeric_limits<size_t>::max(); };
+struct Object { size_t classId=0; std::vector<Value> fields; };
+static bool isInstanceOf(size_t actual,size_t expected,const std::vector<ClassBC>& classes){while(actual<classes.size()){if(actual==expected)return true;int32_t parent=classes[actual].baseClassId;if(parent<0)return false;actual=(size_t)parent;}return false;}
+static std::string show(const Value& v){if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);if(auto x=std::get_if<std::string>(&v))return *x;if(auto x=std::get_if<bool>(&v))return *x?"true":"false";if(auto a=std::get_if<ArrayPtr>(&v))return "[array length="+std::to_string((*a)->items.size())+"]";return "[object]";}
+static int64_t integer(const Value& v){if(auto x=std::get_if<int64_t>(&v))return *x;throw Error("Runtime type error: expected int");}
+static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;throw Error("Runtime type error: expected boolean");}
+static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
+static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
+static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
+struct UiElement { std::string kind,id,text,callback; };
+static std::string activeUiTitle="AL Application";
+static std::vector<UiElement> activeUiElements;
+static std::map<std::string,int64_t> activeUiInts;
+static std::string jsonEscape(const std::string& value){
+  std::string out;for(unsigned char ch:value){switch(ch){
+    case '"':out+="\\\"";break;case '\\':out+="\\\\";break;
+    case '\n':out+="\\n";break;case '\r':out+="\\r";break;case '\t':out+="\\t";break;
+    default:if(ch<32){const char* hex="0123456789abcdef";out+="\\u00";out+=hex[ch>>4];out+=hex[ch&15];}else out+=(char)ch;
+  }}return out;
+}
+static std::string uiJson(){
+  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"elements\":[";
+  for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
+    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\"}";
+  }return out+"]}";
+}
+static void execute(const BytecodeProgram& program,const std::string& entryName="main",const std::string& eventValue=""){
+  verify(program);const auto& functions=program.functions;const auto& classes=program.classes;
+  struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
+  std::vector<Value> stack;
+  auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
+  size_t entryIndex=0;
+  if(entryName=="main"){activeUiTitle="AL Application";activeUiElements.clear();activeUiInts.clear();}
+  else {
+    bool found=false;for(size_t index=1;index<functions.size();++index){const auto& candidate=functions[index];if((candidate.name==entryName||candidate.name.rfind(entryName+"$",0)==0)&&candidate.ownerClassId<0&&candidate.parameterCount==1&&candidate.returnType==Type::Void){if(found)throw Error("Ambiguous UI event handler: "+entryName);entryIndex=index;found=true;}}
+    if(!found)throw Error("Unknown UI event handler: "+entryName);
+  }
+  Frame entry;entry.function=entryIndex;entry.locals.resize(functions[entryIndex].localCount);
+  if(entryName!="main"){if(entry.locals.empty())throw Error("UI event handler has no parameter");entry.locals[0]=eventValue;}
+  std::vector<Frame> frames;frames.push_back(std::move(entry));
+  while(!frames.empty()){
+    Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
+    switch(i.op){
+      case Op::Dup:if(stack.empty())throw Error("DUP on empty stack");stack.push_back(stack.back());break;
+      case Op::PushInt:stack.emplace_back(i.arg);break;
+      case Op::PushString:stack.emplace_back(i.text);break;
+      case Op::PushBool:stack.emplace_back(i.arg!=0);break;
+      case Op::Load:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size()||!frame.locals[(size_t)i.arg])throw Error("Read of uninitialized local variable");stack.push_back(*frame.locals[(size_t)i.arg]);break;}
+      case Op::Store:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size())throw Error("Invalid local slot");frame.locals[(size_t)i.arg]=pop();break;}
+      case Op::Print:std::cout<<show(pop())<<'\n';break;
       case Op::Pop:pop();break;
       case Op::UiCall:{
         std::vector<Value> args((size_t)i.arg);for(size_t k=args.size();k>0;--k)args[k-1]=pop();
@@ -376,7 +480,7 @@ static int stackDelta(Op op){
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
         else if(i.text=="setText"){std::string id=asString(0),value=show(args[1]);if(auto* e=findElement(id))e->text=value;else throw Error("UI.setText unknown element: "+id);}
-        else if(i.text=="setInt"){activeUiInts[asString(0)]=asInt(1);}
+        else if(i.text=="setInt")activeUiInts[asString(0)]=asInt(1);
         else if(i.text=="getInt"){auto it=activeUiInts.find(asString(0));stack.emplace_back(it==activeUiInts.end()?asInt(1):it->second);}
         else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();}
         else throw Error("Unknown UI opcode: "+i.text);
