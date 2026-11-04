@@ -128,4 +128,16 @@ if [[ "$UI_EVENTS" != *'"id":"display","text":"12"'* ]]; then
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/quiz_battle.al" -o "$TMP/quiz-battle.room"
+QUIZ_INITIAL="$("$BIN" ui "$TMP/quiz-battle.room")"
+if [[ "$QUIZ_INITIAL" != *'"title":"AL Quiz Battle"'* || "$QUIZ_INITIAL" != *'"id":"question"'* ]]; then
+  printf 'AL Quiz Battle initial UI failed:\\n%s\\n' "$QUIZ_INITIAL" >&2
+  exit 1
+fi
+QUIZ_EVENTS="$("$BIN" ui-event "$TMP/quiz-battle.room" onTap b onTap next onTap c onTap next onTap a onTap next)"
+if [[ "$QUIZ_EVENTS" != *'"id":"score","text":"30"'* ]]; then
+  printf 'AL Quiz Battle answer events failed:\\n%s\\n' "$QUIZ_EVENTS" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, explicit super calls, foreach, switch and loop control"
