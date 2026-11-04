@@ -35,7 +35,11 @@ test "$("$BIN" run "$TMP/inheritance.room")" = "$INHERITANCE_EXPECTED"
 CONSTRUCTOR_EXPECTED="$(printf '100\nALVM\n120\n8\n1')"
 test "$("$BIN" run "$TMP/constructors.room")" = "$CONSTRUCTOR_EXPECTED"
 
-for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor; do
+"$BIN" compile "$ROOT/examples/control_flow_complete.al" -o "$TMP/control-complete.room"
+CONTROL_COMPLETE_EXPECTED="$(printf '10\n12\n4\n18\n2')"
+test "$("$BIN" run "$TMP/control-complete.room")" = "$CONTROL_COMPLETE_EXPECTED"
+
+for fixture in type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -53,4 +57,4 @@ fi
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'class Dog'
 "$BIN" disasm "$TMP/inheritance.room" | grep -q 'function Animal.getAge'
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
-echo "PASS: ALVM functions, arrays, objects, inheritance, constructor calls and runtime"
+echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, switch and loop control"
