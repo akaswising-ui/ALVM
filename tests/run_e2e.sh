@@ -6,23 +6,35 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$BIN" compile "$ROOT/examples/hello.al" -o "$TMP/hello.room"
-HELLO_OUT="$("$BIN" run "$TMP/hello.room")"
-test "$HELLO_OUT" = "30"
+test "$("$BIN" run "$TMP/hello.room")" = "30"
 
 "$BIN" compile "$ROOT/examples/control_flow.al" -o "$TMP/control.room"
-CONTROL_OUT="$("$BIN" run "$TMP/control.room")"
 EXPECTED="$(printf 'sum is ten\n10')"
-test "$CONTROL_OUT" = "$EXPECTED"
+test "$("$BIN" run "$TMP/control.room")" = "$EXPECTED"
 
 "$BIN" compile "$ROOT/examples/short_circuit.al" -o "$TMP/logic.room"
-LOGIC_OUT="$("$BIN" run "$TMP/logic.room")"
-test "$LOGIC_OUT" = "short circuit ok"
+test "$("$BIN" run "$TMP/logic.room")" = "short circuit ok"
 
-if "$BIN" compile "$ROOT/tests/type_error.al" -o "$TMP/invalid.room" 2>/dev/null; then
-  echo "FAIL: type error was accepted" >&2
+"$BIN" compile "$ROOT/examples/arrays.al" -o "$TMP/arrays.room"
+ARRAY_EXPECTED="$(printf '10\n3\n18\n7\nAL Bytecode\n2\nflags ok')"
+test "$("$BIN" run "$TMP/arrays.room")" = "$ARRAY_EXPECTED"
+
+if "$BIN" compile "$ROOT/tests/type_error.al" -o "$TMP/type-invalid.room" 2>/dev/null; then
+  echo "FAIL: scalar type error was accepted" >&2
   exit 1
 fi
-test ! -e "$TMP/invalid.room"
+if "$BIN" compile "$ROOT/tests/array_type_error.al" -o "$TMP/array-invalid.room" 2>/dev/null; then
+  echo "FAIL: array type error was accepted" >&2
+  exit 1
+fi
+test ! -e "$TMP/type-invalid.room"
+test ! -e "$TMP/array-invalid.room"
 
-"$BIN" disasm "$TMP/control.room" | grep -q 'op='
-echo "PASS: AST -> semantic analysis -> IR -> .room v2 -> verifier -> ALVM"
+"$BIN" compile "$ROOT/tests/bounds_error.al" -o "$TMP/bounds.room"
+if "$BIN" run "$TMP/bounds.room" >/dev/null 2>&1; then
+  echo "FAIL: out-of-bounds array access was accepted" >&2
+  exit 1
+fi
+
+"$BIN" disasm "$TMP/arrays.room" | grep -q 'op='
+echo "PASS: typed arrays, bounds checks, AST, type analysis, IR and .room v3"
