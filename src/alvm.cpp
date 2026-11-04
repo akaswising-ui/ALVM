@@ -99,7 +99,7 @@ public:
 
 class SemanticAnalyzer {
   struct Signature { Type result=Type::Void; std::vector<Type> params; std::string ownerClass; std::string symbol; };
-  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,std::vector<Signature>> methods; Signature constructor; bool hasConstructor=false; };
+  struct ClassInfo { Type type=Type::Unknown; Type baseType=Type::Unknown; std::map<std::string,int> fieldSlots; std::vector<Type> fieldTypes; std::map<std::string,std::vector<Signature>> methods; std::vector<Signature> constructors; bool hasConstructor=false; };
   std::map<std::string,Signature> signatures;
   std::map<std::string,std::vector<Signature>> functionOverloads;
   std::map<std::string,ClassInfo> classes;
@@ -126,7 +126,7 @@ class SemanticAnalyzer {
       case Expr::Boolean:e.inferred=Type::Bool;break;
       case Expr::Variable:e.inferred=lookup(e.text);break;
       case Expr::This:if(currentClass.empty())throw Error("'this' can only be used inside an instance method");e.inferred=classes.at(currentClass).type;break;
-      case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);const auto& ctor=it->second.constructor;if(e.elements.size()!=ctor.params.size())throw Error("Wrong argument count for constructor "+e.text);for(size_t i=0;i<e.elements.size();++i){Type actual=checkExpr(*e.elements[i]);if(!isAssignable(actual,ctor.params[i]))throw Error("Constructor argument "+std::to_string(i+1)+" must be "+typeName(ctor.params[i]));}e.resolvedFunction=e.text+".$ctor";e.inferred=it->second.type;break;}
+      case Expr::NewObject:{auto it=classes.find(e.text);if(it==classes.end())throw Error("Unknown class: "+e.text);std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:it->second.constructors){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching constructor for class: "+e.text);if(ambiguous)throw Error("Ambiguous constructor for class: "+e.text);e.resolvedFunction=best->symbol;e.inferred=it->second.type;break;}
       case Expr::FieldAccess:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(e.text);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+e.text+"' on "+typeName(objectType));e.resolvedField=it->second;e.inferred=cls.fieldTypes[(size_t)it->second];break;}
       case Expr::MethodCall:{Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:it->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for method: "+e.text);if(ambiguous)throw Error("Ambiguous overload for method: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
       case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto found=functionOverloads.find(e.text);if(found==functionOverloads.end())throw Error("Unknown function: "+e.text);std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:found->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for function: "+e.text);if(ambiguous)throw Error("Ambiguous overload for function: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
@@ -184,10 +184,9 @@ public:
       for(auto& method:cls.methods){
         Signature sig=signature(method);
         if(method.isConstructor){
-          if(info.hasConstructor)throw Error("Duplicate constructor in class "+cls.name);
-          if(!cls.baseClass.empty()&&classes.at(cls.baseClass).constructor.params.size()!=0)throw Error("Base class "+cls.baseClass+" has no zero-argument constructor; explicit super constructor calls are not supported yet");
-          info.constructor=sig;info.hasConstructor=true;
-          std::string key=cls.name+".$ctor";if(signatures.count(key))throw Error("Duplicate constructor signature");signatures.emplace(key,std::move(sig));
+          for(const auto& prior:info.constructors)if(prior.params==sig.params)throw Error("Duplicate constructor signature in class "+cls.name);
+          if(!cls.baseClass.empty()){const auto& baseConstructors=classes.at(cls.baseClass).constructors;bool hasZeroArg=std::any_of(baseConstructors.begin(),baseConstructors.end(),[](const Signature& candidate){return candidate.params.empty();});if(!hasZeroArg)throw Error("Base class "+cls.baseClass+" has no zero-argument constructor; explicit super constructor calls are not supported yet");}
+          std::string symbol=cls.name+".$ctor$";for(const auto& param:method.params){std::string encoded=typeName(param.type);symbol+=std::to_string(encoded.size());symbol+="_";symbol+=encoded;}method.symbol=symbol;sig.symbol=symbol;info.constructors.push_back(sig);info.hasConstructor=true;if(signatures.count(symbol))throw Error("Duplicate constructor symbol: "+symbol);signatures.emplace(symbol,std::move(sig));
           continue;
         }
         auto& overloads=info.methods[method.name];for(const auto& prior:overloads)if(prior.params==sig.params)throw Error("Duplicate or overriding method signature for '"+method.name+"' in "+cls.name);
@@ -262,7 +261,7 @@ class IRGenerator {
     int32_t owner=-1;
     if(!fn.ownerClass.empty()){owner=classIds.at(fn.ownerClass);slots["this"]=next++;}
     for(const auto& param:fn.params){slots[param.name]=next++;}
-    if(fn.isConstructor&&!fn.ownerClass.empty()){const std::string& base=baseClasses.at(fn.ownerClass);if(!base.empty()){emit(Op::Load,slots.at("this"));emit(Op::Call,functionIds.at(base+".$ctor"));}}
+    if(fn.isConstructor&&!fn.ownerClass.empty()){const std::string& base=baseClasses.at(fn.ownerClass);if(!base.empty()){emit(Op::Load,slots.at("this"));emit(Op::Call,functionIds.at(base+".$ctor$"));}}
     statement(*fn.body);
     if(fn.name=="main"){if(code.empty()||code.back().op!=Op::Halt)emit(Op::Halt);}
     else if(fn.returnType==Type::Void){if(code.empty()||code.back().op!=Op::Ret)emit(Op::Ret);}
