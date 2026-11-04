@@ -135,7 +135,7 @@ class SemanticAnalyzer {
           std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));
           auto require=[&](size_t count){if(actual.size()!=count)throw Error("UI."+e.text+" expects "+std::to_string(count)+" arguments");};
           auto stringAt=[&](size_t n){if(actual[n]!=Type::String)throw Error("UI."+e.text+" argument "+std::to_string(n+1)+" must be string");};
-          if(e.text=="screen"){require(1);stringAt(0);e.inferred=Type::Void;}
+          if(e.text=="screen"||e.text=="game"){require(1);stringAt(0);e.inferred=Type::Void;}
           else if(e.text=="text"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Void;}
           else if(e.text=="button"){
             require(3);stringAt(0);stringAt(1);stringAt(2);
@@ -145,6 +145,10 @@ class SemanticAnalyzer {
               throw Error("UI.button callback must name a void function with one string parameter: "+e.elements[2]->text);
             e.inferred=Type::Void;
           }
+          else if(e.text=="rect"){require(6);stringAt(0);for(size_t n=1;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.rect coordinates, size and color must be int");e.inferred=Type::Void;}
+          else if(e.text=="circle"){require(5);stringAt(0);for(size_t n=1;n<5;++n)if(actual[n]!=Type::Int)throw Error("UI.circle coordinates, radius and color must be int");e.inferred=Type::Void;}
+          else if(e.text=="line"){require(6);stringAt(0);for(size_t n=1;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.line coordinates and color must be int");e.inferred=Type::Void;}
+          else if(e.text=="remove"){require(1);stringAt(0);e.inferred=Type::Void;}
           else if(e.text=="setText"){require(2);stringAt(0);if(actual[1]!=Type::String&&actual[1]!=Type::Int)throw Error("UI.setText value must be string or int");e.inferred=Type::Void;}
           else if(e.text=="setInt"){require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.setInt value must be int");e.inferred=Type::Void;}
           else if(e.text=="getInt"){require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.getInt default must be int");e.inferred=Type::Int;}
@@ -396,7 +400,7 @@ static void verify(const BytecodeProgram& program){
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
         case Op::NewArraySized:if(i.arg<(int64_t)Type::Int||i.arg>(int64_t)Type::Bool)throw Error("Invalid sized-array element type");need=1;delta=0;break;
-        case Op::UiCall:if(i.arg<0||i.arg>3)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=i.text=="getInt"?1-(int)i.arg:-(int)i.arg;break;
+        case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=i.text=="getInt"?1-(int)i.arg:-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
           const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
@@ -429,7 +433,7 @@ static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;th
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
-struct UiElement { std::string kind,id,text,callback; };
+struct UiElement { std::string kind,id,text,callback; int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF; };
 static std::string activeUiTitle="AL Application";
 static std::vector<UiElement> activeUiElements;
 static std::map<std::string,int64_t> activeUiInts;
@@ -443,7 +447,7 @@ static std::string jsonEscape(const std::string& value){
 static std::string uiJson(){
   std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"elements\":[";
   for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
-    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\"}";
+    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+"}";
   }return out+"]}";
 }
 static void execute(const BytecodeProgram& program,const std::string& entryName="main",const std::string& eventValue=""){
@@ -476,9 +480,11 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         auto asString=[&](size_t n)->std::string{if(n>=args.size()||!std::holds_alternative<std::string>(args[n]))throw Error("UI API expected string argument");return std::get<std::string>(args[n]);};
         auto asInt=[&](size_t n)->int64_t{if(n>=args.size())throw Error("UI API missing integer argument");return integer(args[n]);};
         auto findElement=[&](const std::string& id)->UiElement*{for(auto& e:activeUiElements)if(e.id==id)return &e;return nullptr;};
-        if(i.text=="screen")activeUiTitle=asString(0);
+        if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game")activeUiElements.clear();}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
+        else if(i.text=="rect"||i.text=="circle"||i.text=="line"){std::string id=asString(0);UiElement shape;shape.kind=i.text;shape.id=id;if(i.text=="rect"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);if(shape.w<0||shape.h<0)throw Error("UI.rect width and height cannot be negative");}else if(i.text=="circle"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.color=asInt(4);if(shape.w<0)throw Error("UI.circle radius cannot be negative");}else{shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);}if(auto* e=findElement(id))*e=shape;else activeUiElements.push_back(shape);}
+        else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());}
         else if(i.text=="setText"){std::string id=asString(0),value=show(args[1]);if(auto* e=findElement(id))e->text=value;else throw Error("UI.setText unknown element: "+id);}
         else if(i.text=="setInt")activeUiInts[asString(0)]=asInt(1);
         else if(i.text=="getInt"){auto it=activeUiInts.find(asString(0));stack.emplace_back(it==activeUiInts.end()?asInt(1):it->second);}
