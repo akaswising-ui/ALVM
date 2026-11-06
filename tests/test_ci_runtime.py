@@ -61,7 +61,7 @@ class CiRuntimeTests(unittest.TestCase):
             instruction(25),
         ]))
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["output"], "Hello from Python CI Runtime")
+        self.assertEqual(result["output"], "Hello from CI Runtime")
 
     def test_arithmetic(self):
         result = self.run_bytes(room_file([
