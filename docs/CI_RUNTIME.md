@@ -1,13 +1,13 @@
-# Python CI Runtime
+# CI Runtime: ALVM bytecode adapter
 
 ## Responsibilities
 
-The Android ALVM Studio app uses two separate execution stages:
+CI Runtime is the shared runtime identity used by ALVM Studio and Conshite. This document describes the ALVM Studio bytecode adapter; the Conshite PSP adapter is documented in the Conshite repository. The two app adapters are not yet consolidated into one shared binary or universal engine. The target is a common versioned API, module ABI, loader, and platform service layer.\n\n## ALVM adapter responsibilities\n\nThe Android ALVM Studio app currently uses two execution stages:
 
 1. The C++17 compiler parses and checks AL source and writes a binary .room file.
-2. The Python CI Runtime reads .room v9, validates the bytecode and interprets its instruction stream.
+2. The CI Runtime ALVM adapter, currently implemented in Python 3.11, reads .room v9, validates the bytecode and interprets its instruction stream.
 
-The Android Java host calls Python through Chaquopy. The existing C++ CLI runtime remains in the repository for desktop regression tests; the Android Run, Execute and UI-event paths use Python CI Runtime.
+The Android Java host calls the current Python 3.11 implementation through Chaquopy. The existing C++ CLI VM remains in the repository for desktop regression tests; the Android Run, Execute and UI-event paths use the CI Runtime ALVM adapter.
 
 The bundled Python interpreter is Python 3.11. The runtime engine is a separate Python module, stored in app-private storage after installation. Updating the engine module does not require replacing the APK. Updating the embedded Python interpreter or the Java/Android host still requires an APK update.
 
