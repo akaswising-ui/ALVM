@@ -56,7 +56,7 @@ class CiRuntimeTests(unittest.TestCase):
 
     def test_prints_string(self):
         result = self.run_bytes(room_file([
-            instruction(2, 0, "Hello from Python CI Runtime"),
+            instruction(2, 0, "Hello from CI Runtime"),
             instruction(23),
             instruction(25),
         ]))
