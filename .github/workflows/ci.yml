@@ -17,7 +17,7 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Compile ALVM
         run: cmake --build build --parallel 2
-      - name: Run Python CI Runtime and C++ bytecode integration tests
+      - name: Run CI Runtime adapter and C++ bytecode integration tests
         run: python tests/test_ci_runtime.py
       - name: Run compiler and VM regression tests
         run: ctest --test-dir build --output-on-failure
