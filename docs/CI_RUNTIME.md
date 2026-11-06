@@ -2,7 +2,11 @@
 
 ## Responsibilities
 
-CI Runtime is the shared runtime identity used by ALVM Studio and Conshite. This document describes the ALVM Studio bytecode adapter; the Conshite PSP adapter is documented in the Conshite repository. The two app adapters are not yet consolidated into one shared binary or universal engine. The target is a common versioned API, module ABI, loader, and platform service layer.\n\n## ALVM adapter responsibilities\n\nThe Android ALVM Studio app currently uses two execution stages:
+CI Runtime is the shared runtime identity used by ALVM Studio and Conshite. This document describes the ALVM Studio bytecode adapter; the Conshite PSP adapter is documented in the Conshite repository. The two app adapters are not yet consolidated into one shared binary or universal engine. The target is a common versioned API, module ABI, loader, and platform service layer.
+
+## ALVM adapter responsibilities
+
+The Android ALVM Studio app currently uses two execution stages:
 
 1. The C++17 compiler parses and checks AL source and writes a binary .room file.
 2. The CI Runtime ALVM adapter, currently implemented in Python 3.11, reads .room v9, validates the bytecode and interprets its instruction stream.
