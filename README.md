@@ -59,7 +59,7 @@ Supported calls:
 - `UI.setInt(key, value)` and `UI.getInt(key, defaultValue)`: keep integer state between button events in the running app.
 - `UI.clear()`: clear UI elements and integer state.
 
-The Android Java host creates and updates actual native Android Views. A click calls back into Python CI Runtime, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
+The Android Java host creates and updates actual native Android Views. A click calls back into CI Runtime's Python 3.11 AL adapter, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
 
 The `.room` format advances to v9 for the `UiCall` opcode. Recompile v8 bytecode from source. This first UI stage does not yet include editable text fields, arbitrary layout trees, lifecycle callbacks, touch gestures, graphics or audio.
 ## Stage 13: explicit base-constructor calls
