@@ -309,7 +309,7 @@ public class MainActivity extends Activity {
         if (!compiled) return result;
         String output = runCiRuntime("main", "");
         if (output.startsWith("✕ ")) return output;
-        return "✓ Program completed in Python CI Runtime v" + lastRuntimeVersion + ".\n\n"
+        return "✓ Program completed in CI Runtime v" + lastRuntimeVersion + ".\n\n"
                 + (output.trim().isEmpty() ? "(program produced no console output)" : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
     }
 
@@ -318,7 +318,7 @@ public class MainActivity extends Activity {
         if (!room.exists()) return "✕ No compiled .room file is loaded.";
         String output = runCiRuntime("main", "");
         if (output.startsWith("✕ ")) return output;
-        return "✓ .room execution complete in Python CI Runtime v" + lastRuntimeVersion + ".\n\n"
+        return "✓ .room execution complete in CI Runtime v" + lastRuntimeVersion + ".\n\n"
                 + (output.trim().isEmpty()
                 ? "(program produced no console output)"
                 : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
