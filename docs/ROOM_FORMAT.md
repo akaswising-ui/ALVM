@@ -9,7 +9,7 @@
 - Text encoding: UTF-8
 - The file contains instructions, not AL source text.
 
-The C++ compiler in src/alvm.cpp writes this format. The Android Python CI Runtime reads and verifies the same format before executing it. A version mismatch is a hard error; the runtime must not guess how to read another version.
+The C++ compiler in src/alvm.cpp writes this format. The Android CI Runtime ALVM adapter, currently implemented in Python 3.11, reads and verifies the same format before executing it. A version mismatch is a hard error; the runtime must not guess how to read another version.
 
 ## File layout
 
