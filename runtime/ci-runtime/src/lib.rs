@@ -962,7 +962,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     let base = frames[frame_index].stack_base;
                     frames.pop();
                     if frames.is_empty() {
-                        return Ok(output.join("\n"));
+                        return Ok(Control::Finish(output.join("\n")));
                     }
                     if stack.len() < base { return error("Call frame stack underflow"); }
                     stack.truncate(base);
@@ -979,22 +979,26 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                         frames[frame_index].pc = destination;
                     }
                 }
-                HALT => return Ok(output.join("\n")),
+                HALT => return Ok(Control::Finish(output.join("\n"))),
                 _ => return error(format!("Unsupported opcode: {op}")),
             }
             Ok(Control::Continue)
         })();
-        if let Err(runtime_error) = step {
-            return error(format!(
-                "{} (function {}, instruction {})",
-                runtime_error.0, function.name, pc
-            ));
+        match step {
+            Ok(Control::Continue) => {}
+            Ok(Control::Finish(final_output)) => return Ok(final_output),
+            Err(runtime_error) => {
+                return error(format!(
+                    "{} (function {}, instruction {})",
+                    runtime_error.0, function.name, pc
+                ));
+            }
         }
     }
     Ok(output.join("\n"))
 }
 
-enum Control { Continue }
+enum Control { Continue, Finish(String) }
 
 fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &str) -> JsonValue {
     let result = (|| -> RtResult<(String, UiState)> {
