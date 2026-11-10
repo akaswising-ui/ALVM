@@ -20,7 +20,7 @@ use zip::ZipArchive;
 
 pub const RUNTIME_API_VERSION: u32 = 1;
 pub const ROOM_FORMAT_VERSION: u32 = 9;
-pub const BUNDLED_VERSION: &str = "1.0.0";
+pub const BUNDLED_VERSION: &str = "2.0.0";
 
 const TYPE_INT: u32 = 0;
 const TYPE_STRING: u32 = 1;
@@ -260,7 +260,7 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
 }
 
 fn valid_type(value: u32, class_count: usize) -> bool {
-    value <= TYPE_UNKNOWN || (value >= 100 && (value - 100) as usize < class_count)
+    value <= TYPE_UNKNOWN || (value >= 100 && ((value - 100) as usize) < class_count)
 }
 
 fn stack_delta(op: u8) -> i64 {
@@ -1638,12 +1638,6 @@ fn test_room_bytes(code: Vec<Instruction>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn assemble(code: Vec<Instruction>, locals: u32) -> Vec<u8> {
-        let mut program = test_room_bytes(code);
-        let _ = locals;
-        program
-    }
 
     #[test]
     fn rust_runtime_self_test_executes_verified_bytecode() {
