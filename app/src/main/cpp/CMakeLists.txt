@@ -59,7 +59,7 @@ add_custom_command(
     OUTPUT "${CI_RUNTIME_STATICLIB}"
     COMMAND ${CMAKE_COMMAND} -E env
         "${CI_RUNTIME_LINKER_ENV}=${CI_RUNTIME_LINKER}"
-        "CI_RUNTIME_VERSION=1.0.0"
+        "CI_RUNTIME_VERSION=2.0.0"
         ${CARGO_EXECUTABLE} build
         --manifest-path "${CI_RUNTIME_DIR}/Cargo.toml"
         --lib --release --target "${CI_RUNTIME_TARGET}"
@@ -74,9 +74,9 @@ add_custom_command(
 add_custom_target(ci_runtime_build DEPENDS "${CI_RUNTIME_STATICLIB}")
 add_library(ci_runtime STATIC IMPORTED GLOBAL)
 set_target_properties(ci_runtime PROPERTIES IMPORTED_LOCATION "${CI_RUNTIME_STATICLIB}")
-add_dependencies(ci_runtime ci_runtime_build)
 
 add_library(alvm SHARED alvm_jni.cpp)
 target_compile_features(alvm PRIVATE cxx_std_17)
 target_compile_options(alvm PRIVATE -O2 -fexceptions -frtti)
-target_link_libraries(alvm PRIVATE ci_runtime log android dl m)
+add_dependencies(alvm ci_runtime_build)
+target_link_libraries(alvm PRIVATE ci_runtime log android dl m atomic)
