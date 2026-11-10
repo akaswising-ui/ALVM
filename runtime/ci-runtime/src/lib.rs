@@ -776,7 +776,10 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     if value == I64_MIN { return error("Integer overflow"); }
                     stack.push(RuntimeValue::Int(-value));
                 }
-                NOT => stack.push(RuntimeValue::Bool(!expect_bool(pop(&mut stack)?)?)),
+                NOT => {
+                    let value = expect_bool(pop(&mut stack)?)?;
+                    stack.push(RuntimeValue::Bool(!value));
+                }
                 ADD => {
                     let right = pop(&mut stack)?;
                     let left = pop(&mut stack)?;
