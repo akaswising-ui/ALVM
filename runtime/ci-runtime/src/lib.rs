@@ -897,7 +897,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                 NEW_OBJECT => {
                     let class_id = usize::try_from(arg).map_err(|_| RuntimeError("Invalid class allocation".into()))?;
                     let class = classes.get(class_id).ok_or_else(|| RuntimeError("Invalid class allocation".into()))?;
-                    let fields = class.field_types.iter().map(|field_type| match field_type {
+                    let fields = class.field_types.iter().map(|field_type| match *field_type {
                         TYPE_INT => Ok(RuntimeValue::Int(0)),
                         TYPE_STRING => Ok(RuntimeValue::String(String::new())),
                         TYPE_BOOL => Ok(RuntimeValue::Bool(false)),
@@ -1085,7 +1085,7 @@ impl Default for RuntimeState {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct RuntimeManifest {
     name: String,
     version: String,
@@ -1617,7 +1617,7 @@ fn test_room_bytes(code: Vec<Instruction>) -> Vec<u8> {
     bytes.extend_from_slice(&ROOM_FORMAT_VERSION.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&1u32.to_le_bytes());
-    let mut string = |value: &str, output: &mut Vec<u8>| {
+    let string = |value: &str, output: &mut Vec<u8>| {
         output.extend_from_slice(&(value.len() as u32).to_le_bytes());
         output.extend_from_slice(value.as_bytes());
     };
