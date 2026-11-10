@@ -1,4 +1,4 @@
-name: Publish CI Runtime release
+name: Publish Rust CI Runtime release
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Runtime version, for example 1.0.1"
+        description: "Runtime version, for example 2.0.1"
         required: true
         type: string
 
@@ -23,16 +23,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.11"
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Set up Android SDK and NDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "ndk;27.2.12479018"
+
+      - name: Set Android NDK environment
+        run: echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Resolve runtime version
         id: version
         shell: bash
         run: |
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             VERSION="${{ inputs.version }}"
           else
             VERSION="${GITHUB_REF_NAME#ci-runtime-v}"
@@ -44,16 +52,12 @@ jobs:
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=ci-runtime-v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build .ciruntime package
+      - name: Build Rust .ciruntime package for Android ABIs
         run: |
-          mkdir -p dist
-          python tools/package_ci_runtime.py \
-            --version "${{ steps.version.outputs.value }}" \
-            --output "dist/ci-runtime-${{ steps.version.outputs.value }}.ciruntime"
-          sha256sum "dist/ci-runtime-${{ steps.version.outputs.value }}.ciruntime" \
-            > "dist/ci-runtime-${{ steps.version.outputs.value }}.ciruntime.sha256"
+          chmod +x tools/package_ci_runtime.sh
+          tools/package_ci_runtime.sh "${{ steps.version.outputs.value }}"
 
-      - name: Publish Runtime release
+      - name: Publish Rust Runtime release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -65,6 +69,6 @@ jobs:
             gh release create "$TAG" \
               "dist/ci-runtime-$VERSION.ciruntime" \
               "dist/ci-runtime-$VERSION.ciruntime.sha256" \
-              --title "CI Runtime $VERSION" \
-              --notes "Versioned ALVM CI Runtime package. Runtime API 1; .room format 9."
+              --title "Rust CI Runtime $VERSION" \
+              --notes "Rust CI Runtime package. Runtime API 1; .room format 9; Android ABIs arm64-v8a and armeabi-v7a."
           fi
