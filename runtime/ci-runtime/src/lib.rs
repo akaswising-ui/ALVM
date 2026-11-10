@@ -1303,7 +1303,7 @@ fn run_with_active(root: &Path, abi: &str, room_path: &str, entry: &str, event: 
             .get(&plugin_path)
             .ok_or_else(|| RuntimeError("Runtime module cache entry is missing".into()))?;
         let run: Symbol<unsafe extern "C" fn(*const c_char, *const c_char, *const c_char) -> *mut c_char> =
-            unsafe { library.get(b"ci_runtime_plugin_run_room_json\\0") }
+            unsafe { library.get(b"ci_runtime_plugin_run_room_json\0") }
                 .map_err(|_| RuntimeError("Runtime module is missing its run export".into()))?;
         let path = CString::new(room_path).map_err(|_| RuntimeError("Invalid .room path".into()))?;
         let entry = CString::new(entry).map_err(|_| RuntimeError("Invalid entry name".into()))?;
@@ -1314,7 +1314,7 @@ fn run_with_active(root: &Path, abi: &str, room_path: &str, entry: &str, event: 
         }
         let result = unsafe { CStr::from_ptr(result_ptr).to_string_lossy().into_owned() };
         let free: Symbol<unsafe extern "C" fn(*mut c_char)> =
-            unsafe { library.get(b"ci_runtime_plugin_free_string\\0") }
+            unsafe { library.get(b"ci_runtime_plugin_free_string\0") }
                 .map_err(|_| RuntimeError("Runtime module is missing its memory release export".into()))?;
         unsafe { free(result_ptr) };
         serde_json::from_str(&result)
