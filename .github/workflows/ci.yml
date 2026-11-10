@@ -1,23 +1,40 @@
 name: ALVM Build and Test
+
 on:
   push:
     branches: [main, "feature/**"]
   pull_request:
   workflow_dispatch:
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python for CI Runtime tests
-        uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: '3.11'
-      - name: Configure C++17 build
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all -- --check
+
+      - name: Run Rust CI Runtime unit tests
+        run: cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
+
+      - name: Build Rust CI Runtime CLI
+        run: cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin ci-runtime
+
+      - name: Configure C++17 compiler and desktop VM
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Compile ALVM
+
+      - name: Compile C++17 AL compiler
         run: cmake --build build --parallel 2
-      - name: Run CI Runtime adapter and C++ bytecode integration tests
-        run: python tests/test_ci_runtime.py
-      - name: Run compiler and VM regression tests
+
+      - name: Run C++ desktop compiler/VM regression suite
         run: ctest --test-dir build --output-on-failure
+
+      - name: Run C++ compiler to Rust runtime integration tests
+        run: tests/run_rust_runtime_e2e.sh build/alvm "$GITHUB_WORKSPACE" runtime/ci-runtime/target/debug/ci-runtime
