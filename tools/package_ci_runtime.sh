@@ -60,7 +60,7 @@ PACKAGE="$ROOT/dist/ci-runtime-$VERSION.ciruntime"
 rm -f "$PACKAGE" "$PACKAGE.sha256"
 (
   cd "$WORK"
-  zip -q -r "$PACKAGE" manifest.json android
+  zip -q "$PACKAGE" manifest.json android/arm64-v8a/libci_runtime.so android/armeabi-v7a/libci_runtime.so
 )
 sha256sum "$PACKAGE" > "$PACKAGE.sha256"
 echo "Created $PACKAGE"
