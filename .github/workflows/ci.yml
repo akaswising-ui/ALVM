@@ -37,4 +37,4 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Run C++ compiler to Rust runtime integration tests
-        run: tests/run_rust_runtime_e2e.sh build/alvm "$GITHUB_WORKSPACE" runtime/ci-runtime/target/debug/ci-runtime
+        run: bash tests/run_rust_runtime_e2e.sh build/alvm "$GITHUB_WORKSPACE" runtime/ci-runtime/target/debug/ci-runtime
