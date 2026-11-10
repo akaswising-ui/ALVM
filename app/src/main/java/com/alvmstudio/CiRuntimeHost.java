@@ -9,7 +9,7 @@ import org.json.JSONObject;
 import java.io.File;
 
 public final class CiRuntimeHost {
-    private static final String BUNDLED_VERSION = "1.0.0";
+    private static final String BUNDLED_VERSION = "2.0.0";
 
     static {
         System.loadLibrary("alvm");
