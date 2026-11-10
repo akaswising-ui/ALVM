@@ -86,10 +86,7 @@ public class MainActivity extends Activity {
     private Dialog nativeUiDialog;
 
     private static native String nativeCompile(String source, String filesDir);
-    private static native String nativeRun(String roomPath);
     private static native String nativeDisassemble(String roomPath);
-    private static native String nativeGetUiJson();
-    private static native String nativeRunUiEvent(String roomPath, String callback, String eventValue);
 
     private String roomPath() {
         return new File(getFilesDir(), "main.room").getAbsolutePath();
@@ -589,7 +586,7 @@ public class MainActivity extends Activity {
         JSONObject status = ciRuntime.status();
         String active = status.optString("active_version", "bundled");
         return "bundled".equals(active)
-                ? status.optString("bundled_version", "1.0.0") : active;
+                ? status.optString("bundled_version", "2.0.0") : active;
     }
 
     private String installedAppVersion() {
