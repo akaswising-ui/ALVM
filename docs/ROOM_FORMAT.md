@@ -2,14 +2,14 @@
 
 ## Current version
 
-- File extension: .room
-- Magic bytes: ASCII ALRM
-- Binary format version: 9
+- File extension: `.room`
+- Magic bytes: ASCII `ALRM`
+- Binary format version: **9**
 - Integer encoding: little-endian
 - Text encoding: UTF-8
 - The file contains instructions, not AL source text.
 
-The C++ compiler in src/alvm.cpp writes this format. The Android CI Runtime ALVM adapter, currently implemented in Python 3.11, reads and verifies the same format before executing it. A version mismatch is a hard error; the runtime must not guess how to read another version.
+The C++ compiler in `src/alvm.cpp` writes this format. The Android CI Runtime is implemented in Rust and reads, verifies and executes the same format. A version mismatch is a hard error; the runtime must not guess how to read another version.
 
 ## File layout
 
@@ -17,7 +17,7 @@ All counts and identifiers below are unsigned 32-bit integers unless marked sign
 
 | Order | Field | Encoding |
 |---|---|---|
-| 1 | Magic | 4 bytes: ALRM |
+| 1 | Magic | 4 bytes: `ALRM` |
 | 2 | Format version | u32, currently 9 |
 | 3 | Class count | u32 |
 | 4 | Each class | Name string, base class ID (i32), field count (u32), field type IDs (u32 array) |
@@ -47,7 +47,7 @@ Class fields are currently limited to scalar int, string and boolean fields.
 ## Opcode IDs
 
 | ID | Instruction |
-|---:|---|
+|---|---|
 | 1 | PushInt |
 | 2 | PushString |
 | 3 | PushBool |
@@ -70,4 +70,4 @@ The UiCall opcode is part of format v9. Version 8 files do not contain this opco
 
 A runtime must reject malformed headers, unsupported versions, invalid type IDs, excessive counts, truncated strings/instructions, invalid function/class references, invalid jumps, inconsistent operand-stack depths, invalid local slots and execution paths which fall off the end of a function.
 
-The Python CI Runtime implements these checks before executing the instruction stream. It does not parse or execute AL source text.
+The Rust CI Runtime performs these checks before executing the instruction stream. It does not parse or execute AL source text.
