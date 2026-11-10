@@ -1,71 +1,83 @@
-# CI Runtime: ALVM bytecode adapter
+# CI Runtime: Rust ALVM bytecode engine
 
 ## Responsibilities
 
-CI Runtime is the shared runtime identity used by ALVM Studio and Conshite. This document describes the ALVM Studio bytecode adapter; the Conshite PSP adapter is documented in the Conshite repository. The two app adapters are not yet consolidated into one shared binary or universal engine. The target is a common versioned API, module ABI, loader, and platform service layer.
+CI Runtime is the shared runtime identity used by ALVM Studio and Conshite. This repository implements the ALVM bytecode adapter. The Conshite adapter is maintained in the Conshite repository; the two adapters are not yet one universal binary. The shared target is a versioned runtime API, module ABI, loader and platform service layer.
 
-## ALVM adapter responsibilities
+## ALVM execution pipeline
 
-The Android ALVM Studio app currently uses two execution stages:
+1. The C++17 compiler parses AL source, performs semantic/type analysis, lowers it to bytecode and writes a binary `.room` v9 file.
+2. The Rust CI Runtime reads the `.room` file, validates the header, metadata, references, control-flow jumps and operand-stack depths, then interprets the verified instruction stream.
+3. The Android Java host calls the Rust native runtime through JNI. Java renders native Android Views for AL UI instructions; it does not interpret AL bytecode or implement AL program logic.
 
-1. The C++17 compiler parses and checks AL source and writes a binary .room file.
-2. The CI Runtime ALVM adapter, currently implemented in Python 3.11, reads .room v9, validates the bytecode and interprets its instruction stream.
+The Android Run, Execute and UI-event paths use the Rust CI Runtime. The existing C++ VM remains in the desktop CLI regression path. It is not the Android app's active bytecode executor.
 
-The Android Java host calls the current Python 3.11 implementation through Chaquopy. The existing C++ CLI VM remains in the repository for desktop regression tests; the Android Run, Execute and UI-event paths use the CI Runtime ALVM adapter.
+## Runtime versions and compatibility
 
-The bundled Python interpreter is Python 3.11. The runtime engine is a separate Python module, stored in app-private storage after installation. Updating the engine module does not require replacing the APK. Updating the embedded Python interpreter or the Java/Android host still requires an APK update.
+- Bundled Rust runtime: **2.0.0**.
+- Runtime API: **1**.
+- Supported bytecode: **.room v9**.
+- Android ABIs: `arm64-v8a` and `armeabi-v7a`.
+- Installed modules live in app-private `files/ci-runtime/versions/` folders.
+- Active version and rollback history live in `files/ci-runtime/active.json`.
+- The bundled Rust implementation is linked into the APK as the fallback engine.
+- A compatible Rust runtime module can be installed or rolled back without replacing the APK. Changes to the JNI ABI, runtime API, compiler interface or .room format require an APK update.
 
-## Runtime versions
+An incompatible or damaged active module is rejected and the loader selects the first valid previous module, or the bundled Rust runtime.
 
-- Bundled fallback: 1.0.0.
-- Runtime API: 1.
-- Supported bytecode: .room v9.
-- Installed engine versions are stored under the app-private files/ci-runtime/versions/ directory.
-- Active version and rollback history are stored in files/ci-runtime/active.json.
-- The currently active engine is loaded when a .room program is executed.
-- If the active module is missing or fails validation, the loader falls back to a previous valid version or the bundled engine.
+## Rust runtime module ABI
 
-## Building a runtime update
+A `.ciruntime` update is a ZIP package with exactly three root entries:
 
-A runtime update is a ZIP package with the .ciruntime extension. It must contain exactly two files at its root:
+- `manifest.json`
+- `android/arm64-v8a/libci_runtime.so`
+- `android/armeabi-v7a/libci_runtime.so`
 
-- manifest.json
-- runtime.py
+Each native library is compiled from the Rust CI Runtime crate for its Android ABI. The manifest records the version, runtime API, supported .room format range and SHA-256 hashes for both libraries.
 
-Build a package from the repository's Python runtime source:
+The Rust shared library exports these C ABI entry points:
 
-    python tools/package_ci_runtime.py --version 1.0.1
+- `ci_runtime_plugin_api_version()`
+- `ci_runtime_plugin_version()`
+- `ci_runtime_plugin_self_test()`
+- `ci_runtime_plugin_run_room_json(...)`
+- `ci_runtime_plugin_free_string(...)`
 
-The default output is build/ci-runtime-update.ciruntime. The package manifest records the runtime version, runtime API version, compatible .room version range and SHA-256 hash of runtime.py.
+The host verifies the manifest, ABI-specific SHA-256 digest, exported API version, compiled module version and self-test before activating a package.
 
-To package another compatible engine implementation:
+## Building and publishing a Rust runtime update
 
-    python tools/package_ci_runtime.py --version 1.0.2 --source path/to/your_runtime.py --output build/ci-runtime-1.0.2.ciruntime
+Install Rust, the Android NDK and the Android Rust targets, then run:
 
-The module must expose:
-- RUNTIME_API_VERSION = 1
-- RUNTIME_VERSION matching the manifest version
-- run_room(room_path, entry_name="main", event_value="")
-- self_test() returning True
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi
+tools/package_ci_runtime.sh 2.0.1
+```
+
+The script builds both Android shared libraries from `runtime/ci-runtime` and creates:
+
+- `dist/ci-runtime-2.0.1.ciruntime`
+- `dist/ci-runtime-2.0.1.ciruntime.sha256`
+
+A release is published by pushing a tag such as `ci-runtime-v2.0.1`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
 
 ## Installing and rolling back on Android
 
 1. Open the Runtime item in the Studio sidebar.
-2. Choose DOWNLOAD LATEST RUNTIME. The Android host checks this repository's GitHub Releases for the newest `ci-runtime-vX.Y.Z` release and downloads its `.ciruntime` asset directly.
-3. The app checks the package layout, version, runtime API, .room format number, SHA-256 hash, Python syntax and runtime self-test before activating it.
-4. The next Run, Execute or UI event uses the active version. The Studio VM status shows the app version and CI Runtime version as separate numbers.
-5. Choose INSTALL FROM FILE to install a locally supplied package, or ROLLBACK to switch to the previous installed engine or bundled fallback.
+2. Choose **DOWNLOAD LATEST RUNTIME** to check this repository's GitHub Releases, or **INSTALL FROM FILE** to select a local `.ciruntime` package.
+3. The Rust manager checks the ZIP layout, manifest, API version, .room compatibility, ABI-specific SHA-256 hash, native module version and module self-test.
+4. Only after validation does it move the module into its version folder and atomically activate it.
+5. The next Run, Execute or UI event uses the selected module. The Studio VM status shows the installed app version and CI Runtime version separately.
+6. Choose **ROLLBACK** to switch to the previous valid version or the bundled Rust runtime.
 
-The direct downloader accepts HTTPS release assets only from this repository's GitHub Releases. WebView page networking remains disabled; downloads are performed by the Android host. A runtime release is published by pushing a tag such as `ci-runtime-v1.0.1`, or by manually running the `Publish CI Runtime release` workflow with a version number.
-
-The downloader is only useful after a CI Runtime release has been published. Until then, the app reports that no release exists rather than inventing an available version.
+The release downloader accepts HTTPS release assets only from this repository's GitHub Releases. WebView page networking remains disabled; downloads are performed by the Android host.
 
 ## Security note
 
-A .ciruntime package contains executable Python code. Install only packages you built yourself or received from a trusted maintainer. SHA-256 detects package corruption and mismatched file contents; it does not prove who published the package. Public distribution should add a publisher signature and verify it against a public key embedded in the app before enabling updates from other publishers.
+A `.ciruntime` package contains native executable shared-library code. Install only packages built by this repository's trusted workflow or supplied by a maintainer you trust. SHA-256 detects package corruption and mismatched contents; it does not authenticate the publisher. The runtime module executes inside the application process and is not sandboxed from the app.
 
-The runtime manager installs files in app-private storage, limits package/file sizes, rejects extra ZIP entries and uses atomic activation. The runtime is not sandboxed from the app process; treat a runtime update as trusted application code.
+The host limits package, manifest and shared-library sizes, rejects unexpected ZIP entries and activates updates atomically. A failed installation leaves the active version unchanged.
 
 ## Limits
 
-The Android host's Python interpreter and Chaquopy native libraries are bundled in the APK. Only the Python engine module is hot-swappable. An update which changes the runtime API, .room binary format, Chaquopy/Python interpreter version, Android Java bridge or native ABI requires a compatible app release.
+The Rust runtime executes verified .room bytecode; it does not parse AL source. The compiler remains C++17. The Android Java layer remains responsible for Android lifecycle and native View rendering. A runtime module update cannot add an opcode, change the .room binary format, modify the compiler or change the JNI ABI without a compatible APK release.
