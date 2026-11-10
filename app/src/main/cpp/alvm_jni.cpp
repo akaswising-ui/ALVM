@@ -41,40 +41,6 @@ Java_com_alvmstudio_MainActivity_nativeCompile(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_alvmstudio_MainActivity_nativeRun(
-        JNIEnv* env, jclass, jstring roomPathValue) {
-    const std::string roomPath = fromJava(env, roomPathValue);
-    std::ostringstream captured;
-    std::streambuf* previous = std::cout.rdbuf(captured.rdbuf());
-    try {
-        al::execute(al::loadRoom(roomPath));
-    } catch (const std::exception& error) {
-        captured << "AL runtime error: " << error.what() << '\n';
-    }
-    std::cout.rdbuf(previous);
-    return toJava(env, captured.str());
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_alvmstudio_MainActivity_nativeGetUiJson(JNIEnv* env, jclass) {
-    return toJava(env, al::uiJson());
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_alvmstudio_MainActivity_nativeRunUiEvent(
-        JNIEnv* env, jclass, jstring roomPathValue, jstring callbackValue, jstring eventValue) {
-    const std::string roomPath = fromJava(env, roomPathValue);
-    const std::string callback = fromJava(env, callbackValue);
-    const std::string event = fromJava(env, eventValue);
-    std::ostringstream captured;
-    std::streambuf* previous = std::cout.rdbuf(captured.rdbuf());
-    try { al::execute(al::loadRoom(roomPath), callback, event); }
-    catch (const std::exception& error) { captured << "AL UI event error: " << error.what() << '\n'; }
-    std::cout.rdbuf(previous);
-    return toJava(env, captured.str());
-}
-
-extern "C" JNIEXPORT jstring JNICALL
 Java_com_alvmstudio_MainActivity_nativeDisassemble(
         JNIEnv* env, jclass, jstring roomPathValue) {
     const std::string roomPath = fromJava(env, roomPathValue);
