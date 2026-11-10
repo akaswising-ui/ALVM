@@ -19,7 +19,7 @@ public final class CiRuntimeUpdater {
             "https://api.github.com/repos/akaswising-ui/ALVM/releases?per_page=100";
     private static final String RELEASE_PREFIX = "ci-runtime-v";
     private static final Pattern VERSION = Pattern.compile("^[0-9]+\\.[0-9]+\\.[0-9]+$");
-    private static final int MAX_PACKAGE_BYTES = 4 * 1024 * 1024;
+    private static final int MAX_PACKAGE_BYTES = 32 * 1024 * 1024;
 
     public static final class Release {
         public final String version;
@@ -47,7 +47,7 @@ public final class CiRuntimeUpdater {
         connection.setReadTimeout(20000);
         connection.setRequestProperty("Accept", "application/vnd.github+json");
         connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
-        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.5.3");
+        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.6.0");
         try {
             int code = connection.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK) {
@@ -119,7 +119,7 @@ public final class CiRuntimeUpdater {
         connection.setConnectTimeout(20000);
         connection.setReadTimeout(30000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.5.3");
+        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.6.0");
 
         File temporary = new File(destination.getAbsolutePath() + ".part");
         if (temporary.exists()) temporary.delete();
@@ -138,7 +138,7 @@ public final class CiRuntimeUpdater {
             }
             long announcedLength = connection.getContentLengthLong();
             if (announcedLength > MAX_PACKAGE_BYTES) {
-                throw new IllegalStateException("Runtime package exceeds 4 MiB");
+                throw new IllegalStateException("Runtime package exceeds 32 MiB");
             }
 
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -150,7 +150,7 @@ public final class CiRuntimeUpdater {
                 while ((count = input.read(buffer)) != -1) {
                     total += count;
                     if (total > MAX_PACKAGE_BYTES) {
-                        throw new IllegalStateException("Runtime package exceeds 4 MiB");
+                        throw new IllegalStateException("Runtime package exceeds 32 MiB");
                     }
                     digest.update(buffer, 0, count);
                     output.write(buffer, 0, count);
@@ -196,7 +196,7 @@ public final class CiRuntimeUpdater {
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(20000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.5.3");
+        connection.setRequestProperty("User-Agent", "ALVM-Studio-Runtime-Updater/0.6.0");
         try {
             if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
                 throw new IllegalStateException("Runtime checksum download failed");
