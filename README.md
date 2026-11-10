@@ -13,9 +13,9 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the implemented-feature matrix and st
 
 ## CI Runtime and hot updates
 
-The C++17 compiler stays responsible for AL source analysis and `.room` generation. The Android app executes verified `.room` v9 bytecode with CI Runtime, currently implemented using an embedded Python 3.11 engine through Chaquopy. Java hosts the interpreter and renders native Android Views; TypeScript/React remains the offline Studio interface.
+The C++17 compiler stays responsible for AL source analysis and `.room` generation. Android executes verified `.room` v9 bytecode with the Rust CI Runtime, built as a native Rust library and connected to the Android host through a small JNI bridge. Java renders native Android Views; TypeScript/React remains the offline Studio interface.
 
-CI Runtime engine modules are stored separately in app-private version folders. From the workspace file manager, open CI RUNTIME to import a `.ciruntime` package or roll back to a previous engine version. Engine-module updates do not require an APK update. The Python interpreter itself, Android host or bytecode-format changes still require a compatible APK release.
+Rust CI Runtime modules are stored separately in app-private version folders. From the workspace file manager, open CI RUNTIME to install a `.ciruntime` package or roll back to a previous version. Packages contain versioned native Rust shared libraries for Android ABIs and a manifest with API/bytecode compatibility plus SHA-256 hashes. A compatible runtime module can be updated without replacing the APK; changes to the compiler, JNI ABI, runtime API or .room format require a compatible APK release.
 
 See docs/CI_RUNTIME.md and docs/ROOM_FORMAT.md. Runtime packages contain executable Python code; install only trusted packages. The package SHA-256 check detects corruption, but does not authenticate the publisher.
 
@@ -26,12 +26,12 @@ The Android app packages the complete ALVM Studio interface and its local UI run
 - The UI opens from the local `https://appassets.androidplatform.net/assets/index.html` WebViewAssetLoader mapping (served from APK assets, not the Internet); it does not load the AppDeploy-hosted page.
 - The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
 - The Android manifest has no Internet or network-state permission. WebView network loads are blocked.
-- AL source Run/Compile continues through the C++17 compiler. Android then executes the generated `.room` v9 bytecode with the CI Runtime ALVM adapter's Python 3.11 implementation through Chaquopy.
+- AL source Run/Compile continues through the C++17 compiler. Android then executes generated `.room` v9 bytecode in the Rust CI Runtime native library. The Java host does not interpret bytecode or implement AL program logic.
 - AL programs can declare native Android screens with `UI.screen`, `UI.text` and `UI.button`. Android Java renders these as native Views; button clicks call the named AL `void handler(string buttonId)` function through CI Runtime. `UI.getInt` / `UI.setInt` provide integer state across UI events.
 - The prior local Studio browser runtime, touch-game preview and Chess preview are kept in the bundled UI for the commands they already handled. They do not require a server connection.
 - The editor, UI libraries page, website builder, local export and file-picker interface are included in the offline assets.
 
-The C++ compiler remains the authoritative AL source compiler and `.room` writer. The Android app's active bytecode executor is CI Runtime's Python 3.11 AL bytecode engine; the existing C++ VM remains in the desktop CLI regression path. Unsupported native language features remain unsupported until implemented and tested. The local game preview is a Studio feature, not evidence that AL's native graphics/game APIs are implemented.
+The C++ compiler remains the authoritative AL source compiler and `.room` writer. The Android app's active bytecode executor is the Rust CI Runtime; the existing C++ VM remains in the desktop CLI regression path. Unsupported native language features remain unsupported until implemented and tested. The local game preview is a Studio feature, not evidence that AL's native graphics/game APIs are implemented.
 
 ## Stage 15: native AL UI and Java Android rendering
 
@@ -59,7 +59,7 @@ Supported calls:
 - `UI.setInt(key, value)` and `UI.getInt(key, defaultValue)`: keep integer state between button events in the running app.
 - `UI.clear()`: clear UI elements and integer state.
 
-The Android Java host creates and updates actual native Android Views. A click calls back into CI Runtime's Python 3.11 AL adapter, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
+The Android Java host creates and updates actual native Android Views. A click calls back through JNI into the Rust CI Runtime, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
 
 The `.room` format advances to v9 for the `UiCall` opcode. Recompile v8 bytecode from source. This first UI stage does not yet include editable text fields, arbitrary layout trees, lifecycle callbacks, touch gestures, graphics or audio.
 ## Stage 13: explicit base-constructor calls
@@ -209,4 +209,4 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The `.room` binary format is v9. Stage 15 adds the `UiCall` opcode; recompile version 8 bytecode from its `.al` source.
+The `.room` binary format is v9. Stage 15 adds the `UiCall` opcode; recompile version 8 bytecode from its `.al` source. Android's bundled Rust CI Runtime is version 2.0.0; versioned Rust modules remain compatible with runtime API 1 and `.room` v9.
