@@ -2,7 +2,7 @@
 
 ## AL language identity
 
-AL uses Python-inspired keyword vocabulary, Java/C++-inspired source formatting (classes, braces, semicolons and typed declarations), and C++-inspired strict language rules. These are design influences only: AL has its own compiler, .room bytecode, ALVM and runtime. The VM executes verified bytecode, not source text.
+AL has its own readable English keyword vocabulary, Java/C++-style source formatting (classes, braces, semicolons and typed declarations), and C++-inspired strict language rules. AL has its own compiler, .room bytecode, ALVM and runtime. The VM executes verified bytecode, not source text.
 
 The Library Store has 12 module cards. Existing compiler/VM, standard, file, network, UI, graphics, game and database entries were preserved; only the missing AL.Audio and AL.System catalog entries were added. Catalog entries marked Planned are not executable runtime APIs.
 
@@ -17,7 +17,7 @@ The C++17 compiler stays responsible for AL source analysis and `.room` generati
 
 Rust CI Runtime modules are stored separately in app-private version folders. From the workspace file manager, open CI RUNTIME to install a `.ciruntime` package or roll back to a previous version. Packages contain versioned native Rust shared libraries for Android ABIs and a manifest with API/bytecode compatibility plus SHA-256 hashes. A compatible runtime module can be updated without replacing the APK; changes to the compiler, JNI ABI, runtime API or .room format require a compatible APK release.
 
-See docs/CI_RUNTIME.md and docs/ROOM_FORMAT.md. Runtime packages contain executable Python code; install only trusted packages. The package SHA-256 check detects corruption, but does not authenticate the publisher.
+See docs/CI_RUNTIME.md and docs/ROOM_FORMAT.md. Runtime packages contain executable native Rust shared libraries; install only packages from a trusted publisher. The package SHA-256 check detects corruption and file mismatch, but does not authenticate the publisher.
 
 ## Android app UI: offline bundle
 
@@ -25,7 +25,7 @@ The Android app packages the complete ALVM Studio interface and its local UI run
 
 - The UI opens from the local `https://appassets.androidplatform.net/assets/index.html` WebViewAssetLoader mapping (served from APK assets, not the Internet); it does not load the AppDeploy-hosted page.
 - The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
-- The Android manifest has no Internet or network-state permission. WebView network loads are blocked.
+- The app uses Internet access only for the explicit CI Runtime release downloader; WebView page requests remain blocked and AL source or .room files are not uploaded.
 - AL source Run/Compile continues through the C++17 compiler. Android then executes generated `.room` v9 bytecode in the Rust CI Runtime native library. The Java host does not interpret bytecode or implement AL program logic.
 - AL programs can declare native Android screens with `UI.screen`, `UI.text` and `UI.button`. Android Java renders these as native Views; button clicks call the named AL `void handler(string buttonId)` function through CI Runtime. `UI.getInt` / `UI.setInt` provide integer state across UI events.
 - The prior local Studio browser runtime, touch-game preview and Chess preview are kept in the bundled UI for the commands they already handled. They do not require a server connection.
