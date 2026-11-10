@@ -27,7 +27,7 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 ## Current implemented native foundation
 
 - C++17 native lexer, parser, AST, semantic/type analysis, IR lowering and bytecode serialization; the desktop CLI retains the C++ VM for regression coverage.
-- Android ALVM Studio executes verified .room v9 instructions with the CI Runtime ALVM adapter's Python 3.11 implementation through Chaquopy; Java hosts Python and renders native Android Views.
+- Android ALVM Studio executes verified .room v9 instructions with the Rust CI Runtime through JNI; Java renders native Android Views and does not interpret bytecode.
 - `.room` version 9 with a real instruction stream, structural validation and operand-stack verification.
 - Integer, string and boolean scalar values; their primitive arrays support literals, indexing, mutation, length, foreach and sized allocation with default initialization.
 - Functions, recursion, global overloads, classes, fields, objects, constructors, inheritance, explicit base-constructor calls, instance method overloads and derived-to-base assignment.
