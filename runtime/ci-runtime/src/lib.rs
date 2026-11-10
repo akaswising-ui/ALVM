@@ -79,8 +79,8 @@ const MAX_INSTRUCTIONS: usize = 1_000_000;
 const MAX_STRING_BYTES: usize = 1_000_000;
 const MAX_ARRAY_ITEMS: usize = 100_000;
 const MAX_CALL_DEPTH: usize = 1024;
-const MAX_PACKAGE_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_RUNTIME_LIBRARY_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_PACKAGE_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_RUNTIME_LIBRARY_BYTES: u64 = 24 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone)]
@@ -366,7 +366,7 @@ fn verify(program: &Program) -> RtResult<()> {
                         return error("Invalid UI call argument count");
                     }
                     need = arg;
-                    delta = if instruction.text == "getInt" { 1 } else { 0 } - arg;
+                    delta = (if instruction.text == "getInt" { 1 } else { 0 }) - arg;
                 }
                 CALL => {
                     if arg <= 0 || arg as usize >= functions.len() {
@@ -1571,7 +1571,8 @@ pub extern "C" fn ci_runtime_plugin_api_version() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn ci_runtime_plugin_version() -> *const c_char {
-    concat!(env!("CI_RUNTIME_VERSION"), "\0").as_ptr() as *const c_char
+    static VERSION: OnceLock<CString> = OnceLock::new();
+    VERSION.get_or_init(|| CString::new(build_version()).unwrap()).as_ptr()
 }
 
 #[no_mangle]
