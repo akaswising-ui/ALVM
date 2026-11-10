@@ -12,10 +12,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Set up Python 3.11 for Chaquopy
-        uses: actions/setup-python@v5
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: '3.11'
+          components: rustfmt
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -27,7 +29,6 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
 
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -35,20 +36,27 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
 
       - name: Install Android SDK, NDK and CMake
         run: |
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Install Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all -- --check
+          cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Build debug APK with Rust CI Runtime
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload debug APK
