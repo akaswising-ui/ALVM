@@ -82,6 +82,12 @@ const MAX_CALL_DEPTH: usize = 1024;
 const MAX_PACKAGE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_RUNTIME_LIBRARY_BYTES: u64 = 24 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+const PLUGIN_API_VERSION_SYMBOL: &[u8] = b"ci_runtime_plugin_api_version\0";
+const PLUGIN_VERSION_SYMBOL: &[u8] = b"ci_runtime_plugin_version\0";
+const PLUGIN_SELF_TEST_SYMBOL: &[u8] = b"ci_runtime_plugin_self_test\0";
+const PLUGIN_RUN_SYMBOL: &[u8] = b"ci_runtime_plugin_run_room_json\0";
+const PLUGIN_FREE_SYMBOL: &[u8] = b"ci_runtime_plugin_free_string\0";
+
 
 #[derive(Debug, Clone)]
 pub struct RuntimeError(pub String);
@@ -1176,12 +1182,12 @@ fn load_plugin(path: &Path, expected_version: Option<&str>) -> RtResult<Library>
         Library::new(path).map_err(|error| RuntimeError(format!("Cannot load Rust CI Runtime module: {error}")))?
     };
     unsafe {
-        let api: Symbol<unsafe extern "C" fn() -> u32> = library.get(b"ci_runtime_plugin_api_version\0")
+        let api: Symbol<unsafe extern "C" fn() -> u32> = library.get(PLUGIN_API_VERSION_SYMBOL)
             .map_err(|_| RuntimeError("Runtime module is missing its API version export".into()))?;
         if api() != RUNTIME_API_VERSION {
             return error("Runtime API version mismatch");
         }
-        let version_fn: Symbol<unsafe extern "C" fn() -> *const c_char> = library.get(b"ci_runtime_plugin_version\0")
+        let version_fn: Symbol<unsafe extern "C" fn() -> *const c_char> = library.get(PLUGIN_VERSION_SYMBOL)
             .map_err(|_| RuntimeError("Runtime module is missing its version export".into()))?;
         let version_ptr = version_fn();
         if version_ptr.is_null() {
@@ -1193,7 +1199,7 @@ fn load_plugin(path: &Path, expected_version: Option<&str>) -> RtResult<Library>
                 return error("Runtime code version does not match its manifest");
             }
         }
-        let test: Symbol<unsafe extern "C" fn() -> bool> = library.get(b"ci_runtime_plugin_self_test\0")
+        let test: Symbol<unsafe extern "C" fn() -> bool> = library.get(PLUGIN_SELF_TEST_SYMBOL)
             .map_err(|_| RuntimeError("Runtime module is missing its self-test export".into()))?;
         if !test() {
             return error("CI Runtime self-test failed");
@@ -1303,7 +1309,7 @@ fn run_with_active(root: &Path, abi: &str, room_path: &str, entry: &str, event: 
             .get(&plugin_path)
             .ok_or_else(|| RuntimeError("Runtime module cache entry is missing".into()))?;
         let run: Symbol<unsafe extern "C" fn(*const c_char, *const c_char, *const c_char) -> *mut c_char> =
-            unsafe { library.get(b"ci_runtime_plugin_run_room_json\0") }
+            unsafe { library.get(PLUGIN_RUN_SYMBOL) }
                 .map_err(|_| RuntimeError("Runtime module is missing its run export".into()))?;
         let path = CString::new(room_path).map_err(|_| RuntimeError("Invalid .room path".into()))?;
         let entry = CString::new(entry).map_err(|_| RuntimeError("Invalid entry name".into()))?;
@@ -1314,7 +1320,7 @@ fn run_with_active(root: &Path, abi: &str, room_path: &str, entry: &str, event: 
         }
         let result = unsafe { CStr::from_ptr(result_ptr).to_string_lossy().into_owned() };
         let free: Symbol<unsafe extern "C" fn(*mut c_char)> =
-            unsafe { library.get(b"ci_runtime_plugin_free_string\0") }
+            unsafe { library.get(PLUGIN_FREE_SYMBOL) }
                 .map_err(|_| RuntimeError("Runtime module is missing its memory release export".into()))?;
         unsafe { free(result_ptr) };
         serde_json::from_str(&result)
@@ -1660,6 +1666,20 @@ fn test_room_bytes(code: Vec<Instruction>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_symbol_names_are_c_terminated() {
+        for symbol in [
+            PLUGIN_API_VERSION_SYMBOL,
+            PLUGIN_VERSION_SYMBOL,
+            PLUGIN_SELF_TEST_SYMBOL,
+            PLUGIN_RUN_SYMBOL,
+            PLUGIN_FREE_SYMBOL,
+        ] {
+            assert_eq!(symbol.last(), Some(&0));
+            assert!(!symbol[..symbol.len() - 1].contains(&0));
+        }
+    }
 
     #[test]
     fn rust_runtime_self_test_executes_verified_bytecode() {
