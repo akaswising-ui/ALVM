@@ -1240,11 +1240,23 @@ fn manifest_for_dir(version_dir: &Path, abi: &str) -> RtResult<RuntimeManifest> 
     Ok(manifest)
 }
 
+static PLUGIN_CACHE: OnceLock<Mutex<HashMap<PathBuf, Library>>> = OnceLock::new();
+
+fn plugin_cache() -> &'static Mutex<HashMap<PathBuf, Library>> {
+    PLUGIN_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn validate_installed_plugin(root: &Path, version: &str, abi: &str) -> RtResult<PathBuf> {
     let directory = version_dir(root, version);
     let manifest = manifest_for_dir(&directory, abi)?;
     let path = directory.join(abi_library_name(abi)?);
-    let _library = load_plugin(&path, Some(&manifest.version))?;
+    let mut cache = plugin_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !cache.contains_key(&path) {
+        let library = load_plugin(&path, Some(&manifest.version))?;
+        cache.insert(path.clone(), library);
+    }
     Ok(path)
 }
 
@@ -1283,24 +1295,31 @@ fn run_with_active(root: &Path, abi: &str, room_path: &str, entry: &str, event: 
             return run_with_active(root, abi, room_path, entry, event);
         }
     };
-    let library = load_plugin(&plugin_path, Some(&state.active_version))?;
-    let run: Symbol<unsafe extern "C" fn(*const c_char, *const c_char, *const c_char) -> *mut c_char> =
-        unsafe { library.get(b"ci_runtime_plugin_run_room_json\0") }
-            .map_err(|_| RuntimeError("Runtime module is missing its run export".into()))?;
-    let path = CString::new(room_path).map_err(|_| RuntimeError("Invalid .room path".into()))?;
-    let entry = CString::new(entry).map_err(|_| RuntimeError("Invalid entry name".into()))?;
-    let event = CString::new(event).map_err(|_| RuntimeError("Invalid event value".into()))?;
-    let result_ptr = unsafe { run(path.as_ptr(), entry.as_ptr(), event.as_ptr()) };
-    if result_ptr.is_null() {
-        return error("Runtime module returned an empty result");
-    }
-    let result = unsafe { CStr::from_ptr(result_ptr).to_string_lossy().into_owned() };
-    let free: Symbol<unsafe extern "C" fn(*mut c_char)> =
-        unsafe { library.get(b"ci_runtime_plugin_free_string\0") }
-            .map_err(|_| RuntimeError("Runtime module is missing its memory release export".into()))?;
-    unsafe { free(result_ptr) };
-    let parsed: JsonValue = serde_json::from_str(&result)
-        .map_err(|error| RuntimeError(format!("Runtime module returned invalid JSON: {error}")))?;
+    let parsed: JsonValue = {
+        let cache = plugin_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let library = cache
+            .get(&plugin_path)
+            .ok_or_else(|| RuntimeError("Runtime module cache entry is missing".into()))?;
+        let run: Symbol<unsafe extern "C" fn(*const c_char, *const c_char, *const c_char) -> *mut c_char> =
+            unsafe { library.get(b"ci_runtime_plugin_run_room_json\\0") }
+                .map_err(|_| RuntimeError("Runtime module is missing its run export".into()))?;
+        let path = CString::new(room_path).map_err(|_| RuntimeError("Invalid .room path".into()))?;
+        let entry = CString::new(entry).map_err(|_| RuntimeError("Invalid entry name".into()))?;
+        let event = CString::new(event).map_err(|_| RuntimeError("Invalid event value".into()))?;
+        let result_ptr = unsafe { run(path.as_ptr(), entry.as_ptr(), event.as_ptr()) };
+        if result_ptr.is_null() {
+            return error("Runtime module returned an empty result");
+        }
+        let result = unsafe { CStr::from_ptr(result_ptr).to_string_lossy().into_owned() };
+        let free: Symbol<unsafe extern "C" fn(*mut c_char)> =
+            unsafe { library.get(b"ci_runtime_plugin_free_string\\0") }
+                .map_err(|_| RuntimeError("Runtime module is missing its memory release export".into()))?;
+        unsafe { free(result_ptr) };
+        serde_json::from_str(&result)
+            .map_err(|error| RuntimeError(format!("Runtime module returned invalid JSON: {error}")))?
+    };
     Ok(runtime_result_with_version(parsed, &state.active_version))
 }
 
