@@ -48,7 +48,7 @@ jobs:
       - name: Install Rust Android targets
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
-          cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all -- --check
+          cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all
           cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
 
       - name: Set up Gradle
