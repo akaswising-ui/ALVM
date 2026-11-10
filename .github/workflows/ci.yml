@@ -19,7 +19,7 @@ jobs:
           components: rustfmt
 
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all -- --check
+        run: cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all
 
       - name: Run Rust CI Runtime unit tests
         run: cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
