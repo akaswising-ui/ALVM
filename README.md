@@ -1,212 +1,60 @@
 # ALVM Studio
 
-## AL language identity
+AL is an independent programming language with its own grammar, lexer, parser, semantic/type analysis, IR, bytecode, verifier and runtime.
 
-AL has its own readable English keyword vocabulary, Java/C++-style source formatting (classes, braces, semicolons and typed declarations), and C++-inspired strict language rules. AL has its own compiler, .room bytecode, ALVM and runtime. The VM executes verified bytecode, not source text.
+## Language identity
 
-The Library Store has 12 module cards. Existing compiler/VM, standard, file, network, UI, graphics, game and database entries were preserved; only the missing AL.Audio and AL.System catalog entries were added. Catalog entries marked Planned are not executable runtime APIs.
+- Vocabulary: AL's own English keyword spellings, with selected familiar spellings influenced by Python.
+- Source style: Java-like class declarations, braces, semicolons, access modifiers and typed variables.
+- Rules: C++-influenced strict typing and compile-time validation.
+- Execution: the C++17 compiler emits binary .room bytecode. The Rust CI Runtime validates and executes bytecode; it does not interpret AL source.
 
+AL is not a renamed Python, Java or C++ runtime.
 
-## Development roadmap
+## Execution pipeline
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the implemented-feature matrix and staged plan for native GUI, runtime APIs, OOP, collections and Android project packaging.
+.al source -> lexer -> parser/AST -> semantic analysis -> type checking -> IR -> compiler -> binary .room v10 -> verifier -> Rust CI Runtime -> output
 
-## CI Runtime and hot updates
+Android uses a Java host/JNI bridge and the same C++ compiler and Rust runtime. The browser IDE contains a visual preview; native Android Run/Compile/Execute actions use the real compiler and runtime.
 
-The C++17 compiler stays responsible for AL source analysis and `.room` generation. Android executes verified `.room` v9 bytecode with the Rust CI Runtime, built as a native Rust library and connected to the Android host through a small JNI bridge. Java renders native Android Views; TypeScript/React remains the offline Studio interface.
+## Implemented language features
 
-Rust CI Runtime modules are stored separately in app-private version folders. From the workspace file manager, open CI RUNTIME to install a `.ciruntime` package or roll back to a previous version. Packages contain versioned native Rust shared libraries for Android ABIs and a manifest with API/bytecode compatibility plus SHA-256 hashes. A compatible runtime module can be updated without replacing the APK; changes to the compiler, JNI ABI, runtime API or .room format require a compatible APK release.
+- Scalar types: int, string, boolean, float and double.
+- Arrays: int[], string[], boolean[], float[], double[]; literals, sized allocation, indexing, assignment, length and foreach.
+- Integer, float and double arithmetic, comparisons and unary minus. Mixed float/double arithmetic is rejected; no implicit conversion yet.
+- Variables, scopes, conditions, while/do-while/for/foreach loops, switch, break, continue and return.
+- Functions, recursion, overloading, classes, fields, objects, constructors, inheritance, instance methods and explicit base-constructor calls.
+- Simple-variable compound assignments += -= *= /= and prefix/postfix ++ --.
+- Native UI calls and basic 2D shapes through AL UI APIs.
 
-See docs/CI_RUNTIME.md and docs/ROOM_FORMAT.md. Runtime packages contain executable native Rust shared libraries; install only packages from a trusted publisher. The package SHA-256 check detects corruption and file mismatch, but does not authenticate the publisher.
+## Bytecode and runtime
 
-## Android app UI: offline bundle
+- Binary .room v10: magic ALRM, versioned structure, typed classes/functions, instruction stream and verifier.
+- Rust CI Runtime 2.1.0 supports .room v10 and the existing AL runtime operations.
+- Version 9 .room files are intentionally rejected by the v10 runtime. Recompile their .al sources.
 
-The Android app packages the complete ALVM Studio interface and its local UI runtime in the APK. The screen layout and styling are maintained in `studio-ui/` and built into `app/src/main/assets/` by the Android APK workflow.
+## AL application packages
 
-- The UI opens from the local `https://appassets.androidplatform.net/assets/index.html` WebViewAssetLoader mapping (served from APK assets, not the Internet); it does not load the AppDeploy-hosted page.
-- The AppDeploy PWA install control is removed. The Android launcher app is installed through its APK.
-- The app uses Internet access only for the explicit CI Runtime release downloader; WebView page requests remain blocked and AL source or .room files are not uploaded.
-- AL source Run/Compile continues through the C++17 compiler. Android then executes generated `.room` v9 bytecode in the Rust CI Runtime native library. The Java host does not interpret bytecode or implement AL program logic.
-- AL programs can declare native Android screens with `UI.screen`, `UI.text` and `UI.button`. Android Java renders these as native Views; button clicks call the named AL `void handler(string buttonId)` function through CI Runtime. `UI.getInt` / `UI.setInt` provide integer state across UI events.
-- The prior local Studio browser runtime, touch-game preview and Chess preview are kept in the bundled UI for the commands they already handled. They do not require a server connection.
-- The editor, UI libraries page, website builder, local export and file-picker interface are included in the offline assets.
+ALPK v1 .AL packages are ZIP archives containing manifest.json, modules/main.room and optional assets/ files.
+The Android Studio Package .AL button compiles the open source file with the native compiler, creates a single-module package and opens the Android save picker. The Rust CLI can package assets:
 
-The C++ compiler remains the authoritative AL source compiler and `.room` writer. The Android app's active bytecode executor is the Rust CI Runtime; the existing C++ VM remains in the desktop CLI regression path. Unsupported native language features remain unsupported until implemented and tested. The local game preview is a Studio feature, not evidence that AL's native graphics/game APIs are implemented.
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    cmake --build build --parallel
+    cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin alpack
+    ./build/alvm compile examples/floating_point.al -o build/main.room
+    runtime/ci-runtime/target/debug/alpack create build/FloatingPoint.AL FloatingPoint 1.0.0 build/main.room assets/icon.png
+    runtime/ci-runtime/target/debug/alpack verify build/FloatingPoint.AL
 
-## Stage 15: native AL UI and Java Android rendering
+ALPK v1 has one entry module. External libraries, dependencies and multiple-module linking are not implemented. .AL packaging does not yet generate a standalone Android APK.
 
-AL can now declare a basic native Android screen. The UI commands are part of AL source and compiled into `.room` bytecode; the Android host renders them with Java `TextView`, `Button` and `GridLayout` views. This does not use a preloaded Calculator or a JavaScript-created game scene.
+## Test commands
 
-```al
-room Main {
-    public static void main() {
-        UI.screen("My AL App");
-        UI.text("message", "Hello from AL");
-        UI.button("tap", "Tap me", "onTap");
-    }
+    cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    cmake --build build --parallel
+    ctest --test-dir build --output-on-failure
+    bash tests/run_rust_runtime_e2e.sh build/alvm "$PWD" runtime/ci-runtime/target/debug/ci-runtime runtime/ci-runtime/target/debug/alpack
 
-    void onTap(string buttonId) {
-        UI.setText("message", "AL button clicked: " + buttonId);
-    }
-}
-```
+## Still incomplete
 
-Supported calls:
-- `UI.screen(title)`: set the native screen title.
-- `UI.text(id, value)`: create or replace a text display.
-- `UI.button(id, label, "handler")`: create a button and bind it to a global AL `void handler(string buttonId)` function.
-- `UI.setText(id, value)`: update an existing text display with a string or integer.
-- `UI.setInt(key, value)` and `UI.getInt(key, defaultValue)`: keep integer state between button events in the running app.
-- `UI.clear()`: clear UI elements and integer state.
-
-The Android Java host creates and updates actual native Android Views. A click calls back through JNI into the Rust CI Runtime, which executes the named AL handler; Java does not implement the button's program logic. The included `examples/calculator.al` defines its own keypad, display, arithmetic operations and event handler in AL. The desktop CLI offers `ui` and `ui-event` commands for automated render/callback tests.
-
-The `.room` format advances to v9 for the `UiCall` opcode. Recompile v8 bytecode from source. This first UI stage does not yet include editable text fields, arbitrary layout trees, lifecycle callbacks, touch gestures, graphics or audio.
-## Stage 13: explicit base-constructor calls
-
-Derived constructors may begin with `super(arguments);` to select a matching base constructor. Arguments are type-checked using the base class's constructor overload set. The call must be the first statement and can appear only in a derived-class constructor. When omitted, the compiler inserts the base class zero-argument constructor call; compilation fails if no such constructor exists.
-
-```al
-class Base {
-    int value;
-    Base(int value) { this.value = value; }
-}
-class Child extends Base {
-    Child(int value) { super(value); }
-}
-```
-
-## Stage 14: sized primitive-array allocation
-
-AL supports runtime-sized allocations for the three currently implemented primitive array types:
-
-```al
-int[] scores = new int[5];
-string[] names = new string[2];
-boolean[] flags = new boolean[3];
-
-scores[0] = 10;
-AL.print(scores.length); // 5
-AL.print(scores[1]);     // 0 (default)
-AL.print(names[0]);      // empty string (default)
-AL.print(flags[0]);      // false (default)
-```
-
-The compiler type-checks the length expression as `int` and emits the `NewArraySized` instruction. The verifier checks the encoded element type and stack effect. The VM allocates the array and initializes each slot to the type's default value. Runtime lengths must be between 0 and 100000 inclusive. This stage adds a real opcode and advances the binary `.room` format from version 7 to version 8. Existing version 7 files must be recompiled from their `.al` sources.
-
-This stage does **not** add object arrays, multidimensional arrays, generics, lists, maps or sets.
-
-## Stage 12: constructor overloading
-
-Classes can declare multiple constructors with distinct parameter type lists. `new ClassName(arguments)` resolves the matching constructor using the same exact-match preference and ambiguity rejection used by function and method calls. The compiler assigns each constructor a collision-resistant internal symbol. Derived constructors may invoke a matching base constructor explicitly with `super(arguments);`. If omitted, the compiler invokes the base class zero-argument constructor automatically.
-
-```al
-class Box {
-    int value;
-    string label;
-    Box(int value) { this.value = value; }
-    Box(string label) { this.label = label; }
-}
-```
-
-## Stage 11: instance method overloading
-
-Class instance methods can share a name when their ordered parameter type lists differ. Method calls are resolved from the receiver's static class type and argument types, using the same exact-match preference and ambiguity rejection as global function overloads. Inherited method signatures remain available to derived classes; a same-signature declaration is still rejected because virtual overriding is not implemented yet. Selected methods receive collision-resistant internal symbols in bytecode.
-
-```al
-class Calculator {
-    int combine(int a, int b) { return a + b; }
-    string combine(string a, string b) { return a + b; }
-}
-```
-
-This stage adds instance method overloading. Constructor overloading is implemented in Stage 12; virtual method overriding remains pending.
-
-## Stage 10: global function overloading
-
-Global functions can share a name when their parameter type lists differ. The compiler resolves a call using argument types, prefers the viable overload with the greatest number of exact type matches, and rejects missing or ambiguous matches. Return type alone does not distinguish overloads. The selected overload is assigned a stable internal symbol in IR and bytecode, while AL source keeps the readable function name.
-
-```al
-int calculate(int a, int b) { return a + b; }
-string calculate(string a, string b) { return a + b; }
-```
-
-This stage adds global function overloading. Instance method and constructor overloading are implemented in later stages.
-
-## Stage 9: array foreach iteration
-
-AL now supports typed `foreach` loops over `int[]`, `string[]` and `boolean[]` arrays. The array expression is evaluated once, iteration follows ascending index order, and `break` / `continue` target the correct enclosing loop. The compiler rejects non-array sources and explicit element-type mismatches. The loop is lowered to existing array-length, array-get and jump instructions, and uses the existing foreach lowering in `.room` v8 without a dedicated foreach opcode.
-
-```al
-int[] scores = [10, 20, 30];
-foreach (int score : scores) {
-    AL.print(score);
-}
-```
-
-## Stage 8: control flow
-
-Current C++17 compiler pipeline:
-
-`.al -> lexer -> parser -> AST -> semantic/type analysis -> IR -> bytecode -> .room v8 -> verifier -> ALVM`
-
-Implemented:
-- Scalar and array types, arithmetic, string operations, comparisons and boolean short-circuiting.
-- Typed functions, parameters, return values, recursion and global function overloading.
-- Classes, fields, objects, overloaded constructors and methods, `this`, inheritance, explicit base-constructor calls and derived-to-base assignment.
-- `if/else`, `while`, `for`, `do/while` and typed `foreach` array iteration.
-- `switch/case/default` for `int`, `string` and `boolean` expressions.
-- `break` exits the nearest loop or switch.
-- `continue` jumps to the condition of a `while`/do-while loop or the increment clause of a `for` loop.
-- Switch cases use fall-through semantics. Use `break;` to stop at the end of a case.
-- The compiler rejects `break` outside loops/switches, `continue` outside loops, duplicate default labels and mismatched case types.
-- Branches are lowered into jumps and validated by the existing bytecode stack-depth verifier.
-- End-to-end regression tests cover numeric and string switches, loop continue/break, typed foreach iteration and negative cases.
-
-## Example
-
-```al
-room Main {
-    public static void main() {
-        int option = 2;
-        switch (option) {
-            case 1:
-                AL.print("one");
-                break;
-            case 2:
-                AL.print("two");
-                break;
-            default:
-                AL.print("other");
-        }
-
-        int count = 0;
-        do {
-            count = count + 1;
-            if (count == 2) {
-                continue;
-            }
-            if (count == 4) {
-                break;
-            }
-        } while (count < 10);
-        AL.print(count);
-    }
-}
-```
-
-## Still pending
-
-Virtual method overriding/dynamic dispatch, interfaces, abstract classes, static members, enforced access control, object arrays, multidimensional arrays, generics, enums, exceptions, modules, full standard libraries, Richer layout containers, editable text fields, touch/gesture APIs, graphics/audio engine, database/networking APIs, `.AL` application packaging and building a user AL program into an Android APK remain pending. The ALVM Studio Android app itself already has an offline APK build; that is not the same as generating APKs from AL programs.
-
-## Build
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-./build/alvm compile examples/control_flow_complete.al
-./build/alvm run examples/control_flow_complete.room
-ctest --test-dir build --output-on-failure
-```
-
-The `.room` binary format is v9. Stage 15 adds the `UiCall` opcode; recompile version 8 bytecode from its `.al` source. Android's bundled Rust CI Runtime is version 2.0.0; versioned Rust modules remain compatible with runtime API 1 and `.room` v9.
+Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, full standard libraries, multi-module package linking, external dependencies, full native game loop, direct touch/input API, physics, audio, complete graphics/sprite APIs and AL-to-Android-APK generation remain planned or partial. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
