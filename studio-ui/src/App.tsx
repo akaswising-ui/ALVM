@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ChessPlayer from './ChessPlayer';
 import Libraries from './Libraries';
 import WebsiteBuilder from './WebsiteBuilder';
@@ -412,7 +412,7 @@ const alTypeTokens = new Set([
 ]);
 const alApiTokens = new Set(['AL', 'UI', 'Game', 'Chess', 'Math', 'Files', 'Audio']);
 
-function highlightAL(source: string): Array<string | JSX.Element> {
+function highlightAL(source: string): Array<string | ReactNode> {
   const pattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|==|!=|<=|>=|\+=|-=|\*=|\/=|\+\+|--|&&|\|\||[{}()\[\];,.+\-*/%!=<>]/g;
   const output: Array<string | JSX.Element> = [];
   let cursor = 0;
