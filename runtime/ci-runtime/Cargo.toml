@@ -1,6 +1,6 @@
 [package]
 name = "ci-runtime"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 description = "Rust implementation of the ALVM CI Runtime for verified ALRM .room bytecode"
 license = "BSL-1.0"
@@ -25,7 +25,7 @@ sha2 = "0.10.9"
 zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
 codegen-units = 1
 strip = "symbols"

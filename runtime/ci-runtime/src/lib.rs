@@ -767,7 +767,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
     verify(program)?;
     let functions = &program.functions;
     let classes = &program.classes;
-    let mut output = Vec::<String>::new();
+    let mut output = Vec::<String>::with_capacity(8);
     let entry_index = if entry_name == "main" {
         *state = UiState::new();
         0
@@ -811,8 +811,9 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
         }
         entry_locals[0] = Some(RuntimeValue::String(callback_value));
     }
-    let mut frames = vec![Frame { function_id: entry_index, pc: 0, locals: entry_locals, stack_base: 0 }];
-    let mut stack = Vec::<RuntimeValue>::new();
+    let mut frames = Vec::<Frame>::with_capacity(16);
+    frames.push(Frame { function_id: entry_index, pc: 0, locals: entry_locals, stack_base: 0 });
+    let mut stack = Vec::<RuntimeValue>::with_capacity(128);
 
     while !frames.is_empty() {
         let frame_index = frames.len() - 1;
@@ -822,7 +823,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
         if pc >= function.code.len() {
             return error("Instruction pointer outside function");
         }
-        let instruction = function.code[pc].clone();
+        let instruction = &function.code[pc];
         frames[frame_index].pc += 1;
         let op = instruction.op;
         let arg = instruction.arg;
@@ -1067,9 +1068,10 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     if frames.len() >= MAX_CALL_DEPTH { return error("Maximum call depth exceeded"); }
                     let count = callee.parameter_count + if callee.owner_class_id >= 0 { 1 } else { 0 };
                     if stack.len() < count { return error("Call argument stack underflow"); }
-                    let args = if count == 0 { Vec::new() } else { stack.split_off(stack.len() - count) };
+                    if callee.local_count < count { return error("Function local frame is smaller than its parameter list"); }
                     if callee.owner_class_id >= 0 {
-                        let receiver = match args.first() {
+                        let receiver_index = stack.len() - count;
+                        let receiver = match stack.get(receiver_index) {
                             Some(RuntimeValue::Object(value)) => value.borrow().class_id,
                             _ => return error("Instance method called with incompatible receiver object"),
                         };
@@ -1078,8 +1080,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                         }
                     }
                     let mut locals = vec![None; callee.local_count];
-                    for (index, value) in args.into_iter().enumerate() {
-                        locals[index] = Some(value);
+                    for index in (0..count).rev() {
+                        locals[index] = Some(pop(&mut stack)?);
                     }
                     frames.push(Frame { function_id: target, pc: 0, locals, stack_base: stack.len() });
                 }

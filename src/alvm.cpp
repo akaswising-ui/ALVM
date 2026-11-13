@@ -598,7 +598,7 @@ static bool uiElementsCollide(const UiElement& a,const UiElement& b){
 static void execute(const BytecodeProgram& program,const std::string& entryName="main",const std::string& eventValue=""){
   verify(program);const auto& functions=program.functions;const auto& classes=program.classes;
   struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
-  std::vector<Value> stack;
+  std::vector<Value> stack;stack.reserve(128);
   auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
   size_t entryIndex=0;
   if(entryName=="main"){activeUiTitle="AL Application";activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
@@ -621,7 +621,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
     }
     entry.locals[0]=callbackValue;
   }
-  std::vector<Frame> frames;frames.push_back(std::move(entry));
+  std::vector<Frame> frames;frames.reserve(16);frames.push_back(std::move(entry));
   while(!frames.empty()){
     Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
     switch(i.op){

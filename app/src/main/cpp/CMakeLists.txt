@@ -77,6 +77,6 @@ set_target_properties(ci_runtime PROPERTIES IMPORTED_LOCATION "${CI_RUNTIME_STAT
 
 add_library(alvm SHARED alvm_jni.cpp)
 target_compile_features(alvm PRIVATE cxx_std_17)
-target_compile_options(alvm PRIVATE -O2 -fexceptions -frtti)
+target_compile_options(alvm PRIVATE -O3 -DNDEBUG -fexceptions -frtti)
 add_dependencies(alvm ci_runtime_build)
 target_link_libraries(alvm PRIVATE ci_runtime log android dl m atomic)
