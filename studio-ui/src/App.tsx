@@ -482,7 +482,7 @@ export default function App() {
       log(['✕ .AL export requires the ALVM Studio Android host.'], 'ERROR');
       return;
     }
-    const appName = filename.replace(/\\.al$/i, '') || 'ALApp';
+    const appName = filename.replace(/\.al$/i, '') || 'ALApp';
     createPackage(source, appName);
     log(['Preparing .AL package with the native AL compiler.', 'The compiled .room v10 module and manifest will be saved using Android document picker.'], 'READY');
   };
@@ -617,7 +617,7 @@ export default function App() {
               <button className="run-button" onClick={run}><Play size={15} fill="currentColor" />Run</button>
               <button className="compile-button" onClick={compileRoom}><Braces size={15} />Compile .room</button>
               <button className="execute-button" onClick={executeRoom}><Terminal size={15} />Execute .room</button>
-              <button className="compile-button" onClick={packageAl}><Package size={15} />Package .AL</button>
+              <button className="package-button" onClick={packageAl}><Package size={15} />Package .AL</button>
             </div>
             <span>ALVM Studio · {appVersion}</span>
           </div>
