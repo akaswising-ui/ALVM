@@ -2010,6 +2010,37 @@ mod tests {
     }
 
     #[test]
+    fn creates_and_verifies_al_package_with_asset() {
+        let root = std::env::temp_dir().join(format!("alvm-alpk-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let room_path = root.join("main.room");
+        let asset_path = root.join("tile.bin");
+        let package_path = root.join("TestApp.AL");
+        fs::write(&room_path, test_room_bytes(vec![
+            Instruction { op: PUSH_INT, arg: 7, text: String::new() },
+            Instruction { op: PRINT, arg: 0, text: String::new() },
+            Instruction { op: HALT, arg: 0, text: String::new() },
+        ])).unwrap();
+        fs::write(&asset_path, b"asset bytes").unwrap();
+
+        create_al_package(
+            &package_path,
+            "TestApp",
+            "1.0.0",
+            &room_path,
+            &[asset_path.clone()],
+        ).unwrap();
+
+        let result = verify_al_package(&package_path).unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["name"], "TestApp");
+        assert_eq!(result["moduleCount"], 1);
+        assert_eq!(result["assetCount"], 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn plugin_symbol_names_are_c_terminated() {
         for symbol in [
             PLUGIN_API_VERSION_SYMBOL,
