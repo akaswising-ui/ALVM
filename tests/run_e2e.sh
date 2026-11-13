@@ -91,10 +91,10 @@ if [[ "$FOREACH_ACTUAL" != "$FOREACH_EXPECTED" ]]; then
 fi
 
 "$BIN" compile "$ROOT/examples/operators.al" -o "$TMP/operators.room"
-OPERATORS_EXPECTED="$(printf '6\\n6\\nALVM')"
+OPERATORS_EXPECTED="$(printf '6\n6\nALVM')"
 OPERATORS_ACTUAL="$("$BIN" run "$TMP/operators.room")"
 if [[ "$OPERATORS_ACTUAL" != "$OPERATORS_EXPECTED" ]]; then
-  printf 'operator assignment expected:\\n%s\\noperator assignment actual:\\n%s\\n' "$OPERATORS_EXPECTED" "$OPERATORS_ACTUAL" >&2
+  printf 'operator assignment expected:\n%s\noperator assignment actual:\n%s\n' "$OPERATORS_EXPECTED" "$OPERATORS_ACTUAL" >&2
   exit 1
 fi
 
