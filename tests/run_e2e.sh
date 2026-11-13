@@ -169,6 +169,28 @@ if [[ "$GAME_UI" != *'"title":"AL 2D Engine Demo"'* || "$GAME_UI" != *'"kind":"r
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/touch_loop.al" -o "$TMP/touch-loop.room"
+GAME_INITIAL="$("$BIN" ui "$TMP/touch-loop.room")"
+if [[ "$GAME_INITIAL" != *'"frameCallback":"update"'* || "$GAME_INITIAL" != *'"frameRate":30'* || "$GAME_INITIAL" != *'"kind":"touchArea"'* ]]; then
+  printf 'AL game loop initial state failed:\n%s\n' "$GAME_INITIAL" >&2
+  exit 1
+fi
+GAME_RUN_OUTPUT="$("$BIN" run "$TMP/touch-loop.room")"
+if [[ "$GAME_RUN_OUTPUT" != "true" ]]; then
+  printf 'AL collision result expected true, got:\n%s\n' "$GAME_RUN_OUTPUT" >&2
+  exit 1
+fi
+GAME_EVENTS="$("$BIN" ui-event "$TMP/touch-loop.room" onTouch '@touch|move|45|67' update frame)"
+if [[ "$GAME_EVENTS" != *'"id":"touch","text":"45"'* || "$GAME_EVENTS" != *'"id":"frames","text":"1"'* ]]; then
+  printf 'AL touch/frame events failed:\n%s\n' "$GAME_EVENTS" >&2
+  exit 1
+fi
+GAME_STOP="$("$BIN" ui-event "$TMP/touch-loop.room" stopGame stop)"
+if [[ "$GAME_STOP" != *'"frameCallback":""'* || "$GAME_STOP" != *'"frameRate":0'* ]]; then
+  printf 'AL stopLoop failed:\n%s\n' "$GAME_STOP" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/floating_point.al" -o "$TMP/floating-point.room"
 FLOATING_EXPECTED="$(printf '3.75\n4.75\n3.75\n2\n3.75\ntrue')"
 FLOATING_ACTUAL="$("$BIN" run "$TMP/floating-point.room")"

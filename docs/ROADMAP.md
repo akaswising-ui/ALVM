@@ -50,7 +50,7 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 - Arrays/collections: multidimensional arrays, object arrays, resizable lists, maps, sets and generalized element types.
 - Runtime: exceptions, resource/finalization model, module loader, garbage collector and broader runtime type information.
 - System libraries: AL-native file APIs, database APIs and networking APIs. Android workspace file selection is an IDE feature, not the same as an AL File library.
-- UI/game: AL-native window and view toolkit, buttons, text fields, images, touch/gesture event model, graphics renderer, physics, audio and native game loop. The existing bundled Chess/Game panels are Studio previews and are not native AL APIs.
+- UI/game: AL-native window and view toolkit, buttons, text fields, images, full multitouch/gesture system, sprite/assets renderer, rigid-body physics solver and audio. The existing bundled Chess/Game panels are Studio previews and are not native AL APIs.
 - Packaging: a defined `.AL` application container and compiler-driven packaging of AL projects into installable Android APKs. The current Android APK is the ALVM Studio IDE itself, not a user-created AL application.
 
 ## Recently implemented: compound assignment and increment/decrement\n\n- Added `+=`, `-=`, `*=`, `/=` for simple variables.\n- Added prefix and postfix `++` / `--` as statement forms.\n- The compiler lowers these constructs to existing AL arithmetic/load/store instructions; `.room` v9 and the Rust runtime ABI remain unchanged.\n- Array-element and object-field compound updates are explicitly rejected until their single-evaluation lowering is implemented.\n\n## Implementation order
@@ -63,6 +63,13 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 6. **Graphics/game/audio:** 2D renderer, touch/keyboard input, frame loop, collision helpers and audio playback, each backed by working native implementations and tests.
 7. **Database and networking:** local database first; networking as an optional, permission-gated capability rather than a background dependency of the IDE.
 8. **Application packaging:** ALPK v1 is implemented for one main .room module, a manifest and optional assets (CLI); the IDE can export the single-module package. Multi-module linking, external libraries/dependencies and building generated AL applications into APKs remain planned.
+
+## Recently implemented: native touch, frame loop and basic collision slice
+
+- `UI.touchArea` registers touch hit regions; Android `Game2DView` converts device touches into 320×480 logical coordinates and invokes the named AL callback. Callback code can read `touchX` and `touchY` through the existing integer UI state API.
+- `UI.frameLoop` schedules an AL update callback at 1–60 FPS through an Android main-thread Handler; the loop pauses with the Activity and stops when the game dialog closes or `UI.stopLoop()` is called.
+- `UI.collides` performs rectangle/rectangle and circle/rectangle axis-aligned bounding-box overlap tests in both C++ and Rust runtimes. This is collision detection support, not a physics solver.
+- C++ compiler/VM and Rust CI Runtime end-to-end tests cover callback registration, frame metadata, touch coordinate delivery, collision results and loop cancellation.
 
 ## Release rule
 
