@@ -4,7 +4,7 @@
 
 - File extension: `.room`
 - Magic bytes: ASCII `ALRM`
-- Binary format version: **9**
+- Binary format version: **10**
 - Integer encoding: little-endian
 - Text encoding: UTF-8
 - The file contains instructions, not AL source text.
@@ -18,7 +18,7 @@ All counts and identifiers below are unsigned 32-bit integers unless marked sign
 | Order | Field | Encoding |
 |---|---|---|
 | 1 | Magic | 4 bytes: `ALRM` |
-| 2 | Format version | u32, currently 9 |
+| 2 | Format version | u32, currently 10 |
 | 3 | Class count | u32 |
 | 4 | Each class | Name string, base class ID (i32), field count (u32), field type IDs (u32 array) |
 | 5 | Function count | u32 |
@@ -40,9 +40,13 @@ A string is encoded as a u32 UTF-8 byte length followed by that many bytes. A si
 | 5 | boolean[] |
 | 6 | void |
 | 7 | unknown/internal |
+| 8 | float (IEEE-754 binary32) |
+| 9 | double (IEEE-754 binary64) |
+| 10 | float[] |
+| 11 | double[] |
 | 100+ | User-defined class ID, encoded as 100 + class index |
 
-Class fields are currently limited to scalar int, string and boolean fields.
+Class fields support scalar int, string, boolean, float and double values. Array field declarations are still rejected.
 
 ## Opcode IDs
 
@@ -63,8 +67,10 @@ Class fields are currently limited to scalar int, string and boolean fields.
 | 32-35 | NewObject, GetField, SetField, Dup |
 | 36 | NewArraySized |
 | 37 | UiCall |
+| 38 | PushFloat (binary32 bits in low 32 bits of argument) |
+| 39 | PushDouble (binary64 bits in argument) |
 
-The UiCall opcode is part of format v9. Version 8 files do not contain this opcode and must be recompiled from AL source.
+The UiCall opcode is part of format v9; PushFloat and PushDouble are added in v10. Version 9 files remain incompatible with v10 and must be recompiled from AL source.
 
 ## Runtime verification
 

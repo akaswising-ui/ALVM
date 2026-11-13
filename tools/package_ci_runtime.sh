@@ -47,8 +47,8 @@ cat > "$WORK/manifest.json" <<EOF
   "name": "CI Runtime",
   "version": "$VERSION",
   "runtime_api_version": 1,
-  "room_format_min": 9,
-  "room_format_max": 9,
+  "room_format_min": 10,
+  "room_format_max": 10,
   "sha256": {
     "arm64-v8a": "$ARM64_SHA",
     "armeabi-v7a": "$ARMV7_SHA"
@@ -64,5 +64,5 @@ rm -f "$PACKAGE" "$PACKAGE.sha256"
 )
 sha256sum "$PACKAGE" > "$PACKAGE.sha256"
 echo "Created $PACKAGE"
-echo "Rust CI Runtime $VERSION; API 1; .room v9"
+echo "Rust CI Runtime $VERSION; API 1; .room v10"
 cat "$PACKAGE.sha256"

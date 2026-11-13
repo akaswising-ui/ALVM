@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Runtime version, for example 2.0.1"
+        description: "Runtime version, for example 2.1.0"
         required: true
         type: string
 
@@ -70,5 +70,5 @@ jobs:
               "dist/ci-runtime-$VERSION.ciruntime" \
               "dist/ci-runtime-$VERSION.ciruntime.sha256" \
               --title "Rust CI Runtime $VERSION" \
-              --notes "Rust CI Runtime package. Runtime API 1; .room format 9; Android ABIs arm64-v8a and armeabi-v7a."
+              --notes "Rust CI Runtime package. Runtime API 1; .room format 10; Android ABIs arm64-v8a and armeabi-v7a."
           fi

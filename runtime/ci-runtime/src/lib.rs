@@ -988,7 +988,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     let expected_type = classes.get(object.class_id)
                         .and_then(|class| class.field_types.get(field_index))
                         .copied().ok_or_else(|| RuntimeError("Object field index out of bounds".into()))?;
-                    let expected_kind = match expected_type { TYPE_INT => 0, TYPE_STRING => 1, TYPE_BOOL => 2, _ => usize::MAX };
+                    let expected_kind = match expected_type { TYPE_INT => 0, TYPE_STRING => 1, TYPE_BOOL => 2, TYPE_FLOAT => 5, TYPE_DOUBLE => 6, _ => usize::MAX };
                     if value_kind(&value) != expected_kind { return error("Object field type mismatch"); }
                     let slot = object.fields.get_mut(field_index)
                         .ok_or_else(|| RuntimeError("Object field index out of bounds".into()))?;

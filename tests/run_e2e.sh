@@ -169,4 +169,18 @@ if [[ "$GAME_UI" != *'"title":"AL 2D Engine Demo"'* || "$GAME_UI" != *'"kind":"r
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/floating_point.al" -o "$TMP/floating-point.room"
+FLOATING_EXPECTED="$(printf '3.75\n4.75\n3.75\n2\n3.75\ntrue')"
+FLOATING_ACTUAL="$("$BIN" run "$TMP/floating-point.room")"
+if [[ "$FLOATING_ACTUAL" != "$FLOATING_EXPECTED" ]]; then
+  printf 'floating-point expected:\n%s\nactual:\n%s\n' "$FLOATING_EXPECTED" "$FLOATING_ACTUAL" >&2
+  exit 1
+fi
+
+if "$BIN" compile "$ROOT/tests/mixed_numeric_type_error.al" -o "$TMP/mixed-numeric.room" 2>/dev/null; then
+  echo "FAIL: mixed float/double arithmetic was accepted" >&2
+  exit 1
+fi
+test ! -e "$TMP/mixed-numeric.room"
+
 echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, explicit super calls, foreach, switch and loop control"

@@ -27,8 +27,8 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 ## Current implemented native foundation
 
 - C++17 native lexer, parser, AST, semantic/type analysis, IR lowering and bytecode serialization; the desktop CLI retains the C++ VM for regression coverage.
-- Android ALVM Studio executes verified .room v9 instructions with the Rust CI Runtime through JNI; Java renders native Android Views and does not interpret bytecode.
-- `.room` version 9 with a real instruction stream, structural validation and operand-stack verification.
+- Android ALVM Studio executes verified .room v10 instructions with the Rust CI Runtime through JNI; Java renders native Android Views and does not interpret bytecode.
+- `.room` version 10 with a real instruction stream, structural validation and operand-stack verification.
 - Integer, string and boolean scalar values; their primitive arrays support literals, indexing, mutation, length, foreach and sized allocation with default initialization.
 - Functions, recursion, global overloads, classes, fields, objects, constructors, inheritance, explicit base-constructor calls, instance method overloads and derived-to-base assignment.
 - Conditional and loop control flow, switch/case, break and continue.
@@ -67,3 +67,12 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 ## Release rule
 
 A capability is marked implemented only after the native compiler/VM or Android host implementation exists, automated tests pass, and its documentation names limitations. Library Store snippets remain labelled Planned until that condition is met.
+
+## Recently implemented: floating-point types and .room v10
+
+- The native C++ compiler recognises `float`, `double`, decimal literals and strict same-type numeric operations.
+- The C++ VM and Rust CI Runtime execute binary32 and binary64 pushes, arithmetic, comparisons and unary negation.
+- Float/double arrays support literals, sized allocation, default initialization, indexing, assignment and length.
+- Scalar float/double class fields and function return types are supported.
+- Mixed float/double operations are rejected. Exponent-form literals, implicit numeric conversion, float/double array class fields and remaining primitive types are still pending.
+- The compiler and runtime now use binary `.room` v10. Existing v9 programs must be recompiled from source.
