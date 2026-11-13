@@ -36,6 +36,18 @@ printf '%s\n' "$GAME_EVENTS" | grep -q '"ok":true'
 printf '%s\n' "$GAME_EVENTS" | grep -q '"id":"touch","kind":"text","text":"45"'
 printf '%s\n' "$GAME_EVENTS" | grep -q '"id":"frames","kind":"text","text":"1"'
 printf '%s\n' "$GAME_EVENTS" | grep -q '"frameRate":0'
+"$ALVM_BIN" compile "$ROOT/examples/treasure_grid.al" -o "$WORK/treasure-grid.room"
+TREASURE_MAIN="$("$RUST_RUNNER" run "$WORK/treasure-grid.room")"
+printf '%s\n' "$TREASURE_MAIN" | grep -q '"ok":true'
+printf '%s\n' "$TREASURE_MAIN" | grep -q '"title":"TREASURE GRID"'
+TREASURE_EVENTS="$("$RUST_RUNNER" run "$WORK/treasure-grid.room" --event pickTile tile2 --event pickTile tile4 --event pickTile tile7 --event pickTile tile14 --event pickTile tile16)"
+printf '%s\n' "$TREASURE_EVENTS" | grep -q '"ok":true'
+printf '%s\n' "$TREASURE_EVENTS" | grep -q '"id":"score","kind":"text","text":"13"'
+printf '%s\n' "$TREASURE_EVENTS" | grep -q '"id":"moves","kind":"text","text":"5"'
+TREASURE_RESET="$("$RUST_RUNNER" run "$WORK/treasure-grid.room" --event pickTile tile2 --event restartGame reset)"
+printf '%s\n' "$TREASURE_RESET" | grep -q '"id":"score","kind":"text","text":"0"'
+printf '%s\n' "$TREASURE_RESET" | grep -q '"id":"tile2","kind":"button","text":"2"'
+
 printf 'packaged asset\n' > "$WORK/asset.txt"
 "$ALPACK_BIN" create "$WORK/Floating.AL" FloatingPoint 1.0.0 "$WORK/floating-point.room" "$WORK/asset.txt"
 PACKAGE_RESULT="$("$ALPACK_BIN" verify "$WORK/Floating.AL")"

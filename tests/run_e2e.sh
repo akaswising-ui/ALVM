@@ -191,6 +191,23 @@ if [[ "$GAME_STOP" != *'"frameCallback":""'* || "$GAME_STOP" != *'"frameRate":0'
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/treasure_grid.al" -o "$TMP/treasure-grid.room"
+TREASURE_INITIAL="$("$BIN" ui "$TMP/treasure-grid.room")"
+if [[ "$TREASURE_INITIAL" != *'"title":"TREASURE GRID"'* || "$TREASURE_INITIAL" != *'"id":"tile16"'* ]]; then
+  printf 'Treasure Grid initial screen failed:\n%s\n' "$TREASURE_INITIAL" >&2
+  exit 1
+fi
+TREASURE_EVENTS="$("$BIN" ui-event "$TMP/treasure-grid.room" pickTile tile2 pickTile tile4 pickTile tile7 pickTile tile14 pickTile tile16)"
+if [[ "$TREASURE_EVENTS" != *'"id":"score","text":"13"'* || "$TREASURE_EVENTS" != *'"id":"moves","text":"5"'* ]]; then
+  printf 'Treasure Grid score/moves failed:\n%s\n' "$TREASURE_EVENTS" >&2
+  exit 1
+fi
+TREASURE_RESET="$("$BIN" ui-event "$TMP/treasure-grid.room" pickTile tile2 restartGame reset)"
+if [[ "$TREASURE_RESET" != *'"id":"score","text":"0"'* || "$TREASURE_RESET" != *'"id":"tile2","text":"2"'* ]]; then
+  printf 'Treasure Grid restart failed:\n%s\n' "$TREASURE_RESET" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/floating_point.al" -o "$TMP/floating-point.room"
 FLOATING_EXPECTED="$(printf '3.75\n4.75\n3.75\n2\n3.75\ntrue')"
 FLOATING_ACTUAL="$("$BIN" run "$TMP/floating-point.room")"
