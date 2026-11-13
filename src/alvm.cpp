@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cmath>
@@ -254,6 +255,23 @@ class SemanticAnalyzer {
           else if(e.text=="setText"){require(2);stringAt(0);if(actual[1]!=Type::String&&actual[1]!=Type::Int)throw Error("UI.setText value must be string or int");e.inferred=Type::Void;}
           else if(e.text=="setInt"){require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.setInt value must be int");e.inferred=Type::Void;}
           else if(e.text=="getInt"){require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.getInt default must be int");e.inferred=Type::Int;}
+          else if(e.text=="touchArea"){
+            require(6);stringAt(0);for(size_t n=1;n<5;++n)if(actual[n]!=Type::Int)throw Error("UI.touchArea coordinates and size must be int");stringAt(5);
+            if(e.elements[5]->kind!=Expr::String)throw Error("UI.touchArea callback must be a string literal naming an AL function");
+            auto callback=functionOverloads.find(e.elements[5]->text);
+            if(callback==functionOverloads.end()||std::none_of(callback->second.begin(),callback->second.end(),[](const Signature& sig){return sig.result==Type::Void&&sig.params.size()==1&&sig.params[0]==Type::String;}))throw Error("UI.touchArea callback must name a void function with one string parameter: "+e.elements[5]->text);
+            e.inferred=Type::Void;
+          }
+          else if(e.text=="frameLoop"){
+            require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.frameLoop FPS must be int");
+            if(e.elements[0]->kind!=Expr::String)throw Error("UI.frameLoop callback must be a string literal naming an AL function");
+            auto callback=functionOverloads.find(e.elements[0]->text);
+            if(callback==functionOverloads.end()||std::none_of(callback->second.begin(),callback->second.end(),[](const Signature& sig){return sig.result==Type::Void&&sig.params.size()==1&&sig.params[0]==Type::String;}))throw Error("UI.frameLoop callback must name a void function with one string parameter: "+e.elements[0]->text);
+            if(e.elements[1]->kind==Expr::Integer&&(e.elements[1]->number<1||e.elements[1]->number>60))throw Error("UI.frameLoop FPS must be between 1 and 60");
+            e.inferred=Type::Void;
+          }
+          else if(e.text=="stopLoop"){require(0);e.inferred=Type::Void;}
+          else if(e.text=="collides"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Bool;}
           else if(e.text=="clear"){require(0);e.inferred=Type::Void;}
           else throw Error("Unknown AL UI API: UI."+e.text);
           e.resolvedFunction="UI."+e.text;break;
@@ -507,7 +525,7 @@ static void verify(const BytecodeProgram& program){
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
         case Op::NewArraySized:if(i.arg!=(int64_t)Type::Int&&i.arg!=(int64_t)Type::String&&i.arg!=(int64_t)Type::Bool&&i.arg!=(int64_t)Type::Float&&i.arg!=(int64_t)Type::Double)throw Error("Invalid sized-array element type");need=1;delta=0;break;
-        case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=i.text=="getInt"?1-(int)i.arg:-(int)i.arg;break;
+        case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=(i.text=="getInt"||i.text=="collides")?1-(int)i.arg:-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
           const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
@@ -552,6 +570,8 @@ struct UiElement { std::string kind,id,text,callback; int64_t x=0,y=0,w=0,h=0,co
 static std::string activeUiTitle="AL Application";
 static std::vector<UiElement> activeUiElements;
 static std::map<std::string,int64_t> activeUiInts;
+static std::string activeFrameCallback;
+static int activeFrameRate=0;
 static std::string jsonEscape(const std::string& value){
   std::string out;for(unsigned char ch:value){switch(ch){
     case '"':out+="\\\"";break;case '\\':out+="\\\\";break;
@@ -560,10 +580,20 @@ static std::string jsonEscape(const std::string& value){
   }}return out;
 }
 static std::string uiJson(){
-  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"elements\":[";
+  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate)+",\"elements\":[";
   for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
     out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+"}";
   }return out+"]}";
+}
+static bool uiElementsCollide(const UiElement& a,const UiElement& b){
+  auto bounds=[](const UiElement& e,std::array<double,4>& out)->bool{
+    if(e.kind=="rect"){out={(double)e.x,(double)e.y,(double)(e.x+e.w),(double)(e.y+e.h)};return true;}
+    if(e.kind=="circle"){double radius=(double)e.w;out={(double)e.x-radius,(double)e.y-radius,(double)e.x+radius,(double)e.y+radius};return true;}
+    return false;
+  };
+  std::array<double,4> left{},right{};
+  if(!bounds(a,left)||!bounds(b,right))return false;
+  return left[0]<right[2]&&left[2]>right[0]&&left[1]<right[3]&&left[3]>right[1];
 }
 static void execute(const BytecodeProgram& program,const std::string& entryName="main",const std::string& eventValue=""){
   verify(program);const auto& functions=program.functions;const auto& classes=program.classes;
@@ -571,13 +601,26 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
   std::vector<Value> stack;
   auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
   size_t entryIndex=0;
-  if(entryName=="main"){activeUiTitle="AL Application";activeUiElements.clear();activeUiInts.clear();}
+  if(entryName=="main"){activeUiTitle="AL Application";activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
   else {
     bool found=false;for(size_t index=1;index<functions.size();++index){const auto& candidate=functions[index];if((candidate.name==entryName||candidate.name.rfind(entryName+"$",0)==0)&&candidate.ownerClassId<0&&candidate.parameterCount==1&&candidate.returnType==Type::Void){if(found)throw Error("Ambiguous UI event handler: "+entryName);entryIndex=index;found=true;}}
     if(!found)throw Error("Unknown UI event handler: "+entryName);
   }
   Frame entry;entry.function=entryIndex;entry.locals.resize(functions[entryIndex].localCount);
-  if(entryName!="main"){if(entry.locals.empty())throw Error("UI event handler has no parameter");entry.locals[0]=eventValue;}
+  if(entryName!="main"){
+    if(entry.locals.empty())throw Error("UI event handler has no parameter");
+    std::string callbackValue=eventValue;
+    if(eventValue.rfind("@touch|",0)==0){
+      size_t first=eventValue.find('|',7),second=first==std::string::npos?first:eventValue.find('|',first+1);
+      if(first==std::string::npos||second==std::string::npos)throw Error("Invalid touch event payload");
+      callbackValue=eventValue.substr(7,first-7);
+      try{
+        activeUiInts["touchX"]=std::stoll(eventValue.substr(first+1,second-first-1));
+        activeUiInts["touchY"]=std::stoll(eventValue.substr(second+1));
+      }catch(...){throw Error("Invalid touch coordinates");}
+    }
+    entry.locals[0]=callbackValue;
+  }
   std::vector<Frame> frames;frames.push_back(std::move(entry));
   while(!frames.empty()){
     Frame& frame=frames.back();const auto& fn=functions[frame.function];if(frame.pc>=fn.code.size())throw Error("Instruction pointer outside function");const auto& i=fn.code[frame.pc++];
@@ -605,7 +648,21 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         else if(i.text=="setText"){std::string id=asString(0),value=show(args[1]);if(auto* e=findElement(id))e->text=value;else throw Error("UI.setText unknown element: "+id);}
         else if(i.text=="setInt")activeUiInts[asString(0)]=asInt(1);
         else if(i.text=="getInt"){auto it=activeUiInts.find(asString(0));stack.emplace_back(it==activeUiInts.end()?asInt(1):it->second);}
-        else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();}
+        else if(i.text=="touchArea"){
+          UiElement area;area.kind="touchArea";area.id=asString(0);area.x=asInt(1);area.y=asInt(2);area.w=asInt(3);area.h=asInt(4);area.callback=asString(5);
+          if(area.w<=0||area.h<=0)throw Error("UI.touchArea width and height must be positive");
+          if(auto* old=findElement(area.id))*old=area;else activeUiElements.push_back(area);
+        }
+        else if(i.text=="frameLoop"){
+          activeFrameCallback=asString(0);activeFrameRate=(int)asInt(1);
+          if(activeFrameRate<1||activeFrameRate>60)throw Error("UI.frameLoop FPS must be between 1 and 60");
+        }
+        else if(i.text=="stopLoop"){activeFrameCallback.clear();activeFrameRate=0;}
+        else if(i.text=="collides"){
+          UiElement* left=findElement(asString(0));UiElement* right=findElement(asString(1));
+          stack.emplace_back(left&&right&&uiElementsCollide(*left,*right));
+        }
+        else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
         else throw Error("Unknown UI opcode: "+i.text);
         break;
       }case Op::Neg:{
