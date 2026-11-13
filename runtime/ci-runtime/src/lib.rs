@@ -1,4 +1,4 @@
-//! CI Runtime: Rust implementation of the ALRM .room v9 virtual machine.
+//! CI Runtime: Rust implementation of the ALRM .room v10 virtual machine.
 //!
 //! AL source is compiled by the C++ compiler. This crate reads, validates and
 //! executes verified bytecode only. It does not parse or evaluate AL source.
@@ -19,8 +19,8 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use zip::ZipArchive;
 
 pub const RUNTIME_API_VERSION: u32 = 1;
-pub const ROOM_FORMAT_VERSION: u32 = 9;
-pub const BUNDLED_VERSION: &str = "2.0.0";
+pub const ROOM_FORMAT_VERSION: u32 = 10;
+pub const BUNDLED_VERSION: &str = "2.1.0";
 
 const TYPE_INT: u32 = 0;
 const TYPE_STRING: u32 = 1;
@@ -30,6 +30,10 @@ const TYPE_STRING_ARRAY: u32 = 4;
 const TYPE_BOOL_ARRAY: u32 = 5;
 const TYPE_VOID: u32 = 6;
 const TYPE_UNKNOWN: u32 = 7;
+const TYPE_FLOAT: u32 = 8;
+const TYPE_DOUBLE: u32 = 9;
+const TYPE_FLOAT_ARRAY: u32 = 10;
+const TYPE_DOUBLE_ARRAY: u32 = 11;
 
 const PUSH_INT: u8 = 1;
 const PUSH_STRING: u8 = 2;
@@ -68,6 +72,8 @@ const SET_FIELD: u8 = 34;
 const DUP: u8 = 35;
 const NEW_ARRAY_SIZED: u8 = 36;
 const UI_CALL: u8 = 37;
+const PUSH_FLOAT: u8 = 38;
+const PUSH_DOUBLE: u8 = 39;
 
 const I64_MIN: i64 = i64::MIN;
 const I64_MAX: i64 = i64::MAX;
@@ -215,8 +221,8 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
         let mut field_types = Vec::with_capacity(field_count);
         for _ in 0..field_count {
             let field_type = reader.u32()?;
-            if !matches!(field_type, TYPE_INT | TYPE_STRING | TYPE_BOOL) {
-                return error("Unsupported object field type in .room v9");
+            if !matches!(field_type, TYPE_INT | TYPE_STRING | TYPE_BOOL | TYPE_FLOAT | TYPE_DOUBLE) {
+                return error("Unsupported object field type in .room v10");
             }
             field_types.push(field_type);
         }
@@ -250,7 +256,7 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
         let mut code = Vec::with_capacity(instruction_count);
         for _ in 0..instruction_count {
             let op = reader.u8()?;
-            if !(PUSH_INT..=UI_CALL).contains(&op) {
+            if !(PUSH_INT..=PUSH_DOUBLE).contains(&op) {
                 return error("Invalid opcode");
             }
             code.push(Instruction { op, arg: reader.i64()?, text: reader.string()? });
@@ -266,12 +272,12 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
 }
 
 fn valid_type(value: u32, class_count: usize) -> bool {
-    value <= TYPE_UNKNOWN || (value >= 100 && ((value - 100) as usize) < class_count)
+    value <= TYPE_DOUBLE_ARRAY || (value >= 100 && ((value - 100) as usize) < class_count)
 }
 
 fn stack_delta(op: u8) -> i64 {
     match op {
-        PUSH_INT | PUSH_STRING | PUSH_BOOL | LOAD | NEW_OBJECT | DUP => 1,
+        PUSH_INT | PUSH_STRING | PUSH_BOOL | PUSH_FLOAT | PUSH_DOUBLE | LOAD | NEW_OBJECT | DUP => 1,
         STORE | JUMP_FALSE | PRINT | POP => -1,
         ADD | SUB | MUL | DIV | MOD | EQ | NE | LT | GT | LE | GE | AND | OR | ARRAY_GET => -1,
         ARRAY_SET => -3,
@@ -362,7 +368,7 @@ fn verify(program: &Program) -> RtResult<()> {
                     delta = 1 - arg;
                 }
                 NEW_ARRAY_SIZED => {
-                    if !matches!(arg, 0 | 1 | 2) {
+                    if !matches!(arg, 0 | 1 | 2 | 8 | 9) {
                         return error("Invalid sized-array element type");
                     }
                     need = 1;
@@ -452,6 +458,8 @@ enum RuntimeValue {
     Bool(bool),
     Array(Rc<RefCell<ArrayValue>>),
     Object(Rc<RefCell<ObjectValue>>),
+    Float(f32),
+    Double(f64),
 }
 
 struct ArrayValue {
@@ -521,6 +529,8 @@ fn value_kind(value: &RuntimeValue) -> usize {
         RuntimeValue::Bool(_) => 2,
         RuntimeValue::Array(_) => 3,
         RuntimeValue::Object(_) => 4,
+        RuntimeValue::Float(_) => 5,
+        RuntimeValue::Double(_) => 6,
     }
 }
 
@@ -529,6 +539,8 @@ fn show_value(value: &RuntimeValue) -> String {
         RuntimeValue::Bool(value) => if *value { "true" } else { "false" }.into(),
         RuntimeValue::Int(value) => value.to_string(),
         RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::Float(value) => value.to_string(),
+        RuntimeValue::Double(value) => value.to_string(),
         RuntimeValue::Array(value) => format!("[array length={}]", value.borrow().items.len()),
         RuntimeValue::Object(_) => "[object]".into(),
     }
@@ -565,6 +577,8 @@ fn same_value(left: &RuntimeValue, right: &RuntimeValue) -> bool {
         (RuntimeValue::Int(a), RuntimeValue::Int(b)) => a == b,
         (RuntimeValue::String(a), RuntimeValue::String(b)) => a == b,
         (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a == b,
+        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => a == b,
+        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => a == b,
         (RuntimeValue::Array(a), RuntimeValue::Array(b)) => Rc::ptr_eq(a, b),
         (RuntimeValue::Object(a), RuntimeValue::Object(b)) => Rc::ptr_eq(a, b),
         _ => false,
@@ -754,6 +768,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                 PUSH_INT => stack.push(RuntimeValue::Int(arg)),
                 PUSH_STRING => stack.push(RuntimeValue::String(instruction.text.clone())),
                 PUSH_BOOL => stack.push(RuntimeValue::Bool(arg != 0)),
+                PUSH_FLOAT => stack.push(RuntimeValue::Float(f32::from_bits(arg as u32))),
+                PUSH_DOUBLE => stack.push(RuntimeValue::Double(f64::from_bits(arg as u64))),
                 LOAD => {
                     let slot = usize::try_from(arg).map_err(|_| RuntimeError("Invalid local slot".into()))?;
                     let value = frames[frame_index].locals.get(slot).and_then(Clone::clone)
@@ -778,9 +794,15 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     ui_call(&instruction, &args, &mut stack, state)?;
                 }
                 NEG => {
-                    let value = expect_int(pop(&mut stack)?)?;
-                    if value == I64_MIN { return error("Integer overflow"); }
-                    stack.push(RuntimeValue::Int(-value));
+                    match pop(&mut stack)? {
+                        RuntimeValue::Int(value) => {
+                            if value == I64_MIN { return error("Integer overflow"); }
+                            stack.push(RuntimeValue::Int(-value));
+                        }
+                        RuntimeValue::Float(value) => stack.push(RuntimeValue::Float(-value)),
+                        RuntimeValue::Double(value) => stack.push(RuntimeValue::Double(-value)),
+                        _ => return error("Unary '-' requires a numeric value"),
+                    }
                 }
                 NOT => {
                     let value = expect_bool(pop(&mut stack)?)?;
@@ -791,25 +813,45 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     let left = pop(&mut stack)?;
                     let value = match (left, right) {
                         (RuntimeValue::String(a), RuntimeValue::String(b)) => RuntimeValue::String(a + &b),
-                        (a, b) => RuntimeValue::Int(checked_add(expect_int(a)?, expect_int(b)?)?),
+                        (RuntimeValue::Int(a), RuntimeValue::Int(b)) => RuntimeValue::Int(checked_add(a, b)?),
+                        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => RuntimeValue::Float(a + b),
+                        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => RuntimeValue::Double(a + b),
+                        _ => return error("Numeric operand type mismatch for +"),
                     };
                     stack.push(value);
                 }
                 SUB | MUL | DIV | MOD => {
-                    let right = expect_int(pop(&mut stack)?)?;
-                    let left = expect_int(pop(&mut stack)?)?;
-                    let result = match op {
-                        SUB => checked_sub(left, right)?,
-                        MUL => checked_mul(left, right)?,
-                        DIV | MOD => {
-                            if right == 0 { return error("Division by zero"); }
-                            if left == I64_MIN && right == -1 { return error("Integer overflow"); }
-                            let quotient = left / right;
-                            if op == DIV { quotient } else { left % right }
+                    let right = pop(&mut stack)?;
+                    let left = pop(&mut stack)?;
+                    let result = match (left, right) {
+                        (RuntimeValue::Int(a), RuntimeValue::Int(b)) => {
+                            let value = match op {
+                                SUB => checked_sub(a, b)?,
+                                MUL => checked_mul(a, b)?,
+                                DIV | MOD => {
+                                    if b == 0 { return error("Division by zero"); }
+                                    if a == I64_MIN && b == -1 { return error("Integer overflow"); }
+                                    if op == DIV { a / b } else { a % b }
+                                }
+                                _ => unreachable!(),
+                            };
+                            RuntimeValue::Int(value)
                         }
-                        _ => unreachable!(),
+                        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => {
+                            if (op == DIV || op == MOD) && b == 0.0 { return error("Division by zero"); }
+                            RuntimeValue::Float(match op {
+                                SUB => a - b, MUL => a * b, DIV => a / b, MOD => a % b, _ => unreachable!()
+                            })
+                        }
+                        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => {
+                            if (op == DIV || op == MOD) && b == 0.0 { return error("Division by zero"); }
+                            RuntimeValue::Double(match op {
+                                SUB => a - b, MUL => a * b, DIV => a / b, MOD => a % b, _ => unreachable!()
+                            })
+                        }
+                        _ => return error("Numeric operand type mismatch"),
                     };
-                    stack.push(RuntimeValue::Int(result));
+                    stack.push(result);
                 }
                 EQ | NE => {
                     let right = pop(&mut stack)?;
@@ -818,14 +860,19 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     stack.push(RuntimeValue::Bool(if op == EQ { equal } else { !equal }));
                 }
                 LT | GT | LE | GE => {
-                    let right = expect_int(pop(&mut stack)?)?;
-                    let left = expect_int(pop(&mut stack)?)?;
-                    let result = match op {
-                        LT => left < right,
-                        GT => left > right,
-                        LE => left <= right,
-                        GE => left >= right,
-                        _ => unreachable!(),
+                    let right = pop(&mut stack)?;
+                    let left = pop(&mut stack)?;
+                    let result = match (left, right) {
+                        (RuntimeValue::Int(a), RuntimeValue::Int(b)) => match op {
+                            LT => a < b, GT => a > b, LE => a <= b, GE => a >= b, _ => unreachable!(),
+                        },
+                        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => match op {
+                            LT => a < b, GT => a > b, LE => a <= b, GE => a >= b, _ => unreachable!(),
+                        },
+                        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => match op {
+                            LT => a < b, GT => a > b, LE => a <= b, GE => a >= b, _ => unreachable!(),
+                        },
+                        _ => return error("Comparison operand type mismatch"),
                     };
                     stack.push(RuntimeValue::Bool(result));
                 }
@@ -861,6 +908,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                         TYPE_INT => (0, RuntimeValue::Int(0)),
                         TYPE_STRING => (1, RuntimeValue::String(String::new())),
                         TYPE_BOOL => (2, RuntimeValue::Bool(false)),
+                        TYPE_FLOAT => (5, RuntimeValue::Float(0.0)),
+                        TYPE_DOUBLE => (6, RuntimeValue::Double(0.0)),
                         _ => return error("Invalid sized-array element type"),
                     };
                     stack.push(RuntimeValue::Array(Rc::new(RefCell::new(ArrayValue {
@@ -910,6 +959,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                         TYPE_INT => Ok(RuntimeValue::Int(0)),
                         TYPE_STRING => Ok(RuntimeValue::String(String::new())),
                         TYPE_BOOL => Ok(RuntimeValue::Bool(false)),
+                        TYPE_FLOAT => Ok(RuntimeValue::Float(0.0)),
+                        TYPE_DOUBLE => Ok(RuntimeValue::Double(0.0)),
                         _ => error("Unsupported object field type"),
                     }).collect::<RtResult<Vec<_>>>()?;
                     stack.push(RuntimeValue::Object(Rc::new(RefCell::new(ObjectValue { class_id, fields }))));
@@ -1394,7 +1445,7 @@ fn install_update(package_path: &str, root: &Path, abi: &str) -> RtResult<JsonVa
     if !version_valid(&manifest.version) { return error("Runtime version must use major.minor.patch"); }
     if manifest.runtime_api_version != RUNTIME_API_VERSION { return error("Runtime API version is not supported"); }
     if !(manifest.room_format_min <= ROOM_FORMAT_VERSION && ROOM_FORMAT_VERSION <= manifest.room_format_max) {
-        return error("Runtime package does not support .room version 9");
+        return error("Runtime package does not support .room version 10");
     }
     let abi_entry_name = abi_library_name(abi)?;
     let mut module_bytes = {
@@ -1628,7 +1679,7 @@ pub extern "C" fn ci_runtime_plugin_free_string(value: *mut c_char) {
 }
 
 pub fn self_test() -> bool {
-    if ROOM_FORMAT_VERSION != 9 || RUNTIME_API_VERSION != 1 { return false; }
+    if ROOM_FORMAT_VERSION != 10 || RUNTIME_API_VERSION != 1 { return false; }
     let sample = test_room_bytes(vec![
         Instruction { op: PUSH_INT, arg: 40, text: String::new() },
         Instruction { op: PUSH_INT, arg: 2, text: String::new() },
@@ -1689,7 +1740,7 @@ mod tests {
     #[test]
     fn rejects_wrong_room_version() {
         let mut bytes = test_room_bytes(vec![Instruction { op: HALT, arg: 0, text: String::new() }]);
-        bytes[4..8].copy_from_slice(&8u32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&9u32.to_le_bytes());
         let error = read_room_bytes(&bytes).unwrap_err();
         assert!(error.0.contains("Unsupported .room version"));
     }
