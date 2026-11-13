@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "ci-runtime-v*"
+    branches:
+      - "runtime-release/2.0.1"
   workflow_dispatch:
     inputs:
       version:
@@ -42,8 +44,10 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             VERSION="${{ inputs.version }}"
-          else
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#ci-runtime-v}"
+          else
+            VERSION="2.0.1"
           fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Runtime version must be major.minor.patch"
@@ -70,5 +74,6 @@ jobs:
               "dist/ci-runtime-$VERSION.ciruntime" \
               "dist/ci-runtime-$VERSION.ciruntime.sha256" \
               --title "Rust CI Runtime $VERSION" \
+              --target "$GITHUB_SHA" \
               --notes "Rust CI Runtime package. Runtime API 1; .room format 9; Android ABIs arm64-v8a and armeabi-v7a."
           fi
