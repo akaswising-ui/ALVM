@@ -395,6 +395,65 @@ async function decodeRoom(file: File): Promise<Program> {
   return { code: parsed.code, vars: parsed.vars };
 }
 
+
+const alKeywordTokens = new Set([
+  'Room', 'room', 'class', 'interface', 'abstract', 'extends', 'implements',
+  'public', 'private', 'protected', 'static', 'final', 'new', 'this', 'super',
+  'void', 'int', 'float', 'double', 'long', 'short', 'byte', 'boolean',
+  'char', 'string', 'String', 'var', 'const', 'if', 'else', 'switch',
+  'case', 'default', 'while', 'do', 'for', 'foreach', 'break', 'continue',
+  'return', 'try', 'catch', 'finally', 'throw', 'throws', 'import',
+  'package', 'enum'
+]);
+const alLiteralTokens = new Set(['true', 'false', 'null']);
+const alTypeTokens = new Set([
+  'int', 'float', 'double', 'long', 'short', 'byte', 'boolean', 'char',
+  'string', 'String', 'void'
+]);
+const alApiTokens = new Set(['AL', 'UI', 'Game', 'Chess', 'Math', 'Files', 'Audio']);
+
+function highlightAL(source: string): Array<string | JSX.Element> {
+  const pattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|==|!=|<=|>=|\+=|-=|\*=|\/=|\+\+|--|&&|\|\||[{}()\[\];,.+\-*/%!=<>]/g;
+  const output: Array<string | JSX.Element> = [];
+  let cursor = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(source)) !== null) {
+    const token = match[0];
+    const start = match.index;
+    if (start > cursor) output.push(source.slice(cursor, start));
+
+    let tokenClass = 'syntax-plain';
+    if (token.startsWith('//') || token.startsWith('/*')) {
+      tokenClass = 'syntax-comment';
+    } else if (token.startsWith('"') || token.startsWith("'")) {
+      tokenClass = 'syntax-string';
+    } else if (alLiteralTokens.has(token)) {
+      tokenClass = 'syntax-literal';
+    } else if (alKeywordTokens.has(token)) {
+      tokenClass = alTypeTokens.has(token) ? 'syntax-type' : 'syntax-keyword';
+    } else if (alApiTokens.has(token)) {
+      tokenClass = 'syntax-api';
+    } else if (/^\d/.test(token)) {
+      tokenClass = 'syntax-number';
+    } else if (/^[A-Za-z_]/.test(token)) {
+      const afterToken = source.slice(start + token.length);
+      tokenClass = /^\s*\(/.test(afterToken) ? 'syntax-function' : 'syntax-identifier';
+    } else if (/^(?:==|!=|<=|>=|\+=|-=|\*=|\/=|\+\+|--|&&|\|\||[+\-*/%!=<>])$/.test(token)) {
+      tokenClass = 'syntax-operator';
+    } else {
+      tokenClass = 'syntax-punctuation';
+    }
+
+    output.push(<span className={tokenClass} key={key++}>{token}</span>);
+    cursor = start + token.length;
+  }
+
+  if (cursor < source.length) output.push(source.slice(cursor));
+  return output;
+}
+
 export default function App() {
   const [source, setSource] = useState(() => localStorage.getItem('alvm-source') || sample);
   const [filename, setFilename] = useState('Main.al');
@@ -438,7 +497,20 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [activeControl, gameScene?.controls]);
   const fileInput = useRef<HTMLInputElement>(null);
+  const editorInputRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLPreElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
   const lineCount = useMemo(() => source.split('\n').length, [source]);
+  const highlightedSource = useMemo(() => highlightAL(source), [source]);
+  const syncEditorScroll = () => {
+    const editor = editorInputRef.current;
+    if (!editor) return;
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = editor.scrollTop;
+      highlightRef.current.scrollLeft = editor.scrollLeft;
+    }
+    if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = editor.scrollTop;
+  };
   const log = (lines: string[], nextStatus = 'READY') => { setOutput(lines); setStatus(nextStatus); };
 
   const compile = () => {
@@ -608,8 +680,26 @@ export default function App() {
             </div>
           ) : (
             <div className="editor-area">
-              <div className="line-numbers">{Array.from({ length: lineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div>
-              <textarea aria-label="AL source editor" spellCheck={false} autoCapitalize="off" autoCorrect="off" value={source} onChange={event => { setSource(event.target.value); setCompiled(null); localStorage.setItem('alvm-source', event.target.value); }} />
+              <div className="line-numbers" ref={lineNumbersRef}>{Array.from({ length: lineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div>
+              <div className="editor-stack">
+                <pre className="syntax-highlight" ref={highlightRef} aria-hidden="true">{highlightedSource}</pre>
+                <textarea
+                  ref={editorInputRef}
+                  className="source-input"
+                  aria-label="AL source editor"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  value={source}
+                  onScroll={syncEditorScroll}
+                  onChange={event => {
+                    setSource(event.target.value);
+                    setCompiled(null);
+                    localStorage.setItem('alvm-source', event.target.value);
+                  }}
+                />
+              </div>
             </div>
           )}
           <div className="action-bar">
