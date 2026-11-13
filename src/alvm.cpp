@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cmath>
+#include <cstring>
+#include <iomanip>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -9,6 +12,7 @@
 #include <optional>
 #include <queue>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <variant>
@@ -28,7 +32,14 @@ static std::vector<Token> lex(const std::string& src) {
     if(c=='/' && i+1<src.size() && src[i+1]=='*'){int sl=line,sc=col;advance();advance();bool closed=false;while(i<src.size()){if(src[i]=='*'&&i+1<src.size()&&src[i+1]=='/'){advance();advance();closed=true;break;}advance();}if(!closed)throw Error("Unterminated block comment at "+std::to_string(sl)+":"+std::to_string(sc));continue;}
     int sl=line,sc=col; std::string t;
     if(std::isalpha(static_cast<unsigned char>(c))||c=='_'){while(i<src.size()&&(std::isalnum(static_cast<unsigned char>(src[i]))||src[i]=='_'))t+=advance();}
-    else if(std::isdigit(static_cast<unsigned char>(c))){while(i<src.size()&&std::isdigit(static_cast<unsigned char>(src[i])))t+=advance();}
+    else if(std::isdigit(static_cast<unsigned char>(c))){
+      while(i<src.size()&&std::isdigit(static_cast<unsigned char>(src[i])))t+=advance();
+      if(i+1<src.size()&&src[i]=='.'&&std::isdigit(static_cast<unsigned char>(src[i+1]))){
+        t+=advance();
+        while(i<src.size()&&std::isdigit(static_cast<unsigned char>(src[i])))t+=advance();
+        if(i<src.size()&&(src[i]=='f'||src[i]=='F'||src[i]=='d'||src[i]=='D'))t+=advance();
+      }
+    }
     else if(c=='"'){advance();bool closed=false;while(i<src.size()){char x=advance();if(x=='"'){closed=true;break;}if(x=='\\'){if(i>=src.size())break;char e=advance();switch(e){case 'n':t+='\n';break;case 't':t+='\t';break;case 'r':t+='\r';break;case '"':t+='"';break;case '\\':t+='\\';break;default:throw Error("Unknown string escape at "+std::to_string(line)+":"+std::to_string(col));}}else t+=x;}if(!closed)throw Error("Unterminated string at "+std::to_string(sl)+":"+std::to_string(sc));t="\x01"+t;}
     else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||","++","--","+=","-=","*=","/="}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.[],:").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
     out.push_back({t,sl,sc});
@@ -36,18 +47,18 @@ static std::vector<Token> lex(const std::string& src) {
   out.push_back({"<eof>",line,col});return out;
 }
 
-enum class Type : int { Int, String, Bool, IntArray, StringArray, BoolArray, Void, Unknown, UserBase=100 };
+enum class Type : int { Int=0, String=1, Bool=2, IntArray=3, StringArray=4, BoolArray=5, Void=6, Unknown=7, Float=8, Double=9, FloatArray=10, DoubleArray=11, UserBase=100 };
 static std::vector<std::string> userTypeNames;
 static std::map<std::string,Type> userTypeMap;
 static Type registerUserType(const std::string& name){auto f=userTypeMap.find(name);if(f!=userTypeMap.end())return f->second;Type t=(Type)(100+(int)userTypeNames.size());userTypeNames.push_back(name);userTypeMap[name]=t;return t;}
 static bool isUserType(Type t){return (int)t>=100&&(int)t<100+(int)userTypeNames.size();}
-static std::string typeName(Type t){switch(t){case Type::Int:return"int";case Type::String:return"string";case Type::Bool:return"boolean";case Type::IntArray:return"int[]";case Type::StringArray:return"string[]";case Type::BoolArray:return"boolean[]";case Type::Void:return"void";default:if(isUserType(t))return userTypeNames[(int)t-100];return"unknown";}}
-static bool isArray(Type t){return t==Type::IntArray||t==Type::StringArray||t==Type::BoolArray;}
-static Type arrayOf(Type t){if(t==Type::Int)return Type::IntArray;if(t==Type::String)return Type::StringArray;if(t==Type::Bool)return Type::BoolArray;return Type::Unknown;}
-static Type elementOf(Type t){if(t==Type::IntArray)return Type::Int;if(t==Type::StringArray)return Type::String;if(t==Type::BoolArray)return Type::Bool;return Type::Unknown;}
+static std::string typeName(Type t){switch(t){case Type::Int:return"int";case Type::String:return"string";case Type::Bool:return"boolean";case Type::Float:return"float";case Type::Double:return"double";case Type::IntArray:return"int[]";case Type::StringArray:return"string[]";case Type::BoolArray:return"boolean[]";case Type::FloatArray:return"float[]";case Type::DoubleArray:return"double[]";case Type::Void:return"void";default:if(isUserType(t))return userTypeNames[(int)t-100];return"unknown";}}
+static bool isArray(Type t){return t==Type::IntArray||t==Type::StringArray||t==Type::BoolArray||t==Type::FloatArray||t==Type::DoubleArray;}
+static Type arrayOf(Type t){if(t==Type::Int)return Type::IntArray;if(t==Type::String)return Type::StringArray;if(t==Type::Bool)return Type::BoolArray;if(t==Type::Float)return Type::FloatArray;if(t==Type::Double)return Type::DoubleArray;return Type::Unknown;}
+static Type elementOf(Type t){if(t==Type::IntArray)return Type::Int;if(t==Type::StringArray)return Type::String;if(t==Type::BoolArray)return Type::Bool;if(t==Type::FloatArray)return Type::Float;if(t==Type::DoubleArray)return Type::Double;return Type::Unknown;}
 struct Expr {
-  enum Kind { Integer, String, Boolean, Variable, This, NewObject, NewArray, FieldAccess, MethodCall, Unary, Binary, ArrayLiteral, Index, Length, Call } kind;
-  Token token; int64_t number=0; bool boolean=false; std::string text; std::unique_ptr<Expr> left,right; std::vector<std::unique_ptr<Expr>> elements; Type inferred=Type::Unknown; std::string resolvedFunction; int resolvedField=-1;
+  enum Kind { Integer, Floating, String, Boolean, Variable, This, NewObject, NewArray, FieldAccess, MethodCall, Unary, Binary, ArrayLiteral, Index, Length, Call } kind;
+  Token token; int64_t number=0; double real=0.0; bool boolean=false; std::string text; std::unique_ptr<Expr> left,right; std::vector<std::unique_ptr<Expr>> elements; Type inferred=Type::Unknown; std::string resolvedFunction; int resolvedField=-1;
 };
 struct Stmt {
   enum Kind { Block, Declare, Assign, ArrayAssign, FieldAssign, ExprStatement, Print, Return, If, While, DoWhile, For, Foreach, Switch, SuperCall, Break, Continue } kind;
@@ -74,8 +85,22 @@ class Parser {
   void need(const std::string& s){if(!eat(s))throw Error("Expected '"+s+"' at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
   std::unique_ptr<Expr> node(Expr::Kind k,Token tk){auto x=std::make_unique<Expr>();x->kind=k;x->token=std::move(tk);return x;}
   std::unique_ptr<Stmt> stmtNode(Stmt::Kind k,Token tk){auto x=std::make_unique<Stmt>();x->kind=k;x->token=std::move(tk);return x;}
-  Type parseType(){Type t;if(eat("int"))t=Type::Int;else if(eat("string"))t=Type::String;else if(eat("boolean"))t=Type::Bool;else if(eat("void"))t=Type::Void;else{auto f=userTypeMap.find(cur());if(f==userTypeMap.end())throw Error("Unknown type at "+std::to_string(tok().line)+":"+std::to_string(tok().col));t=f->second;take();}if(eat("[")){need("]");t=arrayOf(t);if(t==Type::Unknown)throw Error("Unsupported array element type");}return t;}
-  std::unique_ptr<Expr> primary(){Token tk=tok();std::unique_ptr<Expr> x;if(cur().size()&&std::isdigit(static_cast<unsigned char>(cur()[0]))){take();x=node(Expr::Integer,tk);try{x->number=std::stoll(tk.text);}catch(...){throw Error("Integer literal out of range at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}}else if(cur().size()&&cur()[0]=='\x01'){take();x=node(Expr::String,tk);x->text=tk.text.substr(1);}else if(eat("true")||eat("false")){x=node(Expr::Boolean,tk);x->boolean=tk.text=="true";}else if(eat("(")){x=expression();need(")");}else if(eat("[")){x=node(Expr::ArrayLiteral,tk);if(cur()!="]"){do{x->elements.push_back(expression());}while(eat(","));}need("]");}else if(eat("new")){Token cls=take();if(cls.text=="int"||cls.text=="string"||cls.text=="boolean"){need("[");x=node(Expr::NewArray,tk);x->text=cls.text;x->left=expression();need("]");}else{auto it=userTypeMap.find(cls.text);if(it==userTypeMap.end())throw Error("Unknown class: "+cls.text);x=node(Expr::NewObject,tk);x->text=cls.text;need("(");if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}}else if(eat("this")){x=node(Expr::This,tk);x->text="this";}else if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){take();if(eat("(")){x=node(Expr::Call,tk);x->text=tk.text;if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}else{x=node(Expr::Variable,tk);x->text=tk.text;}}else throw Error("Expected expression at "+std::to_string(tok().line)+":"+std::to_string(tok().col));while(true){if(eat("[")){Token it=tok();auto idx=node(Expr::Index,it);idx->left=std::move(x);idx->right=expression();need("]");x=std::move(idx);}else if(eat(".")){Token it=take();if(it.text=="length"){auto len=node(Expr::Length,it);len->left=std::move(x);x=std::move(len);}else if(eat("(")){auto call=node(Expr::MethodCall,it);call->text=it.text;call->left=std::move(x);if(cur()!=")"){do{call->elements.push_back(expression());}while(eat(","));}need(")");x=std::move(call);}else{auto field=node(Expr::FieldAccess,it);field->left=std::move(x);field->text=it.text;x=std::move(field);}}else break;}return x;}
+  Type parseType(){Type t;if(eat("int"))t=Type::Int;else if(eat("string"))t=Type::String;else if(eat("boolean"))t=Type::Bool;else if(eat("float"))t=Type::Float;else if(eat("double"))t=Type::Double;else if(eat("void"))t=Type::Void;else{auto f=userTypeMap.find(cur());if(f==userTypeMap.end())throw Error("Unknown type at "+std::to_string(tok().line)+":"+std::to_string(tok().col));t=f->second;take();}if(eat("[")){need("]");t=arrayOf(t);if(t==Type::Unknown)throw Error("Unsupported array element type");}return t;}
+  std::unique_ptr<Expr> primary(){Token tk=tok();std::unique_ptr<Expr> x;if(cur().size()&&std::isdigit(static_cast<unsigned char>(cur()[0]))){
+      take();
+      if(tk.text.find('.')!=std::string::npos){
+        x=node(Expr::Floating,tk);
+        std::string literal=tk.text;
+        char suffix=literal.back();
+        if(suffix=='f'||suffix=='F'||suffix=='d'||suffix=='D')literal.pop_back();
+        try{x->real=std::stod(literal);if(!std::isfinite(x->real))throw std::runtime_error("non-finite");}
+        catch(...){throw Error("Invalid floating-point literal at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}
+        x->text=(suffix=='f'||suffix=='F')?"float":"double";
+      }else{
+        x=node(Expr::Integer,tk);
+        try{x->number=std::stoll(tk.text);}catch(...){throw Error("Integer literal out of range at "+std::to_string(tk.line)+":"+std::to_string(tk.col));}
+      }
+    }else if(cur().size()&&cur()[0]=='\x01'){take();x=node(Expr::String,tk);x->text=tk.text.substr(1);}else if(eat("true")||eat("false")){x=node(Expr::Boolean,tk);x->boolean=tk.text=="true";}else if(eat("(")){x=expression();need(")");}else if(eat("[")){x=node(Expr::ArrayLiteral,tk);if(cur()!="]"){do{x->elements.push_back(expression());}while(eat(","));}need("]");}else if(eat("new")){Token cls=take();if(cls.text=="int"||cls.text=="string"||cls.text=="boolean"||cls.text=="float"||cls.text=="double"){need("[");x=node(Expr::NewArray,tk);x->text=cls.text;x->left=expression();need("]");}else{auto it=userTypeMap.find(cls.text);if(it==userTypeMap.end())throw Error("Unknown class: "+cls.text);x=node(Expr::NewObject,tk);x->text=cls.text;need("(");if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}}else if(eat("this")){x=node(Expr::This,tk);x->text="this";}else if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){take();if(eat("(")){x=node(Expr::Call,tk);x->text=tk.text;if(cur()!=")"){do{x->elements.push_back(expression());}while(eat(","));}need(")");}else{x=node(Expr::Variable,tk);x->text=tk.text;}}else throw Error("Expected expression at "+std::to_string(tok().line)+":"+std::to_string(tok().col));while(true){if(eat("[")){Token it=tok();auto idx=node(Expr::Index,it);idx->left=std::move(x);idx->right=expression();need("]");x=std::move(idx);}else if(eat(".")){Token it=take();if(it.text=="length"){auto len=node(Expr::Length,it);len->left=std::move(x);x=std::move(len);}else if(eat("(")){auto call=node(Expr::MethodCall,it);call->text=it.text;call->left=std::move(x);if(cur()!=")"){do{call->elements.push_back(expression());}while(eat(","));}need(")");x=std::move(call);}else{auto field=node(Expr::FieldAccess,it);field->left=std::move(x);field->text=it.text;x=std::move(field);}}else break;}return x;}
   std::unique_ptr<Expr> unary(){if(cur()=="!"||cur()=="-"){Token tk=take();auto x=node(Expr::Unary,tk);x->text=tk.text;x->left=unary();return x;}return primary();}
   template<class Next> std::unique_ptr<Expr> binary(Next next,const std::vector<std::string>& ops){auto x=(this->*next)();while(std::find(ops.begin(),ops.end(),cur())!=ops.end()){Token tk=take();auto n=node(Expr::Binary,tk);n->text=tk.text;n->left=std::move(x);n->right=(this->*next)();x=std::move(n);}return x;}
   std::unique_ptr<Expr> factor(){return binary(&Parser::unary,{"*","/","%"});}
@@ -85,7 +110,7 @@ class Parser {
   std::unique_ptr<Expr> logicalAnd(){return binary(&Parser::equality,{"&&"});}
   std::unique_ptr<Expr> logicalOr(){return binary(&Parser::logicalAnd,{"||"});}
   std::unique_ptr<Expr> expression(){return logicalOr();}
-  bool isType(){return cur()=="int"||cur()=="string"||cur()=="boolean"||cur()=="var"||userTypeMap.count(cur())!=0;}
+  bool isType(){return cur()=="int"||cur()=="string"||cur()=="boolean"||cur()=="float"||cur()=="double"||cur()=="var"||userTypeMap.count(cur())!=0;}
   std::unique_ptr<Stmt> block(){Token tk=tok();need("{");auto b=stmtNode(Stmt::Block,tk);while(cur()!="}"&&cur()!="<eof>")b->children.push_back(statement());need("}");return b;}
   std::unique_ptr<Stmt> declaration(bool semicolon=true){Token tk=tok();Type ty=Type::Unknown;if(eat("var"))ty=Type::Unknown;else ty=parseType();auto s=stmtNode(Stmt::Declare,tk);s->declared=ty;s->name=take().text;if(s->name=="<eof>")throw Error("Expected variable name");need("=");s->expr=expression();if(semicolon)need(";");return s;}
   std::unique_ptr<Stmt> assignment(bool semicolon=true){
@@ -200,6 +225,7 @@ class SemanticAnalyzer {
   Type checkExpr(Expr& e){
     switch(e.kind){
       case Expr::Integer:e.inferred=Type::Int;break;
+      case Expr::Floating:e.inferred=e.text=="float"?Type::Float:Type::Double;break;
       case Expr::String:e.inferred=Type::String;break;
       case Expr::Boolean:e.inferred=Type::Bool;break;
       case Expr::Variable:e.inferred=lookup(e.text);break;
@@ -234,12 +260,12 @@ class SemanticAnalyzer {
         }
         Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:it->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for method: "+e.text);if(ambiguous)throw Error("Ambiguous overload for method: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
       case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto found=functionOverloads.find(e.text);if(found==functionOverloads.end())throw Error("Unknown function: "+e.text);std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:found->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for function: "+e.text);if(ambiguous)throw Error("Ambiguous overload for function: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
-      case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool)throw Error("Array elements must be int, string or boolean");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}
-      case Expr::NewArray:{Type item=e.text=="int"?Type::Int:e.text=="string"?Type::String:Type::Bool;if(checkExpr(*e.left)!=Type::Int)throw Error("Array length must be int");e.inferred=arrayOf(item);break;}
+      case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool&&item!=Type::Float&&item!=Type::Double)throw Error("Array elements must have one supported scalar type");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}
+      case Expr::NewArray:{Type item=e.text=="int"?Type::Int:e.text=="string"?Type::String:e.text=="float"?Type::Float:e.text=="double"?Type::Double:Type::Bool;if(checkExpr(*e.left)!=Type::Int)throw Error("Array length must be int");e.inferred=arrayOf(item);break;}
       case Expr::Index:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error("Indexing requires an array");if(checkExpr(*e.right)!=Type::Int)throw Error("Array index must be int");e.inferred=elementOf(base);break;}
       case Expr::Length:{Type base=checkExpr(*e.left);if(!isArray(base))throw Error(".length requires an array");e.inferred=Type::Int;break;}
-      case Expr::Unary:{Type x=checkExpr(*e.left);if(e.text=="-"&&x!=Type::Int)throw Error("Unary '-' requires int");if(e.text=="!"&&x!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?Type::Int:Type::Bool;break;}
-      case Expr::Binary:{Type x=checkExpr(*e.left),y=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&x==Type::String&&y==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(x!=Type::Int||y!=Type::Int)throw Error("Operator '"+op+"' requires int operands");e.inferred=Type::Int;}else if(op=="<"||op==">"||op=="<="||op==">="){if(x!=Type::Int||y!=Type::Int)throw Error("Comparison '"+op+"' requires int operands");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(x!=y&&!(isAssignable(x,y)||isAssignable(y,x)))throw Error("Equality operands must have compatible types");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(x!=Type::Bool||y!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}
+      case Expr::Unary:{Type x=checkExpr(*e.left);if(e.text=="-"&&x!=Type::Int&&x!=Type::Float&&x!=Type::Double)throw Error("Unary '-' requires numeric type");if(e.text=="!"&&x!=Type::Bool)throw Error("Unary '!' requires boolean");e.inferred=e.text=="-"?x:Type::Bool;break;}
+      case Expr::Binary:{Type x=checkExpr(*e.left),y=checkExpr(*e.right);const auto& op=e.text;if(op=="+"&&x==Type::String&&y==Type::String)e.inferred=Type::String;else if(op=="+"||op=="-"||op=="*"||op=="/"||op=="%"){if(x!=y||(x!=Type::Int&&x!=Type::Float&&x!=Type::Double))throw Error("Operator '"+op+"' requires matching numeric operand types");e.inferred=x;}else if(op=="<"||op==">"||op=="<="||op==">="){if(x!=y||(x!=Type::Int&&x!=Type::Float&&x!=Type::Double))throw Error("Comparison '"+op+"' requires matching numeric operand types");e.inferred=Type::Bool;}else if(op=="=="||op=="!="){if(x!=y&&!(isAssignable(x,y)||isAssignable(y,x)))throw Error("Equality operands must have compatible types");e.inferred=Type::Bool;}else if(op=="&&"||op=="||"){if(x!=Type::Bool||y!=Type::Bool)throw Error("Logical operator requires boolean operands");e.inferred=Type::Bool;}else throw Error("Unsupported operator: "+op);break;}
     }
     return e.inferred;
   }
@@ -277,7 +303,7 @@ public:
         info.baseType=parent->second.type;info.fieldSlots=parent->second.fieldSlots;info.fieldTypes=parent->second.fieldTypes;info.methods=parent->second.methods;
       }
       for(const auto& field:cls.fields){
-        if(field.type==Type::Void||isArray(field.type)||isUserType(field.type))throw Error("Class fields currently support scalar int, string or boolean types only");
+        if(field.type==Type::Void||isArray(field.type)||isUserType(field.type))throw Error("Class fields currently support scalar primitive types only");
         if(info.fieldSlots.count(field.name))throw Error("Field '"+field.name+"' conflicts with an inherited field in "+cls.name);
         info.fieldSlots[field.name]=(int)info.fieldTypes.size();info.fieldTypes.push_back(field.type);
       }
@@ -303,7 +329,7 @@ public:
     currentClass.clear();
   }
 };
-enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField,Dup,NewArraySized,UiCall };
+enum class Op : uint8_t { PushInt=1,PushString,PushBool,Load,Store,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Gt,Le,Ge,And,Or,Jump,JumpFalse,Print,Pop,Halt,NewArray,ArrayGet,ArraySet,ArrayLength,Call,Ret,NewObject,GetField,SetField,Dup,NewArraySized,UiCall,PushFloat,PushDouble };
 struct IR { Op op; int64_t arg=0; std::string text; };
 struct ClassIR { std::string name; int32_t baseClassId=-1; std::vector<Type> fieldTypes; };
 struct FunctionIR { std::string name; std::string ownerClass; int32_t ownerClassId=-1; Type returnType=Type::Void; uint32_t parameterCount=0; uint32_t localCount=0; std::vector<IR> code; };
@@ -320,12 +346,17 @@ class IRGenerator {
   void expression(const Expr& e){
     switch(e.kind){
       case Expr::Integer:emit(Op::PushInt,e.number);break;
+      case Expr::Floating:{
+        if(e.text=="float"){float value=(float)e.real;uint32_t bits=0;std::memcpy(&bits,&value,sizeof(bits));emit(Op::PushFloat,(int64_t)bits);}
+        else{uint64_t bits=0;std::memcpy(&bits,&e.real,sizeof(bits));emit(Op::PushDouble,(int64_t)bits);}
+        break;
+      }
       case Expr::String:emit(Op::PushString,0,e.text);break;
       case Expr::Boolean:emit(Op::PushBool,e.boolean?1:0);break;
       case Expr::Variable:emit(Op::Load,slots.at(e.text));break;
       case Expr::This:emit(Op::Load,slots.at("this"));break;
       case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));emit(Op::Dup);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
-      case Expr::NewArray:expression(*e.left);emit(Op::NewArraySized,e.text=="int"?(int64_t)Type::Int:e.text=="string"?(int64_t)Type::String:(int64_t)Type::Bool);break;
+      case Expr::NewArray:expression(*e.left);emit(Op::NewArraySized,e.text=="int"?(int64_t)Type::Int:e.text=="string"?(int64_t)Type::String:e.text=="float"?(int64_t)Type::Float:e.text=="double"?(int64_t)Type::Double:(int64_t)Type::Bool);break;
       case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
       case Expr::MethodCall:if(e.resolvedFunction.rfind("UI.",0)==0){for(const auto& arg:e.elements)expression(*arg);emit(Op::UiCall,(int64_t)e.elements.size(),e.text);}else{expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));}break;
       case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
@@ -416,7 +447,7 @@ static void writeString(std::ofstream& f,const std::string& value){if(value.size
 static std::string readString(std::ifstream& f){uint32_t n=readU32(f);if(n>1000000)throw Error("String length limit exceeded");std::string value(n,'\0');if(n){f.read(value.data(),n);if((uint32_t)f.gcount()!=n)throw Error("Truncated string in .room file");}return value;}
 static void saveRoom(const std::string& path,const BytecodeProgram& program){
   std::ofstream f(path,std::ios::binary);if(!f)throw Error("Cannot create output file");
-  f.write("ALRM",4);writeU32(f,9);writeU32(f,(uint32_t)program.classes.size());
+  f.write("ALRM",4);writeU32(f,10);writeU32(f,(uint32_t)program.classes.size());
   for(const auto& cls:program.classes){writeString(f,cls.name);writeU32(f,(uint32_t)cls.baseClassId);writeU32(f,(uint32_t)cls.fieldTypes.size());for(Type type:cls.fieldTypes)writeU32(f,(uint32_t)type);}
   writeU32(f,(uint32_t)program.functions.size());
   for(const auto& fn:program.functions){
@@ -428,15 +459,15 @@ static void saveRoom(const std::string& path,const BytecodeProgram& program){
 static BytecodeProgram loadRoom(const std::string& path){
   std::ifstream f(path,std::ios::binary);if(!f)throw Error("Cannot open .room file");
   char magic[4];f.read(magic,4);if(f.gcount()!=4||std::string(magic,4)!="ALRM")throw Error("Invalid .room magic");
-  if(readU32(f)!=9)throw Error("Unsupported .room version (expected 9)");
+  if(readU32(f)!=10)throw Error("Unsupported .room version (expected 10)");
   BytecodeProgram program;uint32_t classCount=readU32(f);if(classCount>10000)throw Error("Class count limit exceeded");
-  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Bool)throw Error("Only scalar class fields are supported in .room v6");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
+  for(uint32_t i=0;i<classCount;++i){ClassBC cls;cls.name=readString(f);cls.baseClassId=(int32_t)readU32(f);if(cls.baseClassId < -1 || (cls.baseClassId>=0&&(uint32_t)cls.baseClassId>=i))throw Error("Invalid or forward class inheritance reference");uint32_t fields=readU32(f);if(fields>100000)throw Error("Class field count limit exceeded");for(uint32_t j=0;j<fields;++j){uint32_t type=readU32(f);if(type>(uint32_t)Type::Double)throw Error("Unsupported class field type in .room v10");cls.fieldTypes.push_back((Type)type);}program.classes.push_back(std::move(cls));}
   uint32_t n=readU32(f);if(n==0||n>10000)throw Error("Invalid function count");program.functions.reserve(n);
   for(uint32_t j=0;j<n;++j){
     FunctionBC fn;fn.name=readString(f);fn.ownerClassId=(int32_t)readU32(f);uint32_t ty=readU32(f);if(ty>100000||(ty>=100&&ty-100>=classCount)||(ty>(uint32_t)Type::Unknown&&ty<100))throw Error("Invalid function return type");fn.returnType=(Type)ty;
     fn.parameterCount=readU32(f);fn.localCount=readU32(f);if(fn.parameterCount>fn.localCount||fn.localCount>100000)throw Error("Invalid function local/parameter count");
     uint32_t count=readU32(f);if(count==0||count>1000000)throw Error("Invalid instruction count");fn.code.reserve(count);
-    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::UiCall)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
+    for(uint32_t k=0;k<count;++k){int op=f.get();if(op<1||op>(int)Op::PushDouble)throw Error("Invalid opcode");int64_t arg=(int64_t)readU64(f);std::string text=readString(f);fn.code.push_back({(Op)op,arg,std::move(text)});}
     program.functions.push_back(std::move(fn));
   }
   if(f.peek()!=EOF)throw Error("Unexpected trailing bytes in .room file");
@@ -444,7 +475,7 @@ static BytecodeProgram loadRoom(const std::string& path){
 }
 static int stackDelta(Op op){
   switch(op){
-    case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::Load:case Op::NewObject:return 1;
+    case Op::PushInt:case Op::PushString:case Op::PushBool:case Op::PushFloat:case Op::PushDouble:case Op::Load:case Op::NewObject:return 1;
     case Op::Store:case Op::JumpFalse:case Op::Print:case Op::Pop:return -1;
     case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:return -1;
     case Op::ArraySet:return -3;
@@ -475,7 +506,7 @@ static void verify(const BytecodeProgram& program){
         case Op::Add:case Op::Sub:case Op::Mul:case Op::Div:case Op::Mod:case Op::Eq:case Op::Ne:case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:case Op::And:case Op::Or:case Op::ArrayGet:case Op::SetField:need=2;break;
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
-        case Op::NewArraySized:if(i.arg<(int64_t)Type::Int||i.arg>(int64_t)Type::Bool)throw Error("Invalid sized-array element type");need=1;delta=0;break;
+        case Op::NewArraySized:if(i.arg!=(int64_t)Type::Int&&i.arg!=(int64_t)Type::String&&i.arg!=(int64_t)Type::Bool&&i.arg!=(int64_t)Type::Float&&i.arg!=(int64_t)Type::Double)throw Error("Invalid sized-array element type");need=1;delta=0;break;
         case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=i.text=="getInt"?1-(int)i.arg:-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
@@ -499,11 +530,19 @@ struct Array;
 struct Object;
 using ArrayPtr=std::shared_ptr<Array>;
 using ObjectPtr=std::shared_ptr<Object>;
-using Value=std::variant<int64_t,std::string,bool,ArrayPtr,ObjectPtr>;
+using Value=std::variant<int64_t,std::string,bool,ArrayPtr,ObjectPtr,float,double>;
 struct Array { std::vector<Value> items; size_t elementKind=std::numeric_limits<size_t>::max(); };
 struct Object { size_t classId=0; std::vector<Value> fields; };
 static bool isInstanceOf(size_t actual,size_t expected,const std::vector<ClassBC>& classes){while(actual<classes.size()){if(actual==expected)return true;int32_t parent=classes[actual].baseClassId;if(parent<0)return false;actual=(size_t)parent;}return false;}
-static std::string show(const Value& v){if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);if(auto x=std::get_if<std::string>(&v))return *x;if(auto x=std::get_if<bool>(&v))return *x?"true":"false";if(auto a=std::get_if<ArrayPtr>(&v))return "[array length="+std::to_string((*a)->items.size())+"]";return "[object]";}
+static std::string show(const Value& v){
+  if(auto x=std::get_if<int64_t>(&v))return std::to_string(*x);
+  if(auto x=std::get_if<std::string>(&v))return *x;
+  if(auto x=std::get_if<bool>(&v))return *x?"true":"false";
+  if(auto x=std::get_if<float>(&v)){std::ostringstream out;out<<std::setprecision(7)<<*x;return out.str();}
+  if(auto x=std::get_if<double>(&v)){std::ostringstream out;out<<std::setprecision(15)<<*x;return out.str();}
+  if(auto a=std::get_if<ArrayPtr>(&v))return "[array length="+std::to_string((*a)->items.size())+"]";
+  return "[object]";
+}
 static int64_t integer(const Value& v){if(auto x=std::get_if<int64_t>(&v))return *x;throw Error("Runtime type error: expected int");}
 static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;throw Error("Runtime type error: expected boolean");}
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
@@ -547,6 +586,8 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
       case Op::PushInt:stack.emplace_back(i.arg);break;
       case Op::PushString:stack.emplace_back(i.text);break;
       case Op::PushBool:stack.emplace_back(i.arg!=0);break;
+      case Op::PushFloat:{uint32_t bits=(uint32_t)i.arg;float value=0.0f;std::memcpy(&value,&bits,sizeof(value));stack.emplace_back(value);break;}
+      case Op::PushDouble:{uint64_t bits=(uint64_t)i.arg;double value=0.0;std::memcpy(&value,&bits,sizeof(value));stack.emplace_back(value);break;}
       case Op::Load:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size()||!frame.locals[(size_t)i.arg])throw Error("Read of uninitialized local variable");stack.push_back(*frame.locals[(size_t)i.arg]);break;}
       case Op::Store:{if(i.arg<0||(uint64_t)i.arg>=frame.locals.size())throw Error("Invalid local slot");frame.locals[(size_t)i.arg]=pop();break;}
       case Op::Print:std::cout<<show(pop())<<'\n';break;
@@ -567,23 +608,52 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();}
         else throw Error("Unknown UI opcode: "+i.text);
         break;
-      }case Op::Neg:{auto a=integer(pop());if(a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-a);break;}
+      }case Op::Neg:{
+        Value value=pop();
+        if(auto a=std::get_if<int64_t>(&value)){if(*a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-*a);}
+        else if(auto a=std::get_if<float>(&value))stack.emplace_back(-*a);
+        else if(auto a=std::get_if<double>(&value))stack.emplace_back(-*a);
+        else throw Error("Unary '-' requires numeric value");
+        break;
+      }
       case Op::Not:stack.emplace_back(!boolean(pop()));break;
-      case Op::Add:{Value b=pop(),a=pop();if(std::holds_alternative<std::string>(a)&&std::holds_alternative<std::string>(b))stack.emplace_back(std::get<std::string>(a)+std::get<std::string>(b));else stack.emplace_back(checkedAdd(integer(a),integer(b)));break;}
-      case Op::Sub:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedSub(a,b));break;}
-      case Op::Mul:{auto b=integer(pop()),a=integer(pop());stack.emplace_back(checkedMul(a,b));break;}
-      case Op::Div:case Op::Mod:{auto b=integer(pop()),a=integer(pop());if(b==0)throw Error("Division by zero");if(a==std::numeric_limits<int64_t>::min()&&b==-1)throw Error("Integer overflow");stack.emplace_back(i.op==Op::Div?a/b:a%b);break;}
+      case Op::Add:{
+        Value b=pop(),a=pop();
+        if(auto left=std::get_if<std::string>(&a)){auto right=std::get_if<std::string>(&b);if(!right)throw Error("String concatenation requires two strings");stack.emplace_back(*left+*right);}
+        else if(auto left=std::get_if<int64_t>(&a)){auto right=std::get_if<int64_t>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(checkedAdd(*left,*right));}
+        else if(auto left=std::get_if<float>(&a)){auto right=std::get_if<float>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(*left+*right);}
+        else if(auto left=std::get_if<double>(&a)){auto right=std::get_if<double>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(*left+*right);}
+        else throw Error("Unsupported operands for +");
+        break;
+      }
+      case Op::Sub:{Value b=pop(),a=pop();if(auto left=std::get_if<int64_t>(&a)){auto right=std::get_if<int64_t>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(checkedSub(*left,*right));}else if(auto left=std::get_if<float>(&a)){auto right=std::get_if<float>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(*left-*right);}else if(auto left=std::get_if<double>(&a)){auto right=std::get_if<double>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(*left-*right);}else throw Error("Unsupported operands for -");break;}
+      case Op::Mul:{Value b=pop(),a=pop();if(auto left=std::get_if<int64_t>(&a)){auto right=std::get_if<int64_t>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(checkedMul(*left,*right));}else if(auto left=std::get_if<float>(&a)){auto right=std::get_if<float>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(*left**right);}else if(auto left=std::get_if<double>(&a)){auto right=std::get_if<double>(&b);if(!right)throw Error("Numeric operand type mismatch");stack.emplace_back(*left**right);}else throw Error("Unsupported operands for *");break;}
+      case Op::Div:case Op::Mod:{
+        Value b=pop(),a=pop();
+        if(auto left=std::get_if<int64_t>(&a)){auto right=std::get_if<int64_t>(&b);if(!right)throw Error("Numeric operand type mismatch");if(*right==0)throw Error("Division by zero");if(*left==std::numeric_limits<int64_t>::min()&&*right==-1)throw Error("Integer overflow");stack.emplace_back(i.op==Op::Div?*left / *right:*left % *right);}
+        else if(auto left=std::get_if<float>(&a)){auto right=std::get_if<float>(&b);if(!right)throw Error("Numeric operand type mismatch");if(*right==0.0f)throw Error("Division by zero");stack.emplace_back(i.op==Op::Div?*left / *right:std::fmod(*left,*right));}
+        else if(auto left=std::get_if<double>(&a)){auto right=std::get_if<double>(&b);if(!right)throw Error("Numeric operand type mismatch");if(*right==0.0)throw Error("Division by zero");stack.emplace_back(i.op==Op::Div?*left / *right:std::fmod(*left,*right));}
+        else throw Error("Unsupported operands for / or %");
+        break;
+      }
       case Op::Eq:case Op::Ne:{Value b=pop(),a=pop();bool same=a.index()==b.index()&&a==b;stack.emplace_back(i.op==Op::Eq?same:!same);break;}
-      case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:{auto b=integer(pop()),a=integer(pop());bool r=i.op==Op::Lt?a<b:i.op==Op::Gt?a>b:i.op==Op::Le?a<=b:a>=b;stack.emplace_back(r);break;}
+      case Op::Lt:case Op::Gt:case Op::Le:case Op::Ge:{
+        Value b=pop(),a=pop();bool result=false;
+        if(auto left=std::get_if<int64_t>(&a)){auto right=std::get_if<int64_t>(&b);if(!right)throw Error("Comparison operand type mismatch");result=i.op==Op::Lt?*left<*right:i.op==Op::Gt?*left>*right:i.op==Op::Le?*left<=*right:*left>=*right;}
+        else if(auto left=std::get_if<float>(&a)){auto right=std::get_if<float>(&b);if(!right)throw Error("Comparison operand type mismatch");result=i.op==Op::Lt?*left<*right:i.op==Op::Gt?*left>*right:i.op==Op::Le?*left<=*right:*left>=*right;}
+        else if(auto left=std::get_if<double>(&a)){auto right=std::get_if<double>(&b);if(!right)throw Error("Comparison operand type mismatch");result=i.op==Op::Lt?*left<*right:i.op==Op::Gt?*left>*right:i.op==Op::Le?*left<=*right:*left>=*right;}
+        else throw Error("Comparison requires numeric operands");
+        stack.emplace_back(result);break;
+      }
       case Op::And:case Op::Or:{bool b=boolean(pop()),a=boolean(pop());stack.emplace_back(i.op==Op::And?(a&&b):(a||b));break;}
       case Op::NewArray:{if(i.arg<0||(uint64_t)i.arg>stack.size())throw Error("Invalid array construction");auto a=std::make_shared<Array>();a->items.resize((size_t)i.arg);for(size_t k=(size_t)i.arg;k>0;--k)a->items[k-1]=pop();if(!a->items.empty()){a->elementKind=a->items[0].index();for(const auto& v:a->items)if(v.index()!=a->elementKind)throw Error("Array element type mismatch in bytecode");}stack.emplace_back(a);break;}
-      case Op::NewArraySized:{int64_t length=integer(pop());if(length<0||length>100000)throw Error("Array length must be between 0 and 100000");auto a=std::make_shared<Array>();a->items.resize((size_t)length);if(i.arg==(int64_t)Type::Int){a->elementKind=0;for(auto& value:a->items)value=(int64_t)0;}else if(i.arg==(int64_t)Type::String){a->elementKind=1;for(auto& value:a->items)value=std::string();}else if(i.arg==(int64_t)Type::Bool){a->elementKind=2;for(auto& value:a->items)value=false;}else throw Error("Invalid sized-array element type");stack.emplace_back(a);break;}
+      case Op::NewArraySized:{int64_t length=integer(pop());if(length<0||length>100000)throw Error("Array length must be between 0 and 100000");auto a=std::make_shared<Array>();a->items.resize((size_t)length);if(i.arg==(int64_t)Type::Int){a->elementKind=0;for(auto& value:a->items)value=(int64_t)0;}else if(i.arg==(int64_t)Type::String){a->elementKind=1;for(auto& value:a->items)value=std::string();}else if(i.arg==(int64_t)Type::Bool){a->elementKind=2;for(auto& value:a->items)value=false;}else if(i.arg==(int64_t)Type::Float){a->elementKind=5;for(auto& value:a->items)value=0.0f;}else if(i.arg==(int64_t)Type::Double){a->elementKind=6;for(auto& value:a->items)value=0.0;}else throw Error("Invalid sized-array element type");stack.emplace_back(a);break;}
       case Op::ArrayGet:{auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array access on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");stack.push_back((*a)->items[(size_t)index]);break;}
       case Op::ArraySet:{Value value=pop();auto index=integer(pop());Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error("Array assignment on non-array value");if(index<0||(uint64_t)index>=(*a)->items.size())throw Error("Array index out of bounds");if((*a)->elementKind==std::numeric_limits<size_t>::max())(*a)->elementKind=value.index();if(value.index()!=(*a)->elementKind)throw Error("Array element type mismatch");(*a)->items[(size_t)index]=std::move(value);break;}
       case Op::ArrayLength:{Value base=pop();auto a=std::get_if<ArrayPtr>(&base);if(!a||!*a)throw Error(".length on non-array value");stack.emplace_back((int64_t)(*a)->items.size());break;}
-      case Op::NewObject:{if(i.arg<0||(uint64_t)i.arg>=classes.size())throw Error("Invalid class allocation");auto obj=std::make_shared<Object>();obj->classId=(size_t)i.arg;for(Type type:classes[obj->classId].fieldTypes){if(type==Type::Int)obj->fields.emplace_back((int64_t)0);else if(type==Type::String)obj->fields.emplace_back(std::string());else if(type==Type::Bool)obj->fields.emplace_back(false);else throw Error("Unsupported object field type");}stack.emplace_back(obj);break;}
+      case Op::NewObject:{if(i.arg<0||(uint64_t)i.arg>=classes.size())throw Error("Invalid class allocation");auto obj=std::make_shared<Object>();obj->classId=(size_t)i.arg;for(Type type:classes[obj->classId].fieldTypes){if(type==Type::Int)obj->fields.emplace_back((int64_t)0);else if(type==Type::String)obj->fields.emplace_back(std::string());else if(type==Type::Bool)obj->fields.emplace_back(false);else if(type==Type::Float)obj->fields.emplace_back(0.0f);else if(type==Type::Double)obj->fields.emplace_back(0.0);else throw Error("Unsupported object field type");}stack.emplace_back(obj);break;}
       case Op::GetField:{Value base=pop();auto obj=std::get_if<ObjectPtr>(&base);if(!obj||!*obj)throw Error("Field read on non-object value");if(i.arg<0||(uint64_t)i.arg>=(*obj)->fields.size())throw Error("Object field index out of bounds");stack.push_back((*obj)->fields[(size_t)i.arg]);break;}
-      case Op::SetField:{Value value=pop(),base=pop();auto obj=std::get_if<ObjectPtr>(&base);if(!obj||!*obj)throw Error("Field write on non-object value");if(i.arg<0||(uint64_t)i.arg>=(*obj)->fields.size())throw Error("Object field index out of bounds");Type expected=classes[(*obj)->classId].fieldTypes[(size_t)i.arg];size_t actual=value.index();size_t expectedIndex=expected==Type::Int?0:expected==Type::String?1:2;if(actual!=expectedIndex)throw Error("Object field type mismatch");(*obj)->fields[(size_t)i.arg]=std::move(value);break;}
+      case Op::SetField:{Value value=pop(),base=pop();auto obj=std::get_if<ObjectPtr>(&base);if(!obj||!*obj)throw Error("Field write on non-object value");if(i.arg<0||(uint64_t)i.arg>=(*obj)->fields.size())throw Error("Object field index out of bounds");Type expected=classes[(*obj)->classId].fieldTypes[(size_t)i.arg];size_t actual=value.index();size_t expectedIndex=expected==Type::Int?0:expected==Type::String?1:expected==Type::Bool?2:expected==Type::Float?5:6;if(actual!=expectedIndex)throw Error("Object field type mismatch");(*obj)->fields[(size_t)i.arg]=std::move(value);break;}
       case Op::Call:{
         size_t target=(size_t)i.arg;const auto& callee=functions[target];if(frames.size()>=1024)throw Error("Maximum call depth exceeded");
         size_t count=(size_t)callee.parameterCount+(callee.ownerClassId>=0?1:0);std::vector<Value> args(count);for(size_t k=count;k>0;--k)args[k-1]=pop();
