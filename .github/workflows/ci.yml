@@ -27,7 +27,10 @@ jobs:
       - name: Build Rust CI Runtime CLI
         run: cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin ci-runtime
 
-      - name: Build .AL application packager\n        run: cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin alpack\n\n      - name: Configure C++17 compiler and desktop VM
+      - name: Build .AL application packager
+        run: cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin alpack
+
+      - name: Configure C++17 compiler and desktop VM
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compile C++17 AL compiler
