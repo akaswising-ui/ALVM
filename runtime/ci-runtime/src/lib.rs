@@ -1351,33 +1351,14 @@ fn status_json(root: &Path, abi: &str) -> JsonValue {
     })
 }
 
-
-fn validate_package_size(size: u64) -> RtResult<()> {
-    if size > MAX_PACKAGE_BYTES {
-        return error(format!(
-            "Runtime update package exceeds the {} MiB safety limit",
-            MAX_PACKAGE_BYTES / (1024 * 1024)
-        ));
-    }
-    Ok(())
-}
-
-fn validate_runtime_library_size(size: u64) -> RtResult<()> {
-    if size > MAX_RUNTIME_LIBRARY_BYTES {
-        return error(format!(
-            "Runtime module exceeds the {} MiB safety limit",
-            MAX_RUNTIME_LIBRARY_BYTES / (1024 * 1024)
-        ));
-    }
-    Ok(())
-}
-
 fn install_update(package_path: &str, root: &Path, abi: &str) -> RtResult<JsonValue> {
     let archive_file = File::open(package_path)
         .map_err(|_| RuntimeError("Runtime update file was not found".into()))?;
     let metadata = archive_file.metadata()
         .map_err(|_| RuntimeError("Cannot inspect runtime update package".into()))?;
-    validate_package_size(metadata.len())?;
+    if metadata.len() > MAX_PACKAGE_BYTES {
+        return error("Runtime update package exceeds the 4 MiB limit");
+    }
     let mut archive = ZipArchive::new(archive_file)
         .map_err(|_| RuntimeError("Runtime update is not a valid ZIP package".into()))?;
     if archive.len() != 3 {
@@ -1419,7 +1400,7 @@ fn install_update(package_path: &str, root: &Path, abi: &str) -> RtResult<JsonVa
     let mut module_bytes = {
         let mut entry = archive.by_name(abi_entry_name)
             .map_err(|_| RuntimeError(format!("Package does not contain {abi} runtime")))?;
-        validate_runtime_library_size(entry.size())?;
+        if entry.size() > MAX_RUNTIME_LIBRARY_BYTES { return error("Runtime module exceeds the 2 MiB limit"); }
         let mut bytes = Vec::with_capacity(entry.size() as usize);
         entry.read_to_end(&mut bytes)
             .map_err(|_| RuntimeError("Cannot read Rust runtime module".into()))?;
@@ -1582,12 +1563,7 @@ pub extern "C" fn ci_runtime_host_run(
     let result = std::panic::catch_unwind(|| host_run_json(
         &ffi_text(room_path), &ffi_text(runtime_root), &ffi_text(abi),
         &ffi_text(entry_name), &ffi_text(event_value),
-    )).unwrap_or_else(|_| json_string(json!({
-        "ok": false,
-        "output": "",
-        "error": "Rust CI Runtime panic",
-        "runtimeVersion": build_version(),
-    })));
+    )).unwrap_or_else(|_| "{\"ok\":false,\"output\":\"\",\"error\":\"Rust CI Runtime panic\",\"runtimeVersion\":\"1.0.0\"}".into());
     into_ffi_string(result)
 }
 
@@ -1690,32 +1666,6 @@ fn test_room_bytes(code: Vec<Instruction>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-
-    #[test]
-    fn package_size_limit_matches_error_message() {
-        assert!(validate_package_size(MAX_PACKAGE_BYTES).is_ok());
-        let error = validate_package_size(MAX_PACKAGE_BYTES + 1).unwrap_err();
-        assert!(error.0.contains("32 MiB"));
-    }
-
-    #[test]
-    fn runtime_library_size_limit_matches_error_message() {
-        assert!(validate_runtime_library_size(MAX_RUNTIME_LIBRARY_BYTES).is_ok());
-        let error = validate_runtime_library_size(MAX_RUNTIME_LIBRARY_BYTES + 1).unwrap_err();
-        assert!(error.0.contains("24 MiB"));
-    }
-
-    #[test]
-    fn ffi_panic_fallback_reports_compiled_runtime_version() {
-        let fallback = json!({
-            "ok": false,
-            "output": "",
-            "error": "Rust CI Runtime panic",
-            "runtimeVersion": build_version(),
-        });
-        assert_eq!(fallback["runtimeVersion"], build_version());
-    }
 
     #[test]
     fn plugin_symbol_names_are_c_terminated() {

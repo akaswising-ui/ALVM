@@ -210,3 +210,25 @@ UI.remove("player");
 - Reusing an ID updates that drawing object. `UI.remove(string id)` removes it.
 - The C++ ALVM executes drawing calls and serializes scene objects; Android renders them using a native Canvas-backed View.
 - This stage provides a static 2D scene renderer. A timed game loop, sprite/image loading, touch callbacks, physics, and collision APIs are not implemented yet.
+
+## Compound assignment and increment/decrement
+
+The compiler accepts the following statement forms for simple variables:
+
+```al
+int score = 10;
+score += 5;
+score -= 2;
+score *= 3;
+score /= 2;
+score++;
+++score;
+score--;
+--score;
+```
+
+- `+=`, `-=`, `*=` and `/=` are lowered by the compiler to a variable load, the corresponding existing arithmetic instruction, and a store.
+- Prefix and postfix `++` / `--` are supported as statements and are lowered to addition or subtraction by one.
+- These forms use the ordinary AL type checker. For example, string `+=` string uses the existing string-concatenation operation; increment/decrement require integer operands.
+- Compound assignment and increment/decrement on array elements or object fields are rejected with an explicit compiler diagnostic. They are not silently approximated.
+- This feature does not add bytecode opcodes or change the `.room` format; it uses existing ALVM instructions.
