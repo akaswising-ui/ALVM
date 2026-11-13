@@ -49,6 +49,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public class MainActivity extends Activity {
 
@@ -56,6 +58,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_FILE = 14;
     private static final int REQUEST_WEB_FILE_CHOOSER = 15;
     private static final int REQUEST_RUNTIME_UPDATE = 16;
+    private static final int REQUEST_EXPORT_AL_PACKAGE = 17;
     private static final String PREFS = "alvm_workspace";
     private static final String PREF_TREE_URI = "workspace_tree_uri";
 
@@ -84,6 +87,7 @@ public class MainActivity extends Activity {
     private String pendingSource = "";
     private boolean compiled = false;
     private Dialog nativeUiDialog;
+    private byte[] pendingAlPackage;
 
     private static native String nativeCompile(String source, String filesDir);
     private static native String nativeDisassemble(String roomPath);
@@ -286,6 +290,81 @@ public class MainActivity extends Activity {
                 + (initWorkspaceFolders() ? "\nSaved: Projects/" + currentFileName
                 + "\nBytecode: Build/" + buildFileName()
                 : "\nChoose FILE MANAGER and allow a folder to save files permanently.");
+    }
+
+    private void buildAlPackageFromSource(String source, String appName) {
+        try {
+            String compileResult = compileNative(source == null ? "" : source, "Main.al");
+            if (!compiled) {
+                showOutputInWeb(compileResult, "COMPILE ERROR");
+                return;
+            }
+
+            File roomFile = new File(roomPath());
+            if (!roomFile.isFile() || roomFile.length() < 8 || roomFile.length() > 64L * 1024L * 1024L) {
+                throw new IllegalStateException("Compiler did not produce a valid-size .room module.");
+            }
+            byte[] roomBytes = new byte[(int) roomFile.length()];
+            try (FileInputStream input = new FileInputStream(roomFile)) {
+                int offset = 0;
+                while (offset < roomBytes.length) {
+                    int count = input.read(roomBytes, offset, roomBytes.length - offset);
+                    if (count < 0) throw new IllegalStateException("Truncated .room module.");
+                    offset += count;
+                }
+            }
+            if (roomBytes[0] != 'A' || roomBytes[1] != 'L' || roomBytes[2] != 'R' || roomBytes[3] != 'M') {
+                throw new IllegalStateException("Compiler output has an invalid .room header.");
+            }
+            long roomVersion = ((long) roomBytes[4] & 255L)
+                    | (((long) roomBytes[5] & 255L) << 8)
+                    | (((long) roomBytes[6] & 255L) << 16)
+                    | (((long) roomBytes[7] & 255L) << 24);
+            if (roomVersion != 10L) {
+                throw new IllegalStateException("Expected .room v10, got v" + roomVersion);
+            }
+
+            String packageName = appName == null ? "" : appName.trim();
+            packageName = packageName.replaceAll("(?i)\\.al$", "");
+            if (packageName.isEmpty()) packageName = "ALApp";
+            if (packageName.length() > 80) packageName = packageName.substring(0, 80);
+            String outputName = packageName.replaceAll("[^A-Za-z0-9._-]", "_");
+            if (outputName.isEmpty() || outputName.equals(".") || outputName.equals("..")) outputName = "ALApp";
+
+            JSONObject manifest = new JSONObject();
+            manifest.put("format", "ALPK");
+            manifest.put("formatVersion", 1);
+            manifest.put("name", packageName);
+            manifest.put("appVersion", "1.0.0");
+            manifest.put("entry", "modules/main.room");
+            manifest.put("roomFormat", 10);
+            manifest.put("modules", new JSONArray().put("modules/main.room"));
+            manifest.put("assets", new JSONArray());
+            manifest.put("libraries", new JSONArray());
+            manifest.put("dependencies", new JSONArray());
+
+            ByteArrayOutputStream packageBytes = new ByteArrayOutputStream();
+            try (ZipOutputStream zip = new ZipOutputStream(packageBytes)) {
+                zip.putNextEntry(new ZipEntry("manifest.json"));
+                zip.write(manifest.toString(2).getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+                zip.putNextEntry(new ZipEntry("modules/main.room"));
+                zip.write(roomBytes);
+                zip.closeEntry();
+                zip.finish();
+            }
+            pendingAlPackage = packageBytes.toByteArray();
+
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(Intent.EXTRA_TITLE, outputName + ".AL");
+            showOutputInWeb("✓ Compiled and packaged " + packageName + ".AL. Choose where to save it.", "READY");
+            startActivityForResult(intent, REQUEST_EXPORT_AL_PACKAGE);
+        } catch (Exception error) {
+            pendingAlPackage = null;
+            showOutputInWeb("✕ .AL package error: " + error.getMessage(), "ERROR");
+        }
     }
 
     private String runCiRuntime(String entryName, String eventValue) {
@@ -1022,6 +1101,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void createAlPackage(String source, String name) {
+            String sourceText = source == null ? "" : source;
+            String packageName = name == null ? "ALApp" : name;
+            runOnUiThread(() -> MainActivity.this.buildAlPackageFromSource(sourceText, packageName));
+        }
+
+        @JavascriptInterface
         public void openWorkspace() {
             runOnUiThread(() -> openFileManager());
         }
@@ -1051,6 +1137,24 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_EXPORT_AL_PACKAGE) {
+            byte[] packageBytes = pendingAlPackage;
+            pendingAlPackage = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null || packageBytes == null) {
+                showOutputInWeb(".AL package export cancelled.", "READY");
+                return;
+            }
+            try (OutputStream output = getContentResolver().openOutputStream(data.getData())) {
+                if (output == null) throw new IllegalStateException("Android could not open the selected destination.");
+                output.write(packageBytes);
+                output.flush();
+                showOutputInWeb("✓ .AL application package saved successfully.", "SUCCESS");
+            } catch (Exception error) {
+                showOutputInWeb("✕ Could not save .AL package: " + error.getMessage(), "ERROR");
+            }
+            return;
+        }
 
         if (requestCode == REQUEST_RUNTIME_UPDATE) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
