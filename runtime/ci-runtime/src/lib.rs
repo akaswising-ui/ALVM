@@ -16,7 +16,8 @@ use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Mutex, MutexGuard, OnceLock};
-use zip::ZipArchive;
+use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 pub const RUNTIME_API_VERSION: u32 = 1;
 pub const ROOM_FORMAT_VERSION: u32 = 10;
@@ -1676,6 +1677,278 @@ pub extern "C" fn ci_runtime_plugin_run_room_json(
 #[no_mangle]
 pub extern "C" fn ci_runtime_plugin_free_string(value: *mut c_char) {
     if !value.is_null() { unsafe { drop(CString::from_raw(value)); } }
+}
+
+
+/// Maximum uncompressed application-package size accepted by the first ALPK format.
+const MAX_AL_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_AL_PACKAGE_ASSETS: usize = 128;
+const MAX_AL_PACKAGE_ASSET_BYTES: u64 = 64 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AlPackageManifest {
+    format: String,
+    format_version: u32,
+    name: String,
+    app_version: String,
+    entry: String,
+    room_format: u32,
+    modules: Vec<String>,
+    assets: Vec<String>,
+    libraries: Vec<String>,
+    dependencies: Vec<String>,
+}
+
+fn safe_al_package_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 120
+        && value != "."
+        && value != ".."
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+        })
+        && !value.contains("..")
+}
+
+fn validate_al_package_name(name: &str) -> RtResult<()> {
+    if name.trim().is_empty() || name.len() > 80 || name.chars().any(char::is_control) {
+        return error("Application name must contain 1 to 80 printable characters");
+    }
+    Ok(())
+}
+
+/// Create a real AL application archive from a verified .room module and optional assets.
+///
+/// Version 1 packages contain one entry module and up to 128 flat assets.
+/// The manifest reserves library/dependency lists, but external libraries are not
+/// linkable yet and therefore those lists are emitted empty.
+pub fn create_al_package(
+    output_path: &Path,
+    name: &str,
+    app_version: &str,
+    main_room_path: &Path,
+    asset_paths: &[PathBuf],
+) -> RtResult<()> {
+    validate_al_package_name(name)?;
+    if !version_valid(app_version) {
+        return error("Application version must use major.minor.patch");
+    }
+    if output_path.extension().and_then(|value| value.to_str()) != Some("AL") {
+        return error("Application package output must use the .AL extension");
+    }
+    if asset_paths.len() > MAX_AL_PACKAGE_ASSETS {
+        return error("Application package asset count limit exceeded");
+    }
+
+    let room_metadata = fs::metadata(main_room_path)
+        .map_err(|_| RuntimeError("Cannot read main .room module".into()))?;
+    if room_metadata.len() > MAX_FILE_BYTES as u64 {
+        return error("Main .room module exceeds the 64 MiB safety limit");
+    }
+    let room_bytes = fs::read(main_room_path)
+        .map_err(|_| RuntimeError("Cannot read main .room module".into()))?;
+    let room_program = read_room_bytes(&room_bytes)?;
+    verify(&room_program)?;
+
+    let mut asset_entries = Vec::<(String, Vec<u8>)>::new();
+    let mut asset_names = HashSet::<String>::new();
+    let mut total_size = room_bytes.len() as u64;
+    for path in asset_paths {
+        let metadata = fs::metadata(path)
+            .map_err(|_| RuntimeError(format!("Cannot read application asset: {}", path.display())))?;
+        if !metadata.is_file() || metadata.len() > MAX_AL_PACKAGE_ASSET_BYTES {
+            return error("Each application asset must be a file smaller than 64 MiB");
+        }
+        let file_name = path.file_name().and_then(|value| value.to_str())
+            .ok_or_else(|| RuntimeError("Application asset has an invalid file name".into()))?;
+        if !safe_al_package_component(file_name) {
+            return error(format!("Unsafe application asset file name: {file_name}"));
+        }
+        let archive_name = format!("assets/{file_name}");
+        if !asset_names.insert(archive_name.clone()) {
+            return error(format!("Duplicate application asset name: {file_name}"));
+        }
+        total_size = total_size.saturating_add(metadata.len());
+        if total_size > MAX_AL_PACKAGE_BYTES {
+            return error("Application package exceeds the 256 MiB uncompressed safety limit");
+        }
+        let bytes = fs::read(path)
+            .map_err(|_| RuntimeError(format!("Cannot read application asset: {}", path.display())))?;
+        asset_entries.push((archive_name, bytes));
+    }
+
+    let asset_names = asset_entries.iter().map(|(name, _)| name.clone()).collect::<Vec<_>>();
+    let manifest = AlPackageManifest {
+        format: "ALPK".into(),
+        format_version: 1,
+        name: name.to_string(),
+        app_version: app_version.to_string(),
+        entry: "modules/main.room".into(),
+        room_format: ROOM_FORMAT_VERSION,
+        modules: vec!["modules/main.room".into()],
+        assets: asset_names,
+        libraries: Vec::new(),
+        dependencies: Vec::new(),
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|error| RuntimeError(format!("Cannot encode .AL manifest: {error}")))?;
+
+    let parent = output_path.parent().filter(|path| !path.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent)
+            .map_err(|error| RuntimeError(format!("Cannot create package folder: {error}")))?;
+    }
+    let mut temporary_name = output_path.as_os_str().to_os_string();
+    temporary_name.push(format!(".tmp.{}", std::process::id()));
+    let temporary_path = PathBuf::from(temporary_name);
+
+    let result = (|| -> RtResult<()> {
+        let file = File::create(&temporary_path)
+            .map_err(|error| RuntimeError(format!("Cannot create .AL package: {error}")))?;
+        let mut archive = ZipWriter::new(file);
+        let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
+
+        archive.start_file("manifest.json", options)
+            .map_err(|error| RuntimeError(format!("Cannot write .AL manifest: {error}")))?;
+        archive.write_all(&manifest_bytes)
+            .map_err(|error| RuntimeError(format!("Cannot write .AL manifest: {error}")))?;
+
+        archive.start_file("modules/main.room", options)
+            .map_err(|error| RuntimeError(format!("Cannot write .room module: {error}")))?;
+        archive.write_all(&room_bytes)
+            .map_err(|error| RuntimeError(format!("Cannot write .room module: {error}")))?;
+
+        for (archive_name, bytes) in &asset_entries {
+            archive.start_file(archive_name, options)
+                .map_err(|error| RuntimeError(format!("Cannot write package asset: {error}")))?;
+            archive.write_all(bytes)
+                .map_err(|error| RuntimeError(format!("Cannot write package asset: {error}")))?;
+        }
+
+        archive.finish()
+            .map_err(|error| RuntimeError(format!("Cannot finish .AL package: {error}")))?;
+        fs::rename(&temporary_path, output_path)
+            .map_err(|error| RuntimeError(format!("Cannot finalize .AL package: {error}")))?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+/// Verify the manifest, archive layout, assets and executable entry bytecode in an .AL file.
+pub fn verify_al_package(package_path: &Path) -> RtResult<JsonValue> {
+    let metadata = fs::metadata(package_path)
+        .map_err(|_| RuntimeError("Cannot open .AL package".into()))?;
+    if metadata.len() > MAX_AL_PACKAGE_BYTES {
+        return error("Application package exceeds the 256 MiB safety limit");
+    }
+    let file = File::open(package_path)
+        .map_err(|_| RuntimeError("Cannot open .AL package".into()))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|error| RuntimeError(format!("Invalid .AL ZIP container: {error}")))?;
+    if archive.len() < 2 || archive.len() > MAX_AL_PACKAGE_ASSETS + 2 {
+        return error("Invalid .AL package entry count");
+    }
+
+    let mut seen = HashSet::<String>::new();
+    let mut uncompressed_total = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)
+            .map_err(|error| RuntimeError(format!("Cannot inspect .AL package entry: {error}")))?;
+        let entry_name = entry.name().to_string();
+        if entry.is_dir() || !seen.insert(entry_name.clone()) {
+            return error("Duplicate or directory entries are not allowed in .AL packages");
+        }
+        let safe = entry_name == "manifest.json"
+            || entry_name == "modules/main.room"
+            || (entry_name.starts_with("assets/")
+                && safe_al_package_component(&entry_name["assets/".len()..]));
+        if !safe {
+            return error(format!("Unexpected or unsafe .AL package entry: {entry_name}"));
+        }
+        uncompressed_total = uncompressed_total.saturating_add(entry.size());
+        if uncompressed_total > MAX_AL_PACKAGE_BYTES {
+            return error("Application package uncompressed size limit exceeded");
+        }
+    }
+
+    let manifest_bytes = {
+        let mut entry = archive.by_name("manifest.json")
+            .map_err(|_| RuntimeError(".AL package is missing manifest.json".into()))?;
+        if entry.size() > MAX_MANIFEST_BYTES {
+            return error(".AL manifest exceeds the 64 KiB limit");
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)
+            .map_err(|error| RuntimeError(format!("Cannot read .AL manifest: {error}")))?;
+        bytes
+    };
+    let manifest: AlPackageManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| RuntimeError(format!("Invalid .AL manifest: {error}")))?;
+    validate_al_package_name(&manifest.name)?;
+    if manifest.format != "ALPK" || manifest.format_version != 1 {
+        return error("Unsupported .AL package format");
+    }
+    if !version_valid(&manifest.app_version) {
+        return error("Invalid .AL application version");
+    }
+    if manifest.room_format != ROOM_FORMAT_VERSION
+        || manifest.entry != "modules/main.room"
+        || manifest.modules != vec!["modules/main.room".to_string()]
+    {
+        return error("Unsupported .AL entry module or .room format");
+    }
+    if !manifest.libraries.is_empty() || !manifest.dependencies.is_empty() {
+        return error("External .AL libraries and dependencies are not supported yet");
+    }
+    if manifest.assets.len() > MAX_AL_PACKAGE_ASSETS {
+        return error(".AL asset count limit exceeded");
+    }
+
+    let mut expected_entries = HashSet::from([
+        "manifest.json".to_string(),
+        "modules/main.room".to_string(),
+    ]);
+    for asset in &manifest.assets {
+        if !asset.starts_with("assets/")
+            || !safe_al_package_component(&asset["assets/".len()..])
+            || !expected_entries.insert(asset.clone())
+        {
+            return error("Invalid or duplicate asset path in .AL manifest");
+        }
+    }
+    if expected_entries != seen {
+        return error(".AL manifest does not match the archive contents");
+    }
+
+    let room_bytes = {
+        let mut entry = archive.by_name("modules/main.room")
+            .map_err(|_| RuntimeError(".AL package is missing its entry module".into()))?;
+        if entry.size() > MAX_FILE_BYTES as u64 {
+            return error("Packaged .room module exceeds the 64 MiB safety limit");
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)
+            .map_err(|error| RuntimeError(format!("Cannot read packaged .room module: {error}")))?;
+        bytes
+    };
+    let program = read_room_bytes(&room_bytes)?;
+    verify(&program)?;
+
+    Ok(json!({
+        "ok": true,
+        "name": manifest.name,
+        "appVersion": manifest.app_version,
+        "format": manifest.format,
+        "formatVersion": manifest.format_version,
+        "roomFormat": manifest.room_format,
+        "moduleCount": manifest.modules.len(),
+        "assetCount": manifest.assets.len(),
+    }))
 }
 
 pub fn self_test() -> bool {
