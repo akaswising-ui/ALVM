@@ -27,11 +27,13 @@ printf '%s\n' "$FLOATING" | grep -Fq '"output":"3.75\n4.75\n3.75\n2\n3.75\ntrue"
 
 "$ALVM_BIN" compile "$ROOT/examples/touch_loop.al" -o "$WORK/touch-loop.room"
 GAME_MAIN="$("$RUST_RUNNER" run "$WORK/touch-loop.room")"
+printf 'GAME_MAIN=%s\\n' "$GAME_MAIN" >&2"
 printf '%s\n' "$GAME_MAIN" | grep -q '"ok":true'
 printf '%s\n' "$GAME_MAIN" | grep -q '"frameCallback":"update"'
 printf '%s\n' "$GAME_MAIN" | grep -q '"frameRate":30'
 printf '%s\n' "$GAME_MAIN" | grep -q '"output":"true"'
 GAME_EVENTS="$("$RUST_RUNNER" run "$WORK/touch-loop.room" --event onTouch '@touch|move|45|67' --event update frame --event stopGame stop)"
+printf 'GAME_EVENTS=%s\\n' "$GAME_EVENTS" >&2
 printf '%s\n' "$GAME_EVENTS" | grep -q '"ok":true'
 printf '%s\n' "$GAME_EVENTS" | grep -q '"id":"touch","text":"45"'
 printf '%s\n' "$GAME_EVENTS" | grep -q '"id":"frames","text":"1"'
