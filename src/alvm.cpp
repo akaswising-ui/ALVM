@@ -30,7 +30,7 @@ static std::vector<Token> lex(const std::string& src) {
     if(std::isalpha(static_cast<unsigned char>(c))||c=='_'){while(i<src.size()&&(std::isalnum(static_cast<unsigned char>(src[i]))||src[i]=='_'))t+=advance();}
     else if(std::isdigit(static_cast<unsigned char>(c))){while(i<src.size()&&std::isdigit(static_cast<unsigned char>(src[i])))t+=advance();}
     else if(c=='"'){advance();bool closed=false;while(i<src.size()){char x=advance();if(x=='"'){closed=true;break;}if(x=='\\'){if(i>=src.size())break;char e=advance();switch(e){case 'n':t+='\n';break;case 't':t+='\t';break;case 'r':t+='\r';break;case '"':t+='"';break;case '\\':t+='\\';break;default:throw Error("Unknown string escape at "+std::to_string(line)+":"+std::to_string(col));}}else t+=x;}if(!closed)throw Error("Unterminated string at "+std::to_string(sl)+":"+std::to_string(sc));t="\x01"+t;}
-    else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||"}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.[],:").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
+    else { static const std::vector<std::string> two={"==","!=","<=",">=","&&","||","++","--","+=","-=","*=","/="}; bool matched=false;for(const auto& op:two){if(src.compare(i,op.size(),op)==0){advance();advance();t=op;matched=true;break;}}if(!matched){if(std::string("{}();=+-*/%!<>.[],:").find(c)==std::string::npos)throw Error("Unexpected character at "+std::to_string(sl)+":"+std::to_string(sc));t+=advance();}}
     out.push_back({t,sl,sc});
   }
   out.push_back({"<eof>",line,col});return out;
@@ -88,14 +88,90 @@ class Parser {
   bool isType(){return cur()=="int"||cur()=="string"||cur()=="boolean"||cur()=="var"||userTypeMap.count(cur())!=0;}
   std::unique_ptr<Stmt> block(){Token tk=tok();need("{");auto b=stmtNode(Stmt::Block,tk);while(cur()!="}"&&cur()!="<eof>")b->children.push_back(statement());need("}");return b;}
   std::unique_ptr<Stmt> declaration(bool semicolon=true){Token tk=tok();Type ty=Type::Unknown;if(eat("var"))ty=Type::Unknown;else ty=parseType();auto s=stmtNode(Stmt::Declare,tk);s->declared=ty;s->name=take().text;if(s->name=="<eof>")throw Error("Expected variable name");need("=");s->expr=expression();if(semicolon)need(";");return s;}
-  std::unique_ptr<Stmt> assignment(bool semicolon=true){Token tk=tok();auto s=stmtNode(Stmt::Assign,tk);s->name=take().text;if(eat("[")){s->kind=Stmt::ArrayAssign;s->condition=expression();need("]");}else if(eat(".")){Token field=take();s->kind=Stmt::FieldAssign;s->name=field.text;auto receiver=node(tk.text=="this"?Expr::This:Expr::Variable,tk);receiver->text=tk.text;s->condition=std::move(receiver);}need("=");s->expr=expression();if(semicolon)need(";");return s;}
-  bool assignmentAhead()const{if(p+1<t.size()&&t[p+1].text=="=")return true;if(p+1<t.size()&&t[p+1].text==".")return p+3<t.size()&&t[p+3].text=="=";if(p+1<t.size()&&t[p+1].text=="["){int depth=0;for(size_t q=p+1;q<t.size();++q){if(t[q].text=="[")++depth;else if(t[q].text=="]"&&--depth==0)return q+1<t.size()&&t[q+1].text=="=";}}return false;}
-  std::unique_ptr<Stmt> statement(){Token tk=tok();if(eat("super")){auto s=stmtNode(Stmt::SuperCall,tk);need("(");if(cur()!=")"){do{s->arguments.push_back(expression());}while(eat(","));}need(")");need(";");return s;}if(cur()=="{")return block();if(isType())return declaration();if(eat("AL")){auto s=stmtNode(Stmt::Print,tk);need(".");need("print");need("(");s->expr=expression();need(")");need(";");return s;}if(eat("return")){auto s=stmtNode(Stmt::Return,tk);if(!eat(";")){s->expr=expression();need(";");}return s;}if(eat("break")){auto s=stmtNode(Stmt::Break,tk);need(";");return s;}if(eat("continue")){auto s=stmtNode(Stmt::Continue,tk);need(";");return s;}if(eat("if")){auto s=stmtNode(Stmt::If,tk);need("(");s->condition=expression();need(")");s->first=block();if(eat("else"))s->second=block();return s;}if(eat("while")){auto s=stmtNode(Stmt::While,tk);need("(");s->condition=expression();need(")");s->first=block();return s;}if(eat("do")){auto s=stmtNode(Stmt::DoWhile,tk);s->first=block();need("while");need("(");s->condition=expression();need(")");need(";");return s;}if(eat("for")){auto s=stmtNode(Stmt::For,tk);need("(");if(isType())s->first=declaration(false);else s->first=assignment(false);need(";");s->condition=expression();need(";");s->second=assignment(false);need(")");s->third=block();return s;}if(eat("foreach")){auto s=stmtNode(Stmt::Foreach,tk);need("(");if(eat("var"))s->declared=Type::Unknown;else s->declared=parseType();s->name=take().text;if(s->name=="<eof>")throw Error("Expected foreach variable name");need(":");s->expr=expression();need(")");s->first=block();return s;}if(eat("switch")){auto s=stmtNode(Stmt::Switch,tk);need("(");s->expr=expression();need(")");need("{");bool sawDefault=false;while(cur()!="}"&&cur()!="<eof>"){bool isDefault=eat("default");std::unique_ptr<Expr> value;if(!isDefault){need("case");value=expression();}else{if(sawDefault)throw Error("Duplicate default label");sawDefault=true;}need(":");std::vector<std::unique_ptr<Stmt>> body;while(cur()!="case"&&cur()!="default"&&cur()!="}"&&cur()!="<eof>")body.push_back(statement());s->caseValues.push_back(std::move(value));s->caseStatements.push_back(std::move(body));s->caseDefault.push_back(isDefault);}need("}");return s;}if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){if(assignmentAhead())return assignment();auto s=stmtNode(Stmt::ExprStatement,tk);s->expr=expression();need(";");return s;}throw Error("Unsupported statement at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
+  std::unique_ptr<Stmt> assignment(bool semicolon=true){
+    const bool prefix = cur()=="++" || cur()=="--";
+    Token prefixToken;
+    if(prefix) prefixToken=take();
+    Token target=take();
+    auto s=stmtNode(Stmt::Assign,target);
+    s->name=target.text;
+    if(!prefix && eat("[")){
+      s->kind=Stmt::ArrayAssign;
+      s->condition=expression();
+      need("]");
+    }else if(!prefix && eat(".")){
+      Token field=take();
+      s->kind=Stmt::FieldAssign;
+      s->name=field.text;
+      auto receiver=node(target.text=="this"?Expr::This:Expr::Variable,target);
+      receiver->text=target.text;
+      s->condition=std::move(receiver);
+    }
+
+    std::string op;
+    if(prefix) op=prefixToken.text;
+    else if(cur()=="++" || cur()=="--") op=take().text;
+    else {
+      op=take().text;
+      if(op!="=" && op!="+=" && op!="-=" && op!="*=" && op!="/=")
+        throw Error("Expected assignment operator at "+std::to_string(tok().line)+":"+std::to_string(tok().col));
+    }
+
+    if(op=="++" || op=="--"){
+      if(s->kind!=Stmt::Assign)
+        throw Error("Increment and decrement currently require a simple variable");
+      auto left=node(Expr::Variable,target);
+      left->text=target.text;
+      auto right=node(Expr::Integer,target);
+      right->number=1;
+      auto value=node(Expr::Binary,target);
+      value->text=op=="++"?"+":"-";
+      value->left=std::move(left);
+      value->right=std::move(right);
+      s->expr=std::move(value);
+    }else{
+      if(op!="=" && s->kind!=Stmt::Assign)
+        throw Error("Compound assignments currently require a simple variable");
+      auto rhs=expression();
+      if(op=="=") s->expr=std::move(rhs);
+      else{
+        auto left=node(Expr::Variable,target);
+        left->text=target.text;
+        auto value=node(Expr::Binary,target);
+        value->text=op.substr(0,1);
+        value->left=std::move(left);
+        value->right=std::move(rhs);
+        s->expr=std::move(value);
+      }
+    }
+    if(semicolon) need(";");
+    return s;
+  }
+  bool assignmentAhead()const{
+    if(cur()=="++" || cur()=="--") return p+1<t.size();
+    if(p+1<t.size()){
+      const std::string& next=t[p+1].text;
+      if(next=="=" || next=="+=" || next=="-=" || next=="*=" || next=="/=" || next=="++" || next=="--") return true;
+      if(next==".") return p+3<t.size() && t[p+3].text=="=";
+      if(next=="["){
+        int depth=0;
+        for(size_t q=p+1;q<t.size();++q){
+          if(t[q].text=="[") ++depth;
+          else if(t[q].text=="]"){
+            --depth;
+            if(depth==0) return q+1<t.size() && t[q+1].text=="=";
+          }
+        }
+      }
+    }
+    return false;
+  }
+  std::unique_ptr<Stmt> statement(){Token tk=tok();if(cur()=="++"||cur()=="--")return assignment();if(eat("super")){auto s=stmtNode(Stmt::SuperCall,tk);need("(");if(cur()!=")"){do{s->arguments.push_back(expression());}while(eat(","));}need(")");need(";");return s;}if(cur()=="{")return block();if(isType())return declaration();if(eat("AL")){auto s=stmtNode(Stmt::Print,tk);need(".");need("print");need("(");s->expr=expression();need(")");need(";");return s;}if(eat("return")){auto s=stmtNode(Stmt::Return,tk);if(!eat(";")){s->expr=expression();need(";");}return s;}if(eat("break")){auto s=stmtNode(Stmt::Break,tk);need(";");return s;}if(eat("continue")){auto s=stmtNode(Stmt::Continue,tk);need(";");return s;}if(eat("if")){auto s=stmtNode(Stmt::If,tk);need("(");s->condition=expression();need(")");s->first=block();if(eat("else"))s->second=block();return s;}if(eat("while")){auto s=stmtNode(Stmt::While,tk);need("(");s->condition=expression();need(")");s->first=block();return s;}if(eat("do")){auto s=stmtNode(Stmt::DoWhile,tk);s->first=block();need("while");need("(");s->condition=expression();need(")");need(";");return s;}if(eat("for")){auto s=stmtNode(Stmt::For,tk);need("(");if(isType())s->first=declaration(false);else s->first=assignment(false);need(";");s->condition=expression();need(";");s->second=assignment(false);need(")");s->third=block();return s;}if(eat("foreach")){auto s=stmtNode(Stmt::Foreach,tk);need("(");if(eat("var"))s->declared=Type::Unknown;else s->declared=parseType();s->name=take().text;if(s->name=="<eof>")throw Error("Expected foreach variable name");need(":");s->expr=expression();need(")");s->first=block();return s;}if(eat("switch")){auto s=stmtNode(Stmt::Switch,tk);need("(");s->expr=expression();need(")");need("{");bool sawDefault=false;while(cur()!="}"&&cur()!="<eof>"){bool isDefault=eat("default");std::unique_ptr<Expr> value;if(!isDefault){need("case");value=expression();}else{if(sawDefault)throw Error("Duplicate default label");sawDefault=true;}need(":");std::vector<std::unique_ptr<Stmt>> body;while(cur()!="case"&&cur()!="default"&&cur()!="}"&&cur()!="<eof>")body.push_back(statement());s->caseValues.push_back(std::move(value));s->caseStatements.push_back(std::move(body));s->caseDefault.push_back(isDefault);}need("}");return s;}if(std::isalpha(static_cast<unsigned char>(cur()[0]))||cur()[0]=='_'){if(assignmentAhead())return assignment();auto s=stmtNode(Stmt::ExprStatement,tk);s->expr=expression();need(";");return s;}throw Error("Unsupported statement at "+std::to_string(tok().line)+":"+std::to_string(tok().col));}
 public:
   explicit Parser(const std::string& src):t(lex(src)){}
   Function parseFunction(const std::string& owner){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();Function fn;fn.returnType=parseType();fn.name=take().text;fn.ownerClass=owner;if(fn.name=="<eof>")throw Error("Expected function name");need("(");if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;if(param.name=="<eof>")throw Error("Expected parameter name");fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();return fn;}
   ClassDecl parseClass(){need("class");ClassDecl cls;cls.name=take().text;if(userTypeMap.find(cls.name)==userTypeMap.end())registerUserType(cls.name);if(eat("extends")){cls.baseClass=take().text;if(userTypeMap.find(cls.baseClass)==userTypeMap.end())throw Error("Unknown base class: "+cls.baseClass);if(cls.baseClass==cls.name)throw Error("A class cannot extend itself");}need("{");while(cur()!="}"&&cur()!="<eof>"){while(cur()=="public"||cur()=="private"||cur()=="protected"||cur()=="static")take();if(cur()==cls.name&&p+1<t.size()&&t[p+1].text=="("){take();Function ctor;ctor.ownerClass=cls.name;ctor.name="$ctor";ctor.returnType=Type::Void;ctor.isConstructor=true;need("(");if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Constructor parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;ctor.params.push_back(std::move(param));}while(eat(","));}need(")");ctor.body=block();cls.methods.push_back(std::move(ctor));continue;}Type ty=parseType();Token name=take();if(name.text=="<eof>")throw Error("Expected class member name");if(eat("(")){Function fn;fn.ownerClass=cls.name;fn.name=name.text;fn.returnType=ty;if(cur()!=")"){do{Type pt=parseType();if(pt==Type::Void)throw Error("Function parameter cannot have type void");Parameter param;param.type=pt;param.name=take().text;fn.params.push_back(std::move(param));}while(eat(","));}need(")");fn.body=block();cls.methods.push_back(std::move(fn));}else{if(ty==Type::Void)throw Error("Class field cannot have type void");need(";");for(const auto& field:cls.fields)if(field.name==name.text)throw Error("Duplicate field: "+name.text);cls.fields.push_back({name.text,ty});}}need("}");if(std::none_of(cls.methods.begin(),cls.methods.end(),[](const Function& fn){return fn.isConstructor;})){Function ctor;ctor.name="$ctor";ctor.ownerClass=cls.name;ctor.returnType=Type::Void;ctor.isConstructor=true;ctor.body=stmtNode(Stmt::Block,tok());cls.methods.push_back(std::move(ctor));}return cls;}
-  Program parse(){if(!(eat("room")||eat("class")))throw Error("Program must start with room");Program out;out.name=take().text;need("{");userTypeNames.clear();userTypeMap.clear();for(size_t q=p;q+1<t.size();++q)if(t[q].text=="class"&&t[q+1].text!="<eof>")registerUserType(t[q+1].text);while(cur()!="}"&&cur()!="<eof>"){if(cur()=="class")out.classes.push_back(parseClass());else out.functions.push_back(parseFunction(""));}need("}");if(cur()!="<eof>")throw Error("Unexpected token after program end: "+cur());auto mainIt=std::find_if(out.functions.begin(),out.functions.end(),[](const Function& fn){return fn.name=="main";});if(mainIt==out.functions.end())throw Error("Program must declare main()");if(mainIt!=out.functions.begin())std::iter_swap(out.functions.begin(),mainIt);return out;}
+  Program parse(){if(!(eat("room")||eat("Room")||eat("class")))throw Error("Program must start with room");Program out;out.name=take().text;need("{");userTypeNames.clear();userTypeMap.clear();for(size_t q=p;q+1<t.size();++q)if(t[q].text=="class"&&t[q+1].text!="<eof>")registerUserType(t[q+1].text);while(cur()!="}"&&cur()!="<eof>"){if(cur()=="class")out.classes.push_back(parseClass());else out.functions.push_back(parseFunction(""));}need("}");if(cur()!="<eof>")throw Error("Unexpected token after program end: "+cur());auto mainIt=std::find_if(out.functions.begin(),out.functions.end(),[](const Function& fn){return fn.name=="main";});if(mainIt==out.functions.end())throw Error("Program must declare main()");if(mainIt!=out.functions.begin())std::iter_swap(out.functions.begin(),mainIt);return out;}
 };
 
 class SemanticAnalyzer {

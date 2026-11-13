@@ -90,6 +90,28 @@ if [[ "$FOREACH_ACTUAL" != "$FOREACH_EXPECTED" ]]; then
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/operators.al" -o "$TMP/operators.room"
+OPERATORS_EXPECTED="$(printf '6\n6\nALVM')"
+OPERATORS_ACTUAL="$("$BIN" run "$TMP/operators.room")"
+if [[ "$OPERATORS_ACTUAL" != "$OPERATORS_EXPECTED" ]]; then
+  printf 'operator assignment expected:\n%s\noperator assignment actual:\n%s\n' "$OPERATORS_EXPECTED" "$OPERATORS_ACTUAL" >&2
+  exit 1
+fi
+
+if "$BIN" compile "$ROOT/tests/compound_assignment_array.al" -o "$TMP/compound-array.room" 2>/dev/null; then
+  echo "FAIL: compound array assignment was accepted without implemented lowering" >&2
+  exit 1
+fi
+test ! -e "$TMP/compound-array.room"
+
+"$BIN" compile "$ROOT/examples/room_capitalized.al" -o "$TMP/room-capitalized.room"
+ROOM_CAPITALIZED_EXPECTED="room keyword ok"
+ROOM_CAPITALIZED_ACTUAL="$("$BIN" run "$TMP/room-capitalized.room")"
+if [[ "$ROOM_CAPITALIZED_ACTUAL" != "$ROOM_CAPITALIZED_EXPECTED" ]]; then
+  printf 'capitalized Room expected:\\n%s\\nactual:\\n%s\\n' "$ROOM_CAPITALIZED_EXPECTED" "$ROOM_CAPITALIZED_ACTUAL" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/control_flow_complete.al" -o "$TMP/control-complete.room"
 CONTROL_COMPLETE_EXPECTED="$(printf '10\n12\n4\n20\n2')"
 CONTROL_COMPLETE_ACTUAL="$("$BIN" run "$TMP/control-complete.room")"

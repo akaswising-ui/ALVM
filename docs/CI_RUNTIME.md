@@ -14,8 +14,7 @@ The Android Run, Execute and UI-event paths use the Rust CI Runtime. The existin
 
 ## Runtime versions and compatibility
 
-- Bundled Rust runtime in existing APKs: **2.0.0**.
-- Hot-update package version: **2.0.1** (same Runtime API 1 and `.room` v9 compatibility).
+- Bundled Rust runtime: **2.0.0**.
 - Runtime API: **1**.
 - Supported bytecode: **.room v9**.
 - Android ABIs: `arm64-v8a` and `armeabi-v7a`.
@@ -60,7 +59,7 @@ The script builds both Android shared libraries from `runtime/ci-runtime` and cr
 - `dist/ci-runtime-2.0.1.ciruntime`
 - `dist/ci-runtime-2.0.1.ciruntime.sha256`
 
-The 2.0.1 patch also corrects runtime-size limit diagnostics and ensures native panic fallback results report the compiled module version. The hot-update package keeps Runtime API 1 and `.room` v9, so it does not require a compiler or APK change. A release is published by pushing a tag such as `ci-runtime-v2.0.1`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
+A release is published by pushing a tag such as `ci-runtime-v2.0.1`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
 
 ## Installing and rolling back on Android
 

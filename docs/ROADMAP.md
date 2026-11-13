@@ -39,10 +39,10 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 - Android Run, Execute and AL UI callbacks use the CI Runtime ALVM adapter; the C++17 compiler remains unchanged and produces .room bytecode.
 - The CI Runtime bytecode reader validates the ALRM header, v9 layout, counts, opcodes, references, jump targets and stack-depth flow before execution.
 - Implemented runtime operations include scalar values, arrays, functions/calls, objects/fields, arithmetic, control flow and the existing UI calls used by the Android native View bridge.
-- Runtime engine modules are versioned in app-private storage. .ciruntime update packages are checked for layout, version/API compatibility, .room compatibility, SHA-256 integrity, Python syntax and self-test before activation.
+- Runtime engine modules are versioned in app-private storage. .ciruntime update packages are checked for layout, version/API compatibility, .room compatibility, SHA-256 integrity, native ABI exports and self-test before activation.
 - The CI Runtime Manager provides manual local install and rollback to a previous runtime or bundled fallback. No network update service is enabled.
-- The Python interpreter itself is bundled with the APK. Only the CI Runtime engine module can be hot-updated without an APK release; interpreter, Java host, native ABI or .room-format changes require a new APK.
-- Chaquopy 17.2 requires Android API 24 or later, so the app minSdk is now 24. Runtime update packages contain executable Python and must come from a trusted publisher.
+- The Rust CI Runtime is bundled with the APK as its fallback engine. Only a compatible CI Runtime module can be hot-updated without an APK release; compiler, Java host, native ABI or .room-format changes require a new APK.
+- The Android APK targets minSdk 24. Runtime update packages contain executable native Rust shared libraries and must come from a trusted publisher.
 
 ## Incomplete or not implemented in the native AL language
 
@@ -53,7 +53,7 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 - UI/game: AL-native window and view toolkit, buttons, text fields, images, touch/gesture event model, graphics renderer, physics, audio and native game loop. The existing bundled Chess/Game panels are Studio previews and are not native AL APIs.
 - Packaging: a defined `.AL` application container and compiler-driven packaging of AL projects into installable Android APKs. The current Android APK is the ALVM Studio IDE itself, not a user-created AL application.
 
-## Implementation order
+## Recently implemented: compound assignment and increment/decrement\n\n- Added `+=`, `-=`, `*=`, `/=` for simple variables.\n- Added prefix and postfix `++` / `--` as statement forms.\n- The compiler lowers these constructs to existing AL arithmetic/load/store instructions; `.room` v9 and the Rust runtime ABI remain unchanged.\n- Array-element and object-field compound updates are explicitly rejected until their single-evaluation lowering is implemented.\n\n## Implementation order
 
 1. **Array and type system:** sized primitive arrays (Stage 14), then object arrays and multidimensional arrays with verifier coverage.
 2. **OOP dispatch:** override signatures, virtual method table metadata, runtime dispatch and inheritance/polymorphism tests.
