@@ -379,7 +379,7 @@ fn verify(program: &Program) -> RtResult<()> {
                         return error("Invalid UI call argument count");
                     }
                     need = arg;
-                    delta = (if instruction.text == "getInt" { 1 } else { 0 }) - arg;
+                    delta = (if instruction.text == "getInt" || instruction.text == "collides" { 1 } else { 0 }) - arg;
                 }
                 CALL => {
                     if arg <= 0 || arg as usize >= functions.len() {
@@ -492,11 +492,13 @@ struct UiState {
     title: String,
     elements: Vec<UiElement>,
     ints: HashMap<String, i64>,
+    frame_callback: String,
+    frame_rate: u32,
 }
 
 impl UiState {
     fn new() -> Self {
-        Self { title: "AL Application".into(), elements: Vec::new(), ints: HashMap::new() }
+        Self { title: "AL Application".into(), elements: Vec::new(), ints: HashMap::new(), frame_callback: String::new(), frame_rate: 0 }
     }
 
     fn find(&self, id: &str) -> Option<usize> {
@@ -623,6 +625,25 @@ fn upsert_ui(state: &mut UiState, element: UiElement) {
     }
 }
 
+
+fn ui_elements_collide(left: &UiElement, right: &UiElement) -> bool {
+    fn bounds(item: &UiElement) -> Option<(i64, i64, i64, i64)> {
+        match item.kind.as_str() {
+            "rect" => Some((item.x, item.y, item.x.saturating_add(item.w), item.y.saturating_add(item.h))),
+            "circle" => Some((
+                item.x.saturating_sub(item.w),
+                item.y.saturating_sub(item.w),
+                item.x.saturating_add(item.w),
+                item.y.saturating_add(item.w),
+            )),
+            _ => None,
+        }
+    }
+    let Some((lx1, ly1, lx2, ly2)) = bounds(left) else { return false; };
+    let Some((rx1, ry1, rx2, ry2)) = bounds(right) else { return false; };
+    lx1 < rx2 && lx2 > rx1 && ly1 < ry2 && ly2 > ry1
+}
+
 fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<RuntimeValue>, state: &mut UiState) -> RtResult<()> {
     let name = instruction.text.as_str();
     if matches!(name, "screen" | "game") {
@@ -693,9 +714,41 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         let key = expect_string(args, 0)?;
         let default = expect_int_arg(args, 1)?;
         stack.push(RuntimeValue::Int(*state.ints.get(&key).unwrap_or(&default)));
+    } else if name == "touchArea" {
+        let id = expect_string(args, 0)?;
+        let x = expect_int_arg(args, 1)?;
+        let y = expect_int_arg(args, 2)?;
+        let w = expect_int_arg(args, 3)?;
+        let h = expect_int_arg(args, 4)?;
+        let callback = expect_string(args, 5)?;
+        if w <= 0 || h <= 0 { return error("UI.touchArea width and height must be positive"); }
+        upsert_ui(state, UiElement {
+            kind: "touchArea".into(), element_id: id, text: String::new(), callback,
+            x, y, w, h, color: 0,
+        });
+    } else if name == "frameLoop" {
+        let callback = expect_string(args, 0)?;
+        let fps = expect_int_arg(args, 1)?;
+        if !(1..=60).contains(&fps) { return error("UI.frameLoop FPS must be between 1 and 60"); }
+        state.frame_callback = callback;
+        state.frame_rate = fps as u32;
+    } else if name == "stopLoop" {
+        state.frame_callback.clear();
+        state.frame_rate = 0;
+    } else if name == "collides" {
+        let left_id = expect_string(args, 0)?;
+        let right_id = expect_string(args, 1)?;
+        let left = state.find(&left_id).and_then(|index| state.elements.get(index));
+        let right = state.find(&right_id).and_then(|index| state.elements.get(index));
+        stack.push(RuntimeValue::Bool(match (left, right) {
+            (Some(left), Some(right)) => ui_elements_collide(left, right),
+            _ => false,
+        }));
     } else if name == "clear" {
         state.elements.clear();
         state.ints.clear();
+        state.frame_callback.clear();
+        state.frame_rate = 0;
     } else {
         return error(format!("Unknown UI opcode: {name}"));
     }
@@ -743,7 +796,20 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
         if entry_locals.is_empty() {
             return error("UI event handler has no parameter");
         }
-        entry_locals[0] = Some(RuntimeValue::String(event_value.to_string()));
+        let mut callback_value = event_value.to_string();
+        if let Some(payload) = event_value.strip_prefix("@touch|") {
+            let mut parts = payload.splitn(3, '|');
+            let id = parts.next().unwrap_or_default();
+            let x = parts.next().ok_or_else(|| RuntimeError("Invalid touch event payload".into()))?
+                .parse::<i64>().map_err(|_| RuntimeError("Invalid touch X coordinate".into()))?;
+            let y = parts.next().ok_or_else(|| RuntimeError("Invalid touch event payload".into()))?
+                .parse::<i64>().map_err(|_| RuntimeError("Invalid touch Y coordinate".into()))?;
+            if id.is_empty() { return error("Touch event is missing its area id"); }
+            state.ints.insert("touchX".into(), x);
+            state.ints.insert("touchY".into(), y);
+            callback_value = id.to_string();
+        }
+        entry_locals[0] = Some(RuntimeValue::String(callback_value));
     }
     let mut frames = vec![Frame { function_id: entry_index, pc: 0, locals: entry_locals, stack_base: 0 }];
     let mut stack = Vec::<RuntimeValue>::new();
@@ -1071,12 +1137,14 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             title: state.title.clone(),
             elements: state.elements.clone(),
             ints: state.ints.clone(),
+            frame_callback: state.frame_callback.clone(),
+            frame_rate: state.frame_rate,
         }))
     })();
     match result {
         Ok((output, state)) => json!({
             "ok": true, "output": output,
-            "ui": { "title": state.title, "elements": state.elements },
+            "ui": { "title": state.title, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate },
             "runtimeVersion": version,
         }),
         Err(error) => {
@@ -1113,7 +1181,7 @@ fn run_room_file(room_path: &str, entry_name: &str, event_value: &str, version: 
 
 fn current_ui_json() -> JsonValue {
     let state = lock_ui();
-    json!({ "title": state.title, "elements": state.elements })
+    json!({ "title": state.title, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate })
 }
 
 pub fn run_room(room_path: &str, entry_name: &str, event_value: &str) -> JsonValue {
@@ -2038,6 +2106,30 @@ mod tests {
         assert_eq!(result["moduleCount"], 1);
         assert_eq!(result["assetCount"], 1);
         let _ = fs::remove_dir_all(&root);
+    }
+
+
+    #[test]
+    fn ui_collision_detects_overlapping_rectangles() {
+        let rect = |id: &str, x: i64, y: i64, w: i64, h: i64| UiElement {
+            kind: "rect".into(), element_id: id.into(), text: String::new(), callback: String::new(),
+            x, y, w, h, color: 0,
+        };
+        assert!(ui_elements_collide(&rect("a", 0, 0, 30, 30), &rect("b", 20, 20, 30, 30)));
+        assert!(!ui_elements_collide(&rect("a", 0, 0, 10, 10), &rect("b", 10, 0, 10, 10)));
+    }
+
+    #[test]
+    fn ui_collision_detects_circle_rectangle_overlap() {
+        let circle = UiElement {
+            kind: "circle".into(), element_id: "ball".into(), text: String::new(), callback: String::new(),
+            x: 20, y: 20, w: 10, h: 0, color: 0,
+        };
+        let rect = UiElement {
+            kind: "rect".into(), element_id: "wall".into(), text: String::new(), callback: String::new(),
+            x: 25, y: 10, w: 20, h: 20, color: 0,
+        };
+        assert!(ui_elements_collide(&circle, &rect));
     }
 
     #[test]
