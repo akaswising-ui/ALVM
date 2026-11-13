@@ -10,6 +10,8 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.DocumentsContract;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -88,6 +90,11 @@ public class MainActivity extends Activity {
     private boolean compiled = false;
     private Dialog nativeUiDialog;
     private byte[] pendingAlPackage;
+    private final Handler gameLoopHandler = new Handler(Looper.getMainLooper());
+    private Runnable gameLoopRunnable;
+    private String gameLoopCallback = "";
+    private int gameLoopFrameRate = 0;
+    private boolean gameLoopPaused = false;
 
     private static native String nativeCompile(String source, String filesDir);
     private static native String nativeDisassemble(String roomPath);
@@ -966,7 +973,17 @@ public class MainActivity extends Activity {
                 }
             }
             if (hasGameCanvas) {
-                Game2DView gameView = new Game2DView(this, elements);
+                Game2DView gameView = new Game2DView(this, elements, (callback, id, x, y) -> {
+                    try {
+                        String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y);
+                        if (result != null && result.trim().length() > 0) {
+                            showOutputInWeb(result, result.toLowerCase().contains("error")
+                                    ? "RUNTIME ERROR" : "SUCCESS");
+                        }
+                    } catch (Exception error) {
+                        showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
+                    }
+                });
                 LinearLayout.LayoutParams gameParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(480));
                 gameParams.bottomMargin = dp(12);
@@ -1038,6 +1055,7 @@ public class MainActivity extends Activity {
             if (nativeUiDialog == null) nativeUiDialog = new Dialog(this);
             nativeUiDialog.setContentView(scroll);
             nativeUiDialog.setCancelable(true);
+            nativeUiDialog.setOnDismissListener(dialog -> stopGameLoop());
             if (!nativeUiDialog.isShowing()) nativeUiDialog.show();
             if (nativeUiDialog.getWindow() != null) {
                 nativeUiDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
@@ -1047,8 +1065,71 @@ public class MainActivity extends Activity {
                 int dialogHeight = Math.min((int) (screenHeight * 0.78f), dp(620));
                 nativeUiDialog.getWindow().setLayout(dialogWidth, dialogHeight);
             }
+            configureGameLoop(root);
         } catch (Exception error) {
             showOutputInWeb("Could not render AL UI: " + error.getMessage(), "ERROR");
+        }
+    }
+
+
+    private void configureGameLoop(JSONObject root) {
+        String callback = root.optString("frameCallback", "");
+        int fps = root.optInt("frameRate", 0);
+        if (callback.trim().isEmpty() || fps < 1 || fps > 60) {
+            stopGameLoop();
+            return;
+        }
+        if (callback.equals(gameLoopCallback) && fps == gameLoopFrameRate && gameLoopRunnable != null) {
+            return;
+        }
+        stopGameLoop();
+        gameLoopCallback = callback;
+        gameLoopFrameRate = fps;
+        gameLoopRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (gameLoopPaused || isFinishing() || nativeUiDialog == null
+                        || !nativeUiDialog.isShowing() || !callback.equals(gameLoopCallback)) {
+                    return;
+                }
+                String output = runCiRuntime(callback, "frame");
+                if (output != null && output.startsWith("✕")) {
+                    showOutputInWeb(output, "RUNTIME ERROR");
+                    stopGameLoop();
+                    return;
+                }
+                if (gameLoopRunnable == this && !gameLoopPaused) {
+                    gameLoopHandler.postDelayed(this, Math.max(16, 1000 / gameLoopFrameRate));
+                }
+            }
+        };
+        if (!gameLoopPaused) {
+            gameLoopHandler.postDelayed(gameLoopRunnable, Math.max(16, 1000 / gameLoopFrameRate));
+        }
+    }
+
+    private void stopGameLoop() {
+        if (gameLoopRunnable != null) {
+            gameLoopHandler.removeCallbacks(gameLoopRunnable);
+        }
+        gameLoopRunnable = null;
+        gameLoopCallback = "";
+        gameLoopFrameRate = 0;
+    }
+
+    @Override
+    protected void onPause() {
+        gameLoopPaused = true;
+        if (gameLoopRunnable != null) gameLoopHandler.removeCallbacks(gameLoopRunnable);
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        gameLoopPaused = false;
+        if (gameLoopRunnable != null) {
+            gameLoopHandler.postDelayed(gameLoopRunnable, Math.max(16, 1000 / Math.max(1, gameLoopFrameRate)));
         }
     }
 
@@ -1224,6 +1305,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        gameLoopPaused = true;
+        stopGameLoop();
         runtimeUpdateExecutor.shutdownNow();
         if (nativeUiDialog != null) { nativeUiDialog.dismiss(); nativeUiDialog = null; }
         if (webView != null) {

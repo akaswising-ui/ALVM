@@ -25,7 +25,7 @@ Android uses a Java host/JNI bridge and the same C++ compiler and Rust runtime. 
 - Variables, scopes, conditions, while/do-while/for/foreach loops, switch, break, continue and return.
 - Functions, recursion, overloading, classes, fields, objects, constructors, inheritance, instance methods and explicit base-constructor calls.
 - Simple-variable compound assignments += -= *= /= and prefix/postfix ++ --.
-- Native UI calls and basic 2D shapes through AL UI APIs.
+- Native UI calls, 2D shapes, logical-coordinate touch areas, a 1–60 FPS Android frame callback and basic AABB collision checks.
 
 ## Bytecode and runtime
 
@@ -57,4 +57,4 @@ ALPK v1 has one entry module. External libraries, dependencies and multiple-modu
 
 ## Still incomplete
 
-Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, full standard libraries, multi-module package linking, external dependencies, full native game loop, direct touch/input API, physics, audio, complete graphics/sprite APIs and AL-to-Android-APK generation remain planned or partial. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
+Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, full standard libraries, multi-module package linking, external dependencies, advanced native input devices, rigid-body physics, audio, complete graphics/sprite APIs and AL-to-Android-APK generation remain planned or partial. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.

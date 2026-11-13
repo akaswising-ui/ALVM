@@ -257,3 +257,20 @@ double[] precise = [1.25, 2.5, 3.75];
 - Float and double are supported as scalar class fields and function return types.
 - Float payloads are serialized as IEEE-754 binary32 bits in the low 32 bits of the instruction's signed i64 argument. Double payloads use the complete 64-bit argument.
 - This upgrade uses `.room` version 10. Version 9 bytecode is intentionally rejected and must be recompiled from `.al` source.
+
+## Native game-loop, canvas touch and collision APIs
+
+The Android native UI bridge supports these AL calls:
+
+```al
+UI.touchArea("move", 0, 0, 320, 480, "onTouch");
+UI.frameLoop("update", 30);
+boolean hit = UI.collides("player", "wall");
+UI.stopLoop();
+```
+
+- `UI.touchArea(id, x, y, width, height, callback)` registers a logical-canvas hit area. The callback must be a top-level `void function(string event)`. Canvas coordinates are reported through `UI.getInt("touchX", 0)` and `UI.getInt("touchY", 0)` during the callback.
+- `UI.frameLoop(callback, fps)` schedules the named top-level `void function(string event)` at 1–60 frames per second. The event value is `"frame"`. The Android host pauses the loop when the Activity pauses or the game dialog closes.
+- `UI.stopLoop()` cancels the frame callback.
+- `UI.collides(leftId, rightId)` returns true when two registered rectangle or circle bounding boxes overlap. It is an AABB collision helper, not a full rigid-body physics engine. Lines and touch areas are not collidable.
+- The APIs are implemented in the C++ desktop VM and Rust CI Runtime, use existing `UiCall` bytecode and keep `.room v10` unchanged.

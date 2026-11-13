@@ -25,6 +25,17 @@ FLOATING="$("$RUST_RUNNER" run "$WORK/floating-point.room")"
 printf '%s\n' "$FLOATING" | grep -q '"ok":true'
 printf '%s\n' "$FLOATING" | grep -Fq '"output":"3.75\n4.75\n3.75\n2\n3.75\ntrue"'
 
+"$ALVM_BIN" compile "$ROOT/examples/touch_loop.al" -o "$WORK/touch-loop.room"
+GAME_MAIN="$("$RUST_RUNNER" run "$WORK/touch-loop.room")"
+printf '%s\n' "$GAME_MAIN" | grep -q '"ok":true'
+printf '%s\n' "$GAME_MAIN" | grep -q '"frameCallback":"update"'
+printf '%s\n' "$GAME_MAIN" | grep -q '"frameRate":30'
+printf '%s\n' "$GAME_MAIN" | grep -q '"output":"true"'
+GAME_EVENTS="$("$RUST_RUNNER" run "$WORK/touch-loop.room" --event onTouch '@touch|move|45|67' --event update frame --event stopGame stop)"
+printf '%s\n' "$GAME_EVENTS" | grep -q '"ok":true'
+printf '%s\n' "$GAME_EVENTS" | grep -q '"id":"touch","kind":"text","text":"45"'
+printf '%s\n' "$GAME_EVENTS" | grep -q '"id":"frames","kind":"text","text":"1"'
+printf '%s\n' "$GAME_EVENTS" | grep -q '"frameRate":0'
 printf 'packaged asset\n' > "$WORK/asset.txt"
 "$ALPACK_BIN" create "$WORK/Floating.AL" FloatingPoint 1.0.0 "$WORK/floating-point.room" "$WORK/asset.txt"
 PACKAGE_RESULT="$("$ALPACK_BIN" verify "$WORK/Floating.AL")"
@@ -32,4 +43,4 @@ printf '%s\n' "$PACKAGE_RESULT" | grep -q '"ok":true'
 printf '%s\n' "$PACKAGE_RESULT" | grep -q '"moduleCount":1'
 printf '%s\n' "$PACKAGE_RESULT" | grep -q '"assetCount":1'
 
-echo "Rust CI Runtime and .AL package end-to-end tests passed."
+echo "Rust CI Runtime game-loop/touch/collision and .AL package end-to-end tests passed."
