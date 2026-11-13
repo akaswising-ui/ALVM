@@ -1719,6 +1719,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rust_runtime_executes_float_and_double_bytecode() {
+        let bytes = test_room_bytes(vec![
+            Instruction { op: PUSH_FLOAT, arg: f32::to_bits(1.5) as i64, text: String::new() },
+            Instruction { op: PUSH_FLOAT, arg: f32::to_bits(2.25) as i64, text: String::new() },
+            Instruction { op: ADD, arg: 0, text: String::new() },
+            Instruction { op: PRINT, arg: 0, text: String::new() },
+            Instruction { op: PUSH_DOUBLE, arg: f64::to_bits(9.5) as i64, text: String::new() },
+            Instruction { op: PUSH_DOUBLE, arg: f64::to_bits(2.0) as i64, text: String::new() },
+            Instruction { op: DIV, arg: 0, text: String::new() },
+            Instruction { op: PRINT, arg: 0, text: String::new() },
+            Instruction { op: HALT, arg: 0, text: String::new() },
+        ]);
+        let result = run_room_bytes(&bytes, "main", "", build_version());
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["output"], "3.75\\n4.75");
+    }
+
+    #[test]
     fn plugin_symbol_names_are_c_terminated() {
         for symbol in [
             PLUGIN_API_VERSION_SYMBOL,
