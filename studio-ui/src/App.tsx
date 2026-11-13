@@ -5,7 +5,7 @@ import WebsiteBuilder from './WebsiteBuilder';
 import './builder.css';
 import {
   Activity, BookOpen, Braces, Boxes, Code2, FileCode2, FolderOpen, Globe,
-  Play, Save, Terminal, Upload, X
+  Package, Play, Save, Terminal, Upload, X
 } from 'lucide-react';
 
 type AndroidBridgeApi = {
@@ -14,6 +14,7 @@ type AndroidBridgeApi = {
   openWorkspace?: () => void;
   importFile?: () => void;
   showCiRuntimeManager?: () => void;
+  createAlPackage?: (source: string, name: string) => void;
 };
 
 declare global {
@@ -475,6 +476,16 @@ export default function App() {
     URL.revokeObjectURL(url);
     log(['✓ Compiled AL bytecode.', 'Saved file: ' + anchor.download, 'Format: ALVM_ROOM v1'], 'COMPILED');
   };
+  const packageAl = () => {
+    const createPackage = window.Android?.createAlPackage;
+    if (!createPackage) {
+      log(['✕ .AL export requires the ALVM Studio Android host.'], 'ERROR');
+      return;
+    }
+    const appName = filename.replace(/\\.al$/i, '') || 'ALApp';
+    createPackage(source, appName);
+    log(['Preparing .AL package with the native AL compiler.', 'The compiled .room v10 module and manifest will be saved using Android document picker.'], 'READY');
+  };
   const openFile = async (file: File) => {
     try {
       if (file.name.toLowerCase().endsWith('.room')) {
@@ -606,6 +617,7 @@ export default function App() {
               <button className="run-button" onClick={run}><Play size={15} fill="currentColor" />Run</button>
               <button className="compile-button" onClick={compileRoom}><Braces size={15} />Compile .room</button>
               <button className="execute-button" onClick={executeRoom}><Terminal size={15} />Execute .room</button>
+              <button className="compile-button" onClick={packageAl}><Package size={15} />Package .AL</button>
             </div>
             <span>ALVM Studio · {appVersion}</span>
           </div>
