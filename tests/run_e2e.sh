@@ -104,6 +104,14 @@ if "$BIN" compile "$ROOT/tests/compound_assignment_array.al" -o "$TMP/compound-a
 fi
 test ! -e "$TMP/compound-array.room"
 
+"$BIN" compile "$ROOT/examples/room_capitalized.al" -o "$TMP/room-capitalized.room"
+ROOM_CAPITALIZED_EXPECTED="room keyword ok"
+ROOM_CAPITALIZED_ACTUAL="$("$BIN" run "$TMP/room-capitalized.room")"
+if [[ "$ROOM_CAPITALIZED_ACTUAL" != "$ROOM_CAPITALIZED_EXPECTED" ]]; then
+  printf 'capitalized Room expected:\\n%s\\nactual:\\n%s\\n' "$ROOM_CAPITALIZED_EXPECTED" "$ROOM_CAPITALIZED_ACTUAL" >&2
+  exit 1
+fi
+
 "$BIN" compile "$ROOT/examples/control_flow_complete.al" -o "$TMP/control-complete.room"
 CONTROL_COMPLETE_EXPECTED="$(printf '10\n12\n4\n20\n2')"
 CONTROL_COMPLETE_ACTUAL="$("$BIN" run "$TMP/control-complete.room")"

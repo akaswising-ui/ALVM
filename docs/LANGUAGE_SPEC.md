@@ -232,3 +232,7 @@ score--;
 - These forms use the ordinary AL type checker. For example, string `+=` string uses the existing string-concatenation operation; increment/decrement require integer operands.
 - Compound assignment and increment/decrement on array elements or object fields are rejected with an explicit compiler diagnostic. They are not silently approximated.
 - This feature does not add bytecode opcodes or change the `.room` format; it uses existing ALVM instructions.
+
+## Program entry declaration spelling
+
+The outer program container accepts both `room Name { ... }` and `Room Name { ... }`. The two spellings have identical semantics and produce the same `.room` bytecode. This does not change `class` declarations used for AL object types.
