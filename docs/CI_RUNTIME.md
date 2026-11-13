@@ -56,10 +56,10 @@ tools/package_ci_runtime.sh 2.1.0
 
 The script builds both Android shared libraries from `runtime/ci-runtime` and creates:
 
-- `dist/ci-runtime-2.0.1.ciruntime`
-- `dist/ci-runtime-2.0.1.ciruntime.sha256`
+- `dist/ci-runtime-2.1.0.ciruntime`
+- `dist/ci-runtime-2.1.0.ciruntime.sha256`
 
-A release is published by pushing a tag such as `ci-runtime-v2.0.1`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
+A release is published by pushing a tag such as `ci-runtime-v2.1.0`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
 
 ## Installing and rolling back on Android
 
