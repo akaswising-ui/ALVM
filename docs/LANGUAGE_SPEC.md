@@ -236,3 +236,24 @@ score--;
 ## Program entry declaration spelling
 
 The outer program container accepts both `room Name { ... }` and `Room Name { ... }`. The two spellings have identical semantics and produce the same `.room` bytecode. This does not change `class` declarations used for AL object types.
+
+## Stage 17: floating-point scalar values and arrays
+
+The compiler and ALVM support:
+
+```al
+float ratio = 1.5f;
+double distance = 125.75;
+float[] samples = new float[4];
+double[] precise = [1.25, 2.5, 3.75];
+```
+
+- `float` is IEEE-754 binary32. A decimal literal with an `f` or `F` suffix has AL type `float`.
+- `double` is IEEE-754 binary64. A decimal literal without an `f` suffix, or with a `d` / `D` suffix, has AL type `double`.
+- Decimal literals use a decimal point and digits on both sides. Exponent notation is not implemented in this stage.
+- Arithmetic `+`, `-`, `*`, `/`, `%`, unary minus and numeric comparisons work for matching operand types.
+- Mixed numeric operations such as `float + double` are compile-time errors. There is no implicit numeric widening or narrowing yet.
+- Float and double arrays support literals, sized allocation, default initialization, indexed reads/writes, `.length` and `foreach`.
+- Float and double are supported as scalar class fields and function return types.
+- Float payloads are serialized as IEEE-754 binary32 bits in the low 32 bits of the instruction's signed i64 argument. Double payloads use the complete 64-bit argument.
+- This upgrade uses `.room` version 10. Version 9 bytecode is intentionally rejected and must be recompiled from `.al` source.

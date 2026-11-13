@@ -27,8 +27,8 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 ## Current implemented native foundation
 
 - C++17 native lexer, parser, AST, semantic/type analysis, IR lowering and bytecode serialization; the desktop CLI retains the C++ VM for regression coverage.
-- Android ALVM Studio executes verified .room v9 instructions with the Rust CI Runtime through JNI; Java renders native Android Views and does not interpret bytecode.
-- `.room` version 9 with a real instruction stream, structural validation and operand-stack verification.
+- Android ALVM Studio executes verified .room v10 instructions with the Rust CI Runtime through JNI; Java renders native Android Views and does not interpret bytecode.
+- `.room` version 10 with a real instruction stream, structural validation and operand-stack verification.
 - Integer, string and boolean scalar values; their primitive arrays support literals, indexing, mutation, length, foreach and sized allocation with default initialization.
 - Functions, recursion, global overloads, classes, fields, objects, constructors, inheritance, explicit base-constructor calls, instance method overloads and derived-to-base assignment.
 - Conditional and loop control flow, switch/case, break and continue.
@@ -62,8 +62,28 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 5. **Application UI framework (Stage 15 initial slice implemented):** AL `UI.screen`, `UI.text`, `UI.button`, integer UI state and AL event callbacks render through native Java Android Views. Still to build: editable text fields, custom layout trees, image widgets, full event/lifecycle system. Keep ALVM Studio itself offline; any network permission must belong to a generated app that explicitly requests it.
 6. **Graphics/game/audio:** 2D renderer, touch/keyboard input, frame loop, collision helpers and audio playback, each backed by working native implementations and tests.
 7. **Database and networking:** local database first; networking as an optional, permission-gated capability rather than a background dependency of the IDE.
-8. **Application packaging:** `.AL` manifest/container, resources and module validation, then Android project generation and APK build with clear signing/build diagnostics.
+8. **Application packaging:** ALPK v1 is implemented for one main .room module, a manifest and optional assets (CLI); the IDE can export the single-module package. Multi-module linking, external libraries/dependencies and building generated AL applications into APKs remain planned.
 
 ## Release rule
 
 A capability is marked implemented only after the native compiler/VM or Android host implementation exists, automated tests pass, and its documentation names limitations. Library Store snippets remain labelled Planned until that condition is met.
+
+## Recently implemented: floating-point types and .room v10
+
+- The native C++ compiler recognises `float`, `double`, decimal literals and strict same-type numeric operations.
+- The C++ VM and Rust CI Runtime execute binary32 and binary64 pushes, arithmetic, comparisons and unary negation.
+- Float/double arrays support literals, sized allocation, default initialization, indexing, assignment and length.
+- Scalar float/double class fields and function return types are supported.
+- Mixed float/double operations are rejected. Exponent-form literals, implicit numeric conversion, float/double array class fields and remaining primitive types are still pending.
+- The compiler and runtime now use binary `.room` v10. Existing v9 programs must be recompiled from source.
+
+
+## Recently implemented: ALPK v1 application packages
+
+- The Rust alpack tool creates and verifies .AL ZIP archives.
+- Required entries: manifest.json and modules/main.room. Optional CLI assets are stored under assets/.
+- The packager verifies the main module as executable .room v10 bytecode before creating the archive.
+- The Android IDE Package .AL button compiles source using the native C++ compiler, writes the manifest and module, then opens Android's document picker to save the .AL file.
+- Package verification rejects unexpected paths, duplicate entries, mismatched manifest contents, unsupported room formats and oversized archives.
+- ALPK v1 contains one entry module. External libraries, dependency resolution and multiple linked modules are not implemented; libraries and dependencies must remain empty.
+- Creating an .AL package is not the same as generating an Android APK. APK generation/signing for user apps remains planned.

@@ -14,9 +14,9 @@ The Android Run, Execute and UI-event paths use the Rust CI Runtime. The existin
 
 ## Runtime versions and compatibility
 
-- Bundled Rust runtime: **2.0.0**.
+- Bundled Rust runtime: **2.1.0**.
 - Runtime API: **1**.
-- Supported bytecode: **.room v9**.
+- Supported bytecode: **.room v10**.
 - Android ABIs: `arm64-v8a` and `armeabi-v7a`.
 - Installed modules live in app-private `files/ci-runtime/versions/` folders.
 - Active version and rollback history live in `files/ci-runtime/active.json`.
@@ -51,15 +51,15 @@ Install Rust, the Android NDK and the Android Rust targets, then run:
 
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi
-tools/package_ci_runtime.sh 2.0.1
+tools/package_ci_runtime.sh 2.1.0
 ```
 
 The script builds both Android shared libraries from `runtime/ci-runtime` and creates:
 
-- `dist/ci-runtime-2.0.1.ciruntime`
-- `dist/ci-runtime-2.0.1.ciruntime.sha256`
+- `dist/ci-runtime-2.1.0.ciruntime`
+- `dist/ci-runtime-2.1.0.ciruntime.sha256`
 
-A release is published by pushing a tag such as `ci-runtime-v2.0.1`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
+A release is published by pushing a tag such as `ci-runtime-v2.1.0`, or by manually running the **Publish Rust CI Runtime release** workflow with a version number.
 
 ## Installing and rolling back on Android
 

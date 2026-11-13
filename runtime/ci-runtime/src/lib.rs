@@ -1,4 +1,4 @@
-//! CI Runtime: Rust implementation of the ALRM .room v9 virtual machine.
+//! CI Runtime: Rust implementation of the ALRM .room v10 virtual machine.
 //!
 //! AL source is compiled by the C++ compiler. This crate reads, validates and
 //! executes verified bytecode only. It does not parse or evaluate AL source.
@@ -16,11 +16,12 @@ use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Mutex, MutexGuard, OnceLock};
-use zip::ZipArchive;
+use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 pub const RUNTIME_API_VERSION: u32 = 1;
-pub const ROOM_FORMAT_VERSION: u32 = 9;
-pub const BUNDLED_VERSION: &str = "2.0.0";
+pub const ROOM_FORMAT_VERSION: u32 = 10;
+pub const BUNDLED_VERSION: &str = "2.1.0";
 
 const TYPE_INT: u32 = 0;
 const TYPE_STRING: u32 = 1;
@@ -30,6 +31,10 @@ const TYPE_STRING_ARRAY: u32 = 4;
 const TYPE_BOOL_ARRAY: u32 = 5;
 const TYPE_VOID: u32 = 6;
 const TYPE_UNKNOWN: u32 = 7;
+const TYPE_FLOAT: u32 = 8;
+const TYPE_DOUBLE: u32 = 9;
+const TYPE_FLOAT_ARRAY: u32 = 10;
+const TYPE_DOUBLE_ARRAY: u32 = 11;
 
 const PUSH_INT: u8 = 1;
 const PUSH_STRING: u8 = 2;
@@ -68,6 +73,8 @@ const SET_FIELD: u8 = 34;
 const DUP: u8 = 35;
 const NEW_ARRAY_SIZED: u8 = 36;
 const UI_CALL: u8 = 37;
+const PUSH_FLOAT: u8 = 38;
+const PUSH_DOUBLE: u8 = 39;
 
 const I64_MIN: i64 = i64::MIN;
 const I64_MAX: i64 = i64::MAX;
@@ -215,8 +222,8 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
         let mut field_types = Vec::with_capacity(field_count);
         for _ in 0..field_count {
             let field_type = reader.u32()?;
-            if !matches!(field_type, TYPE_INT | TYPE_STRING | TYPE_BOOL) {
-                return error("Unsupported object field type in .room v9");
+            if !matches!(field_type, TYPE_INT | TYPE_STRING | TYPE_BOOL | TYPE_FLOAT | TYPE_DOUBLE) {
+                return error("Unsupported object field type in .room v10");
             }
             field_types.push(field_type);
         }
@@ -250,7 +257,7 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
         let mut code = Vec::with_capacity(instruction_count);
         for _ in 0..instruction_count {
             let op = reader.u8()?;
-            if !(PUSH_INT..=UI_CALL).contains(&op) {
+            if !(PUSH_INT..=PUSH_DOUBLE).contains(&op) {
                 return error("Invalid opcode");
             }
             code.push(Instruction { op, arg: reader.i64()?, text: reader.string()? });
@@ -266,12 +273,12 @@ fn read_room_bytes(data: &[u8]) -> RtResult<Program> {
 }
 
 fn valid_type(value: u32, class_count: usize) -> bool {
-    value <= TYPE_UNKNOWN || (value >= 100 && ((value - 100) as usize) < class_count)
+    value <= TYPE_DOUBLE_ARRAY || (value >= 100 && ((value - 100) as usize) < class_count)
 }
 
 fn stack_delta(op: u8) -> i64 {
     match op {
-        PUSH_INT | PUSH_STRING | PUSH_BOOL | LOAD | NEW_OBJECT | DUP => 1,
+        PUSH_INT | PUSH_STRING | PUSH_BOOL | PUSH_FLOAT | PUSH_DOUBLE | LOAD | NEW_OBJECT | DUP => 1,
         STORE | JUMP_FALSE | PRINT | POP => -1,
         ADD | SUB | MUL | DIV | MOD | EQ | NE | LT | GT | LE | GE | AND | OR | ARRAY_GET => -1,
         ARRAY_SET => -3,
@@ -362,7 +369,7 @@ fn verify(program: &Program) -> RtResult<()> {
                     delta = 1 - arg;
                 }
                 NEW_ARRAY_SIZED => {
-                    if !matches!(arg, 0 | 1 | 2) {
+                    if !matches!(arg, 0 | 1 | 2 | 8 | 9) {
                         return error("Invalid sized-array element type");
                     }
                     need = 1;
@@ -452,6 +459,8 @@ enum RuntimeValue {
     Bool(bool),
     Array(Rc<RefCell<ArrayValue>>),
     Object(Rc<RefCell<ObjectValue>>),
+    Float(f32),
+    Double(f64),
 }
 
 struct ArrayValue {
@@ -521,6 +530,8 @@ fn value_kind(value: &RuntimeValue) -> usize {
         RuntimeValue::Bool(_) => 2,
         RuntimeValue::Array(_) => 3,
         RuntimeValue::Object(_) => 4,
+        RuntimeValue::Float(_) => 5,
+        RuntimeValue::Double(_) => 6,
     }
 }
 
@@ -529,6 +540,8 @@ fn show_value(value: &RuntimeValue) -> String {
         RuntimeValue::Bool(value) => if *value { "true" } else { "false" }.into(),
         RuntimeValue::Int(value) => value.to_string(),
         RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::Float(value) => value.to_string(),
+        RuntimeValue::Double(value) => value.to_string(),
         RuntimeValue::Array(value) => format!("[array length={}]", value.borrow().items.len()),
         RuntimeValue::Object(_) => "[object]".into(),
     }
@@ -565,6 +578,8 @@ fn same_value(left: &RuntimeValue, right: &RuntimeValue) -> bool {
         (RuntimeValue::Int(a), RuntimeValue::Int(b)) => a == b,
         (RuntimeValue::String(a), RuntimeValue::String(b)) => a == b,
         (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a == b,
+        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => a == b,
+        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => a == b,
         (RuntimeValue::Array(a), RuntimeValue::Array(b)) => Rc::ptr_eq(a, b),
         (RuntimeValue::Object(a), RuntimeValue::Object(b)) => Rc::ptr_eq(a, b),
         _ => false,
@@ -754,6 +769,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                 PUSH_INT => stack.push(RuntimeValue::Int(arg)),
                 PUSH_STRING => stack.push(RuntimeValue::String(instruction.text.clone())),
                 PUSH_BOOL => stack.push(RuntimeValue::Bool(arg != 0)),
+                PUSH_FLOAT => stack.push(RuntimeValue::Float(f32::from_bits(arg as u32))),
+                PUSH_DOUBLE => stack.push(RuntimeValue::Double(f64::from_bits(arg as u64))),
                 LOAD => {
                     let slot = usize::try_from(arg).map_err(|_| RuntimeError("Invalid local slot".into()))?;
                     let value = frames[frame_index].locals.get(slot).and_then(Clone::clone)
@@ -778,9 +795,15 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     ui_call(&instruction, &args, &mut stack, state)?;
                 }
                 NEG => {
-                    let value = expect_int(pop(&mut stack)?)?;
-                    if value == I64_MIN { return error("Integer overflow"); }
-                    stack.push(RuntimeValue::Int(-value));
+                    match pop(&mut stack)? {
+                        RuntimeValue::Int(value) => {
+                            if value == I64_MIN { return error("Integer overflow"); }
+                            stack.push(RuntimeValue::Int(-value));
+                        }
+                        RuntimeValue::Float(value) => stack.push(RuntimeValue::Float(-value)),
+                        RuntimeValue::Double(value) => stack.push(RuntimeValue::Double(-value)),
+                        _ => return error("Unary '-' requires a numeric value"),
+                    }
                 }
                 NOT => {
                     let value = expect_bool(pop(&mut stack)?)?;
@@ -791,25 +814,45 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     let left = pop(&mut stack)?;
                     let value = match (left, right) {
                         (RuntimeValue::String(a), RuntimeValue::String(b)) => RuntimeValue::String(a + &b),
-                        (a, b) => RuntimeValue::Int(checked_add(expect_int(a)?, expect_int(b)?)?),
+                        (RuntimeValue::Int(a), RuntimeValue::Int(b)) => RuntimeValue::Int(checked_add(a, b)?),
+                        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => RuntimeValue::Float(a + b),
+                        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => RuntimeValue::Double(a + b),
+                        _ => return error("Numeric operand type mismatch for +"),
                     };
                     stack.push(value);
                 }
                 SUB | MUL | DIV | MOD => {
-                    let right = expect_int(pop(&mut stack)?)?;
-                    let left = expect_int(pop(&mut stack)?)?;
-                    let result = match op {
-                        SUB => checked_sub(left, right)?,
-                        MUL => checked_mul(left, right)?,
-                        DIV | MOD => {
-                            if right == 0 { return error("Division by zero"); }
-                            if left == I64_MIN && right == -1 { return error("Integer overflow"); }
-                            let quotient = left / right;
-                            if op == DIV { quotient } else { left % right }
+                    let right = pop(&mut stack)?;
+                    let left = pop(&mut stack)?;
+                    let result = match (left, right) {
+                        (RuntimeValue::Int(a), RuntimeValue::Int(b)) => {
+                            let value = match op {
+                                SUB => checked_sub(a, b)?,
+                                MUL => checked_mul(a, b)?,
+                                DIV | MOD => {
+                                    if b == 0 { return error("Division by zero"); }
+                                    if a == I64_MIN && b == -1 { return error("Integer overflow"); }
+                                    if op == DIV { a / b } else { a % b }
+                                }
+                                _ => unreachable!(),
+                            };
+                            RuntimeValue::Int(value)
                         }
-                        _ => unreachable!(),
+                        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => {
+                            if (op == DIV || op == MOD) && b == 0.0 { return error("Division by zero"); }
+                            RuntimeValue::Float(match op {
+                                SUB => a - b, MUL => a * b, DIV => a / b, MOD => a % b, _ => unreachable!()
+                            })
+                        }
+                        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => {
+                            if (op == DIV || op == MOD) && b == 0.0 { return error("Division by zero"); }
+                            RuntimeValue::Double(match op {
+                                SUB => a - b, MUL => a * b, DIV => a / b, MOD => a % b, _ => unreachable!()
+                            })
+                        }
+                        _ => return error("Numeric operand type mismatch"),
                     };
-                    stack.push(RuntimeValue::Int(result));
+                    stack.push(result);
                 }
                 EQ | NE => {
                     let right = pop(&mut stack)?;
@@ -818,14 +861,19 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     stack.push(RuntimeValue::Bool(if op == EQ { equal } else { !equal }));
                 }
                 LT | GT | LE | GE => {
-                    let right = expect_int(pop(&mut stack)?)?;
-                    let left = expect_int(pop(&mut stack)?)?;
-                    let result = match op {
-                        LT => left < right,
-                        GT => left > right,
-                        LE => left <= right,
-                        GE => left >= right,
-                        _ => unreachable!(),
+                    let right = pop(&mut stack)?;
+                    let left = pop(&mut stack)?;
+                    let result = match (left, right) {
+                        (RuntimeValue::Int(a), RuntimeValue::Int(b)) => match op {
+                            LT => a < b, GT => a > b, LE => a <= b, GE => a >= b, _ => unreachable!(),
+                        },
+                        (RuntimeValue::Float(a), RuntimeValue::Float(b)) => match op {
+                            LT => a < b, GT => a > b, LE => a <= b, GE => a >= b, _ => unreachable!(),
+                        },
+                        (RuntimeValue::Double(a), RuntimeValue::Double(b)) => match op {
+                            LT => a < b, GT => a > b, LE => a <= b, GE => a >= b, _ => unreachable!(),
+                        },
+                        _ => return error("Comparison operand type mismatch"),
                     };
                     stack.push(RuntimeValue::Bool(result));
                 }
@@ -861,6 +909,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                         TYPE_INT => (0, RuntimeValue::Int(0)),
                         TYPE_STRING => (1, RuntimeValue::String(String::new())),
                         TYPE_BOOL => (2, RuntimeValue::Bool(false)),
+                        TYPE_FLOAT => (5, RuntimeValue::Float(0.0)),
+                        TYPE_DOUBLE => (6, RuntimeValue::Double(0.0)),
                         _ => return error("Invalid sized-array element type"),
                     };
                     stack.push(RuntimeValue::Array(Rc::new(RefCell::new(ArrayValue {
@@ -910,6 +960,8 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                         TYPE_INT => Ok(RuntimeValue::Int(0)),
                         TYPE_STRING => Ok(RuntimeValue::String(String::new())),
                         TYPE_BOOL => Ok(RuntimeValue::Bool(false)),
+                        TYPE_FLOAT => Ok(RuntimeValue::Float(0.0)),
+                        TYPE_DOUBLE => Ok(RuntimeValue::Double(0.0)),
                         _ => error("Unsupported object field type"),
                     }).collect::<RtResult<Vec<_>>>()?;
                     stack.push(RuntimeValue::Object(Rc::new(RefCell::new(ObjectValue { class_id, fields }))));
@@ -937,7 +989,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                     let expected_type = classes.get(object.class_id)
                         .and_then(|class| class.field_types.get(field_index))
                         .copied().ok_or_else(|| RuntimeError("Object field index out of bounds".into()))?;
-                    let expected_kind = match expected_type { TYPE_INT => 0, TYPE_STRING => 1, TYPE_BOOL => 2, _ => usize::MAX };
+                    let expected_kind = match expected_type { TYPE_INT => 0, TYPE_STRING => 1, TYPE_BOOL => 2, TYPE_FLOAT => 5, TYPE_DOUBLE => 6, _ => usize::MAX };
                     if value_kind(&value) != expected_kind { return error("Object field type mismatch"); }
                     let slot = object.fields.get_mut(field_index)
                         .ok_or_else(|| RuntimeError("Object field index out of bounds".into()))?;
@@ -1394,7 +1446,7 @@ fn install_update(package_path: &str, root: &Path, abi: &str) -> RtResult<JsonVa
     if !version_valid(&manifest.version) { return error("Runtime version must use major.minor.patch"); }
     if manifest.runtime_api_version != RUNTIME_API_VERSION { return error("Runtime API version is not supported"); }
     if !(manifest.room_format_min <= ROOM_FORMAT_VERSION && ROOM_FORMAT_VERSION <= manifest.room_format_max) {
-        return error("Runtime package does not support .room version 9");
+        return error("Runtime package does not support .room version 10");
     }
     let abi_entry_name = abi_library_name(abi)?;
     let mut module_bytes = {
@@ -1627,8 +1679,280 @@ pub extern "C" fn ci_runtime_plugin_free_string(value: *mut c_char) {
     if !value.is_null() { unsafe { drop(CString::from_raw(value)); } }
 }
 
+
+/// Maximum uncompressed application-package size accepted by the first ALPK format.
+const MAX_AL_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_AL_PACKAGE_ASSETS: usize = 128;
+const MAX_AL_PACKAGE_ASSET_BYTES: u64 = 64 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AlPackageManifest {
+    format: String,
+    format_version: u32,
+    name: String,
+    app_version: String,
+    entry: String,
+    room_format: u32,
+    modules: Vec<String>,
+    assets: Vec<String>,
+    libraries: Vec<String>,
+    dependencies: Vec<String>,
+}
+
+fn safe_al_package_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 120
+        && value != "."
+        && value != ".."
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+        })
+        && !value.contains("..")
+}
+
+fn validate_al_package_name(name: &str) -> RtResult<()> {
+    if name.trim().is_empty() || name.len() > 80 || name.chars().any(char::is_control) {
+        return error("Application name must contain 1 to 80 printable characters");
+    }
+    Ok(())
+}
+
+/// Create a real AL application archive from a verified .room module and optional assets.
+///
+/// Version 1 packages contain one entry module and up to 128 flat assets.
+/// The manifest reserves library/dependency lists, but external libraries are not
+/// linkable yet and therefore those lists are emitted empty.
+pub fn create_al_package(
+    output_path: &Path,
+    name: &str,
+    app_version: &str,
+    main_room_path: &Path,
+    asset_paths: &[PathBuf],
+) -> RtResult<()> {
+    validate_al_package_name(name)?;
+    if !version_valid(app_version) {
+        return error("Application version must use major.minor.patch");
+    }
+    if output_path.extension().and_then(|value| value.to_str()) != Some("AL") {
+        return error("Application package output must use the .AL extension");
+    }
+    if asset_paths.len() > MAX_AL_PACKAGE_ASSETS {
+        return error("Application package asset count limit exceeded");
+    }
+
+    let room_metadata = fs::metadata(main_room_path)
+        .map_err(|_| RuntimeError("Cannot read main .room module".into()))?;
+    if room_metadata.len() > MAX_FILE_BYTES as u64 {
+        return error("Main .room module exceeds the 64 MiB safety limit");
+    }
+    let room_bytes = fs::read(main_room_path)
+        .map_err(|_| RuntimeError("Cannot read main .room module".into()))?;
+    let room_program = read_room_bytes(&room_bytes)?;
+    verify(&room_program)?;
+
+    let mut asset_entries = Vec::<(String, Vec<u8>)>::new();
+    let mut asset_names = HashSet::<String>::new();
+    let mut total_size = room_bytes.len() as u64;
+    for path in asset_paths {
+        let metadata = fs::metadata(path)
+            .map_err(|_| RuntimeError(format!("Cannot read application asset: {}", path.display())))?;
+        if !metadata.is_file() || metadata.len() > MAX_AL_PACKAGE_ASSET_BYTES {
+            return error("Each application asset must be a file smaller than 64 MiB");
+        }
+        let file_name = path.file_name().and_then(|value| value.to_str())
+            .ok_or_else(|| RuntimeError("Application asset has an invalid file name".into()))?;
+        if !safe_al_package_component(file_name) {
+            return error(format!("Unsafe application asset file name: {file_name}"));
+        }
+        let archive_name = format!("assets/{file_name}");
+        if !asset_names.insert(archive_name.clone()) {
+            return error(format!("Duplicate application asset name: {file_name}"));
+        }
+        total_size = total_size.saturating_add(metadata.len());
+        if total_size > MAX_AL_PACKAGE_BYTES {
+            return error("Application package exceeds the 256 MiB uncompressed safety limit");
+        }
+        let bytes = fs::read(path)
+            .map_err(|_| RuntimeError(format!("Cannot read application asset: {}", path.display())))?;
+        asset_entries.push((archive_name, bytes));
+    }
+
+    let asset_names = asset_entries.iter().map(|(name, _)| name.clone()).collect::<Vec<_>>();
+    let manifest = AlPackageManifest {
+        format: "ALPK".into(),
+        format_version: 1,
+        name: name.to_string(),
+        app_version: app_version.to_string(),
+        entry: "modules/main.room".into(),
+        room_format: ROOM_FORMAT_VERSION,
+        modules: vec!["modules/main.room".into()],
+        assets: asset_names,
+        libraries: Vec::new(),
+        dependencies: Vec::new(),
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|error| RuntimeError(format!("Cannot encode .AL manifest: {error}")))?;
+
+    let parent = output_path.parent().filter(|path| !path.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent)
+            .map_err(|error| RuntimeError(format!("Cannot create package folder: {error}")))?;
+    }
+    let mut temporary_name = output_path.as_os_str().to_os_string();
+    temporary_name.push(format!(".tmp.{}", std::process::id()));
+    let temporary_path = PathBuf::from(temporary_name);
+
+    let result = (|| -> RtResult<()> {
+        let file = File::create(&temporary_path)
+            .map_err(|error| RuntimeError(format!("Cannot create .AL package: {error}")))?;
+        let mut archive = ZipWriter::new(file);
+        let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
+
+        archive.start_file("manifest.json", options)
+            .map_err(|error| RuntimeError(format!("Cannot write .AL manifest: {error}")))?;
+        archive.write_all(&manifest_bytes)
+            .map_err(|error| RuntimeError(format!("Cannot write .AL manifest: {error}")))?;
+
+        archive.start_file("modules/main.room", options)
+            .map_err(|error| RuntimeError(format!("Cannot write .room module: {error}")))?;
+        archive.write_all(&room_bytes)
+            .map_err(|error| RuntimeError(format!("Cannot write .room module: {error}")))?;
+
+        for (archive_name, bytes) in &asset_entries {
+            archive.start_file(archive_name, options)
+                .map_err(|error| RuntimeError(format!("Cannot write package asset: {error}")))?;
+            archive.write_all(bytes)
+                .map_err(|error| RuntimeError(format!("Cannot write package asset: {error}")))?;
+        }
+
+        archive.finish()
+            .map_err(|error| RuntimeError(format!("Cannot finish .AL package: {error}")))?;
+        fs::rename(&temporary_path, output_path)
+            .map_err(|error| RuntimeError(format!("Cannot finalize .AL package: {error}")))?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+/// Verify the manifest, archive layout, assets and executable entry bytecode in an .AL file.
+pub fn verify_al_package(package_path: &Path) -> RtResult<JsonValue> {
+    let metadata = fs::metadata(package_path)
+        .map_err(|_| RuntimeError("Cannot open .AL package".into()))?;
+    if metadata.len() > MAX_AL_PACKAGE_BYTES {
+        return error("Application package exceeds the 256 MiB safety limit");
+    }
+    let file = File::open(package_path)
+        .map_err(|_| RuntimeError("Cannot open .AL package".into()))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|error| RuntimeError(format!("Invalid .AL ZIP container: {error}")))?;
+    if archive.len() < 2 || archive.len() > MAX_AL_PACKAGE_ASSETS + 2 {
+        return error("Invalid .AL package entry count");
+    }
+
+    let mut seen = HashSet::<String>::new();
+    let mut uncompressed_total = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)
+            .map_err(|error| RuntimeError(format!("Cannot inspect .AL package entry: {error}")))?;
+        let entry_name = entry.name().to_string();
+        if entry.is_dir() || !seen.insert(entry_name.clone()) {
+            return error("Duplicate or directory entries are not allowed in .AL packages");
+        }
+        let safe = entry_name == "manifest.json"
+            || entry_name == "modules/main.room"
+            || (entry_name.starts_with("assets/")
+                && safe_al_package_component(&entry_name["assets/".len()..]));
+        if !safe {
+            return error(format!("Unexpected or unsafe .AL package entry: {entry_name}"));
+        }
+        uncompressed_total = uncompressed_total.saturating_add(entry.size());
+        if uncompressed_total > MAX_AL_PACKAGE_BYTES {
+            return error("Application package uncompressed size limit exceeded");
+        }
+    }
+
+    let manifest_bytes = {
+        let mut entry = archive.by_name("manifest.json")
+            .map_err(|_| RuntimeError(".AL package is missing manifest.json".into()))?;
+        if entry.size() > MAX_MANIFEST_BYTES {
+            return error(".AL manifest exceeds the 64 KiB limit");
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)
+            .map_err(|error| RuntimeError(format!("Cannot read .AL manifest: {error}")))?;
+        bytes
+    };
+    let manifest: AlPackageManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| RuntimeError(format!("Invalid .AL manifest: {error}")))?;
+    validate_al_package_name(&manifest.name)?;
+    if manifest.format != "ALPK" || manifest.format_version != 1 {
+        return error("Unsupported .AL package format");
+    }
+    if !version_valid(&manifest.app_version) {
+        return error("Invalid .AL application version");
+    }
+    if manifest.room_format != ROOM_FORMAT_VERSION
+        || manifest.entry != "modules/main.room"
+        || manifest.modules != vec!["modules/main.room".to_string()]
+    {
+        return error("Unsupported .AL entry module or .room format");
+    }
+    if !manifest.libraries.is_empty() || !manifest.dependencies.is_empty() {
+        return error("External .AL libraries and dependencies are not supported yet");
+    }
+    if manifest.assets.len() > MAX_AL_PACKAGE_ASSETS {
+        return error(".AL asset count limit exceeded");
+    }
+
+    let mut expected_entries = HashSet::from([
+        "manifest.json".to_string(),
+        "modules/main.room".to_string(),
+    ]);
+    for asset in &manifest.assets {
+        if !asset.starts_with("assets/")
+            || !safe_al_package_component(&asset["assets/".len()..])
+            || !expected_entries.insert(asset.clone())
+        {
+            return error("Invalid or duplicate asset path in .AL manifest");
+        }
+    }
+    if expected_entries != seen {
+        return error(".AL manifest does not match the archive contents");
+    }
+
+    let room_bytes = {
+        let mut entry = archive.by_name("modules/main.room")
+            .map_err(|_| RuntimeError(".AL package is missing its entry module".into()))?;
+        if entry.size() > MAX_FILE_BYTES as u64 {
+            return error("Packaged .room module exceeds the 64 MiB safety limit");
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)
+            .map_err(|error| RuntimeError(format!("Cannot read packaged .room module: {error}")))?;
+        bytes
+    };
+    let program = read_room_bytes(&room_bytes)?;
+    verify(&program)?;
+
+    Ok(json!({
+        "ok": true,
+        "name": manifest.name,
+        "appVersion": manifest.app_version,
+        "format": manifest.format,
+        "formatVersion": manifest.format_version,
+        "roomFormat": manifest.room_format,
+        "moduleCount": manifest.modules.len(),
+        "assetCount": manifest.assets.len(),
+    }))
+}
+
 pub fn self_test() -> bool {
-    if ROOM_FORMAT_VERSION != 9 || RUNTIME_API_VERSION != 1 { return false; }
+    if ROOM_FORMAT_VERSION != 10 || RUNTIME_API_VERSION != 1 { return false; }
     let sample = test_room_bytes(vec![
         Instruction { op: PUSH_INT, arg: 40, text: String::new() },
         Instruction { op: PUSH_INT, arg: 2, text: String::new() },
@@ -1668,6 +1992,55 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rust_runtime_executes_float_and_double_bytecode() {
+        let bytes = test_room_bytes(vec![
+            Instruction { op: PUSH_FLOAT, arg: f32::to_bits(1.5) as i64, text: String::new() },
+            Instruction { op: PUSH_FLOAT, arg: f32::to_bits(2.25) as i64, text: String::new() },
+            Instruction { op: ADD, arg: 0, text: String::new() },
+            Instruction { op: PRINT, arg: 0, text: String::new() },
+            Instruction { op: PUSH_DOUBLE, arg: f64::to_bits(9.5) as i64, text: String::new() },
+            Instruction { op: PUSH_DOUBLE, arg: f64::to_bits(2.0) as i64, text: String::new() },
+            Instruction { op: DIV, arg: 0, text: String::new() },
+            Instruction { op: PRINT, arg: 0, text: String::new() },
+            Instruction { op: HALT, arg: 0, text: String::new() },
+        ]);
+        let result = run_room_bytes(&bytes, "main", "", build_version());
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["output"], "3.75\n4.75");
+    }
+
+    #[test]
+    fn creates_and_verifies_al_package_with_asset() {
+        let root = std::env::temp_dir().join(format!("alvm-alpk-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let room_path = root.join("main.room");
+        let asset_path = root.join("tile.bin");
+        let package_path = root.join("TestApp.AL");
+        fs::write(&room_path, test_room_bytes(vec![
+            Instruction { op: PUSH_INT, arg: 7, text: String::new() },
+            Instruction { op: PRINT, arg: 0, text: String::new() },
+            Instruction { op: HALT, arg: 0, text: String::new() },
+        ])).unwrap();
+        fs::write(&asset_path, b"asset bytes").unwrap();
+
+        create_al_package(
+            &package_path,
+            "TestApp",
+            "1.0.0",
+            &room_path,
+            &[asset_path.clone()],
+        ).unwrap();
+
+        let result = verify_al_package(&package_path).unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["name"], "TestApp");
+        assert_eq!(result["moduleCount"], 1);
+        assert_eq!(result["assetCount"], 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn plugin_symbol_names_are_c_terminated() {
         for symbol in [
             PLUGIN_API_VERSION_SYMBOL,
@@ -1689,7 +2062,7 @@ mod tests {
     #[test]
     fn rejects_wrong_room_version() {
         let mut bytes = test_room_bytes(vec![Instruction { op: HALT, arg: 0, text: String::new() }]);
-        bytes[4..8].copy_from_slice(&8u32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&9u32.to_le_bytes());
         let error = read_room_bytes(&bytes).unwrap_err();
         assert!(error.0.contains("Unsupported .room version"));
     }

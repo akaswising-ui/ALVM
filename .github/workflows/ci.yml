@@ -27,6 +27,9 @@ jobs:
       - name: Build Rust CI Runtime CLI
         run: cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin ci-runtime
 
+      - name: Build .AL application packager
+        run: cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bin alpack
+
       - name: Configure C++17 compiler and desktop VM
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
@@ -37,4 +40,4 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Run C++ compiler to Rust runtime integration tests
-        run: bash tests/run_rust_runtime_e2e.sh build/alvm "$GITHUB_WORKSPACE" runtime/ci-runtime/target/debug/ci-runtime
+        run: bash tests/run_rust_runtime_e2e.sh build/alvm "$GITHUB_WORKSPACE" runtime/ci-runtime/target/debug/ci-runtime runtime/ci-runtime/target/debug/alpack

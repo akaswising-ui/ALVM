@@ -317,6 +317,11 @@ button {
   border-color: #34415a !important;
   color: #c8d1e2;
 }
+.package-button {
+  background: #3b2d68;
+  border-color: #6654a6 !important;
+  color: #d9ccff;
+}
 .execute-button {
   background: #17362f;
   border-color: #2c6755 !important;
