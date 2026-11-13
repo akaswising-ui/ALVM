@@ -1733,7 +1733,7 @@ mod tests {
         ]);
         let result = run_room_bytes(&bytes, "main", "", build_version());
         assert_eq!(result["ok"], true);
-        assert_eq!(result["output"], "3.75\\n4.75");
+        assert_eq!(result["output"], "3.75\n4.75");
     }
 
     #[test]
