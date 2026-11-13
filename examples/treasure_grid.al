@@ -71,13 +71,15 @@ Room TreasureGrid {
             score = score + value;
             UI.setText(cell, "GEM!");
             UI.setText("status", "Treasure found! Keep going.");
-        } else if (value < 0) {
-            score = score - 2;
-            UI.setText(cell, "TRAP");
-            UI.setText("status", "Trap! You lost 2 points.");
         } else {
-            UI.setText(cell, "EMPTY");
-            UI.setText("status", "Empty tile. Try another one.");
+            if (value < 0) {
+                score = score - 2;
+                UI.setText(cell, "TRAP");
+                UI.setText("status", "Trap! You lost 2 points.");
+            } else {
+                UI.setText(cell, "EMPTY");
+                UI.setText("status", "Empty tile. Try another one.");
+            }
         }
 
         UI.setInt("score", score);
