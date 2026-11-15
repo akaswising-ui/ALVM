@@ -217,10 +217,10 @@ if [[ "$FLOATING_ACTUAL" != "$FLOATING_EXPECTED" ]]; then
 fi
 
 "$BIN" compile "$ROOT/examples/stdlib_core.al" -o "$TMP/stdlib-core.room"
-STDLIB_EXPECTED="$(printf '7\\n3\\n8.5\\n9\\n8\\n9\\n9\\n32\\nALVM\\nalvm\\n4\\ntrue\\ntrue\\ntrue\\nALVM Language')"
+STDLIB_EXPECTED="$(printf '7\n3\n8.5\n9\n8\n9\n9\n32\nALVM\nalvm\n4\ntrue\ntrue\ntrue\nALVM Language')"
 STDLIB_ACTUAL="$("$BIN" run "$TMP/stdlib-core.room")"
 if [[ "$STDLIB_ACTUAL" != "$STDLIB_EXPECTED" ]]; then
-  printf 'AL.Math/AL.String expected:\\n%s\\nactual:\\n%s\\n' "$STDLIB_EXPECTED" "$STDLIB_ACTUAL" >&2
+  printf 'AL.Math/AL.String expected:\n%s\nactual:\n%s\n' "$STDLIB_EXPECTED" "$STDLIB_ACTUAL" >&2
   exit 1
 fi
 
