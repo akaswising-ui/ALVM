@@ -4,9 +4,9 @@ AL is an independent programming language with its own grammar, lexer, parser, s
 
 ## Language identity
 
-- Vocabulary: AL's own English keyword spellings, with selected familiar spellings influenced by Python.
-- Source style: Java-like class declarations, braces, semicolons, access modifiers and typed variables.
-- Rules: C++-influenced strict typing and compile-time validation.
+- **Keyword spellings/vocabulary:** AL uses its own grammar with familiar English spellings influenced by Python.
+- **Writing style:** Java-like class declarations, braces, semicolons, access modifiers and typed variables.
+- **Rules:** C++-influenced strict typing, explicit type checks and compile-time rejection of invalid operations.
 - Execution: the C++17 compiler emits binary .room bytecode. The Rust CI Runtime validates and executes bytecode; it does not interpret AL source.
 
 AL is not a renamed Python, Java or C++ runtime.
