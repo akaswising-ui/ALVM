@@ -182,11 +182,11 @@ const modules: Module[] = [
     ]
   },
   {
-    id: 'standard', name: 'Standard Library', group: 'Core libraries', status: 'Planned',
-    detail: 'Reusable tools for text, maths, collections, dates, random values and conversions.',
+    id: 'standard', name: 'Standard Library', group: 'Core libraries', status: 'Partially implemented',
+    detail: 'AL.Math and AL.String have native compiler/runtime implementations. Collections, date/time, random and the remaining core modules are still planned.',
     entries: [
-      { id: 'math', title: 'Math utilities', description: 'Common numeric functions.', snippet: 'Math.sqrt(144);\nMath.round(4.6);\nMath.max(10, 20);' },
-      { id: 'strings', title: 'String utilities', description: 'Text length, search and replacement.', snippet: 'String.length("Hello");\nString.upper("hello");\nString.contains("AL language", "AL");' },
+      { id: 'math', title: 'Math utilities', description: 'Common numeric functions.', snippet: 'double root = AL.Math.sqrt(144.0);\nint rounded = AL.Math.round(4.6);\nint largest = AL.Math.max(10, 20);' },
+      { id: 'strings', title: 'String utilities', description: 'Text length, search and replacement.', snippet: 'int size = AL.String.length("Hello");\nstring upper = AL.String.upper("hello");\nboolean hasAL = AL.String.contains("AL language", "AL");' },
       { id: 'collections', title: 'Collections', description: 'List and map data structures.', snippet: 'List numbers = List.create();\nnumbers.add(10);\nnumbers.add(20);' },
       { id: 'date', title: 'Date and time', description: 'Date and clock helpers.', snippet: 'Date.today();\nTime.now();' }
     ]
@@ -326,7 +326,7 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
             <button key={module.id} className={selected === module.id ? 'library-item selected' : 'library-item'} onClick={() => { setSelected(module.id); setQuery(''); setCategory('All'); setPage(0); }}>
               <span>{module.id === 'website' ? <Globe size={17} /> : module.id === 'standard' ? <Boxes size={17} /> : module.id === 'graphics' ? <Image size={17} /> : module.id === 'filesystem' ? <Folder size={17} /> : module.id === 'network' ? <Network size={17} /> : module.id === 'gui' ? <Layers size={17} /> : module.id === 'game' ? <Gamepad2 size={17} /> : module.id === 'database' ? <Database size={17} /> : module.id === 'audio' ? <Volume2 size={17} /> : module.id === 'system' ? <TerminalSquare size={17} /> : module.id === 'vm' ? <Cpu size={17} /> : <Code2 size={17} />}</span>
               <span>{module.name}</span>
-              <small>{module.id === 'code-options' ? '10K CODE' : module.status === 'Planned' ? 'ROADMAP' : module.status === 'Prototype' ? 'CORE' : 'BUILDER'}</small>
+              <small>{module.id === 'code-options' ? '10K CODE' : module.status === 'Planned' ? 'ROADMAP' : module.status === 'Prototype' ? 'CORE' : module.status === 'Partially implemented' ? 'PARTIAL' : 'BUILDER'}</small>
             </button>
           ))}
         </nav>
@@ -334,7 +334,7 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
           <div className="library-detail-icon"><Globe size={24} /></div>
           <span className="library-eyebrow">{active.group}</span>
           <h3>{active.name}</h3>
-          <span className={active.status === 'Planned' ? 'module-status planned' : active.status === 'Available' ? 'module-status available' : 'module-status prototype'}>{active.status}</span>
+          <span className={active.status === 'Planned' ? 'module-status planned' : active.status === 'Available' ? 'module-status available' : active.status === 'Partially implemented' ? 'module-status partial' : 'module-status prototype'}>{active.status}</span>
           <p>{active.detail}</p>
           {active.id === 'website' && <button className="builder-primary" onClick={onOpenWebsite}><ExternalLink size={16} /> Open Website Builder</button>}
           <div className="component-toolbar">
