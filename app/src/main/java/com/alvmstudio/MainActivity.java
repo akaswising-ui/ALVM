@@ -389,7 +389,7 @@ public class MainActivity extends Activity {
     }
 
     private void clearNativeProgramUi() {
-        lastRuntimeUiJson = "{\\"title\\":\\"AL Application\\",\\"elements\\":[]}";
+        lastRuntimeUiJson = "{\"title\":\"AL Application\",\"elements\":[]}";
         runOnUiThread(() -> {
             stopGameLoop();
             if (nativeUiDialog != null && nativeUiDialog.isShowing()) {
