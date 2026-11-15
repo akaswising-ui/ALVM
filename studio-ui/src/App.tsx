@@ -590,21 +590,52 @@ export default function App() {
           {showWebsiteBuilder ? <WebsiteBuilder /> : showLibraries ? <Libraries onOpenWebsite={() => { setShowWebsiteBuilder(true); setShowLibraries(false); }} /> : showReference ? (
             <div className="reference">
               <h2>AL Language Reference</h2>
-              <p><code>Room</code> replaces <code>class</code>. Every program starts at <code>public static void main()</code>.</p>
-              <h3>Types and variables</h3>
-              <pre>int score = 10;{'\n'}String title = "AL";{'\n'}boolean ready = true;</pre>
-              <h3>Output</h3>
-              <pre>AL.print("Score: " + score);</pre>
-              <h3>Operators</h3>
-              <pre>+  -  *  /  %  ==  !=  {'<'}  {'>'}  {'<='}  {'>='}  &&  ||  !</pre>
-              <h3>Conditions and loops</h3>
-              <pre>if (ready && score {'>'} 5) {'{'} AL.print(score); {'}'}{'\n'}else if (score == 5) {'{'} AL.print("five"); {'}'}{'\n'}else {'{'} AL.print("other"); {'}'}{'\n'}while (score {'>'} 0) {'{'} score = score - 1; {'}'}</pre>
-              <h3>Chess game command</h3>
-              <pre>Chess.start();</pre>
-              <p>Launches the Studio's built-in touch chess preview. The current AL compiler exposes this as a built-in command; chess rules are handled by the Studio runtime, not by an AL-written chess engine.</p>
-              <h3>Mobile game commands</h3>
-              <pre>Game.start(360, 560);{'\n'}Game.background("#101827");{'\n'}Game.rect("player", 40, 420, 40, 40, "#55d6a7");{'\n'}Game.button("left", "◀");{'\n'}Game.button("right", "▶");{'\n'}Game.control("left", "player", -1, 0);{'\n'}Game.control("right", "player", 1, 0);</pre>
-              <p>Game commands run in the browser game preview. Touch controls move the named object. The current runtime supports basic 2D shapes and held movement, not a full game engine yet. Use semicolons after statements. Blocks use braces.</p>
+              <p>AL uses Python-influenced English keyword spellings, Java-like source-code structure, and C++-influenced strict type and compile-time rules. The lexer, parser, compiler, bytecode and runtime are AL's own.</p>
+              <h3>Program structure</h3>
+              <pre>{`class Main {
+    public static void main() {
+        int score = 10;
+        string title = "AL";
+        boolean ready = true;
+        AL.print("Score: " + score);
+    }
+}`}</pre>
+              <h3>Types and arrays</h3>
+              <pre>{`int age = 12;
+string name = "AL";
+boolean active = true;
+float ratio = 1.5f;
+double distance = 12.75;
+int[] scores = new int[5];
+scores[0] = 10;
+AL.print(scores.length);`}</pre>
+              <h3>Operators and control flow</h3>
+              <pre>{`+  -  *  /  %  ==  !=  <  >  <=  >=  &&  ||  !
+if (active && score > 5) {
+    AL.print(score);
+} else {
+    AL.print("other");
+}
+for (int i = 0; i < 5; i++) {
+    AL.print(i);
+}`}</pre>
+              <h3>Functions and classes</h3>
+              <pre>{`class Counter {
+    int value;
+    Counter(int initial) {
+        this.value = initial;
+    }
+    int getValue() {
+        return this.value;
+    }
+}`}</pre>
+              <h3>Implemented native UI and 2D calls</h3>
+              <pre>{`UI.screen("My App");
+UI.text("status", "Ready");
+UI.game("My 2D Game");
+UI.rect("ground", 0, 400, 320, 80, 4278255360);
+UI.circle("player", 80, 120, 18, 4294901760);`}</pre>
+              <p>Use lowercase <code>string</code>, not <code>String</code>. Native AL UI support currently covers the documented screen, text, button, shape, touch, frame-loop and collision calls. Older <code>Chess.start()</code> and <code>Game.*</code> browser-preview shortcuts are not native AL language or CI Runtime APIs. They are not counted as implemented AL features.</p>
             </div>
           ) : (
             <div className="editor-area">
