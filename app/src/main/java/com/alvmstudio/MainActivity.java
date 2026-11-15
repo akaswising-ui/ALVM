@@ -86,6 +86,9 @@ public class MainActivity extends Activity {
     private DocumentFile currentDocument;
 
     private String currentFileName = "Main.al";
+    private String compiledSourceSnapshot = null;
+    private String compiledSourceFileName = "";
+    private boolean importedRoomArtifact = false;
     private String pendingSource = "";
     private boolean compiled = false;
     private Dialog nativeUiDialog;
@@ -211,6 +214,8 @@ public class MainActivity extends Activity {
                 + "var badge=document.querySelector('.console-title .status');"
                 + "if(badge){badge.textContent=status||'READY';badge.className='status'+(status==='SUCCESS'?' success':((status||'').indexOf('ERROR')>=0?' error':''));}"
                 + "};"
+                + "document.addEventListener('input',function(event){"
+                + "if(event.target&&event.target.matches&&event.target.matches('.editor-area textarea')){Android.markSourceEdited();}},true);"
                 + "document.addEventListener('click',function(event){"
                 + "var button=event.target&&event.target.closest?event.target.closest('button'):null;"
                 + "if(!button)return;"
@@ -219,18 +224,18 @@ public class MainActivity extends Activity {
                 + "var fileNode=document.querySelector('.file-item.active span');"
                 + "var fileName=fileNode?fileNode.textContent:'Main.al';"
                 + "if(button.matches('.run-button')){"
-                + "if(/\\bChess\\s*\\.\\s*start\\s*\\(|\\bGame\\s*\\./.test(source))return;"
+                
                 + "event.preventDefault();event.stopImmediatePropagation();"
                 + "var result=Android.runSource(source,fileName);"
                 + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
                 + "if(button.matches('.compile-button')){"
-                + "if(/\\bChess\\s*\\.\\s*start\\s*\\(|\\bGame\\s*\\./.test(source))return;"
+                
                 + "event.preventDefault();event.stopImmediatePropagation();"
                 + "var result=Android.compileSource(source,fileName);"
                 + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'COMPILE ERROR':'COMPILED');return;}"
                 + "if(button.matches('.execute-button')){"
                 + "event.preventDefault();event.stopImmediatePropagation();"
-                + "var result=Android.executeRoom();"
+                + "var result=Android.executeRoom(source,fileName);"
                 + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
                 + "if(button.closest('.file-actions')){"
                 + "var label=(button.innerText||button.textContent||'').toLowerCase();"
@@ -285,9 +290,15 @@ public class MainActivity extends Activity {
         currentFileName = normalizeAlFileName(fileName);
         pendingSource = source;
         saveInternal(source);
+        compiled = false;
+        compiledSourceSnapshot = null;
+        compiledSourceFileName = "";
+        importedRoomArtifact = false;
         String result = nativeCompile(normalizeForNativeAl(source), getFilesDir().getAbsolutePath());
         compiled = result != null && result.startsWith("Compiled ");
         if (!compiled) return "✕ " + result;
+        compiledSourceSnapshot = source == null ? "" : source;
+        compiledSourceFileName = currentFileName;
 
         if (initWorkspaceFolders()) {
             saveProjectSourceNow(source);
@@ -379,7 +390,9 @@ public class MainActivity extends Activity {
         JSONObject result = ciRuntime.run(roomPath(), entryName, eventValue);
         lastRuntimeVersion = result.optString("runtimeVersion", lastRuntimeVersion);
         JSONObject ui = result.optJSONObject("ui");
-        if (ui != null) lastRuntimeUiJson = ui.toString();
+        lastRuntimeUiJson = ui == null
+                ? "{\"title\":\"AL Application\",\"elements\":[]}"
+                : ui.toString();
         publishNativeUi();
         if (!result.optBoolean("ok", false)) {
             return "✕ " + result.optString("error", "CI Runtime execution failed.");
@@ -387,24 +400,49 @@ public class MainActivity extends Activity {
         return result.optString("output", "");
     }
 
-    private String runNative(String source, String fileName) {
-        String result = compileNative(source, fileName);
-        if (!compiled) return result;
+    /**
+     * A single compile/verify/execute path for Play and Execute .room.
+     * Changed editor source is fully compiled before the VM is allowed to run.
+     * A successfully imported .room remains runnable until the editor is changed.
+     */
+    private String executeCurrentProgram(String source, String fileName) {
+        String sourceText = source == null ? "" : source;
+        if (!importedRoomArtifact) {
+            String normalizedName = normalizeAlFileName(fileName);
+            File room = new File(roomPath());
+            boolean currentArtifact = compiled
+                    && room.isFile()
+                    && compiledSourceSnapshot != null
+                    && normalizedName.equals(compiledSourceFileName)
+                    && sourceText.equals(compiledSourceSnapshot);
+            if (!currentArtifact) {
+                String compileResult = compileNative(sourceText, fileName);
+                if (!compiled) return compileResult;
+            }
+        }
+        return executeCompiledRoom();
+    }
+
+    /** Both buttons execute the same verified .room through the Rust CI Runtime. */
+    private String executeCompiledRoom() {
+        File room = new File(roomPath());
+        if (!room.isFile() || room.length() < 8) {
+            return "✕ No valid compiled .room file is loaded.";
+        }
         String output = runCiRuntime("main", "");
         if (output.startsWith("✕ ")) return output;
         return "✓ Program completed in CI Runtime v" + lastRuntimeVersion + ".\n\n"
-                + (output.trim().isEmpty() ? "(program produced no console output)" : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
-    }
-
-    private String executeNativeRoom() {
-        File room = new File(roomPath());
-        if (!room.exists()) return "✕ No compiled .room file is loaded.";
-        String output = runCiRuntime("main", "");
-        if (output.startsWith("✕ ")) return output;
-        return "✓ .room execution complete in CI Runtime v" + lastRuntimeVersion + ".\n\n"
                 + (output.trim().isEmpty()
                 ? "(program produced no console output)"
                 : "AL OUTPUT  " + output.trim().replace("\n", "\nAL OUTPUT  "));
+    }
+
+    private String runNative(String source, String fileName) {
+        return executeCurrentProgram(source, fileName);
+    }
+
+    private String executeNativeRoom(String source, String fileName) {
+        return executeCurrentProgram(source, fileName);
     }
 
     private String normalizeAlFileName(String name) {
@@ -533,6 +571,9 @@ public class MainActivity extends Activity {
                 currentDocument = file;
                 currentFileName = name;
                 compiled = false;
+                compiledSourceSnapshot = null;
+                compiledSourceFileName = "";
+                importedRoomArtifact = false;
                 saveInternal(source);
                 loadAlIntoWebApp(source, name);
                 writeWorkspaceData();
@@ -544,6 +585,9 @@ public class MainActivity extends Activity {
                     copy(input, output);
                 }
                 compiled = true;
+                compiledSourceSnapshot = null;
+                compiledSourceFileName = "";
+                importedRoomArtifact = true;
                 showOutputInWeb("Loaded bytecode: " + name + "\nPress Execute .room to run it.", "LOADED");
             } else {
                 showOutputInWeb("Unsupported file type: " + name, "ERROR");
@@ -587,6 +631,10 @@ public class MainActivity extends Activity {
                     }
                     currentDocument = created;
                     currentFileName = name;
+                    compiled = false;
+                    compiledSourceSnapshot = null;
+                    compiledSourceFileName = "";
+                    importedRoomArtifact = false;
                     String source = "room Main {\n    public static void main() {\n        AL.print(42);\n    }\n}\n";
                     saveProjectSourceNow(source);
                     loadAlIntoWebApp(source, name);
@@ -909,6 +957,9 @@ public class MainActivity extends Activity {
                 }
                 currentFileName = name.replaceFirst("(?i)\\.room$", ".al");
                 compiled = true;
+                compiledSourceSnapshot = null;
+                compiledSourceFileName = "";
+                importedRoomArtifact = true;
                 showOutputInWeb("Imported bytecode: " + name + "\nPress Execute .room to run it.", "LOADED");
             } else {
                 String source;
@@ -919,6 +970,9 @@ public class MainActivity extends Activity {
                 currentFileName = normalizeAlFileName(name);
                 currentDocument = null;
                 compiled = false;
+                compiledSourceSnapshot = null;
+                compiledSourceFileName = "";
+                importedRoomArtifact = false;
                 saveInternal(source);
                 loadAlIntoWebApp(source, currentFileName);
                 showOutputInWeb("Imported source file: " + currentFileName, "READY");
@@ -1161,8 +1215,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String executeRoom() {
-            return executeNativeRoom();
+        public String executeRoom(String source, String name) {
+            return executeNativeRoom(source, name);
+        }
+
+        @JavascriptInterface
+        public void markSourceEdited() {
+            importedRoomArtifact = false;
         }
 
         @JavascriptInterface
