@@ -27,6 +27,12 @@ Android uses a Java host/JNI bridge and the same C++ compiler and Rust runtime. 
 - Simple-variable compound assignments += -= *= /= and prefix/postfix ++ --.
 - Native UI calls, 2D shapes, logical-coordinate touch areas, a 1–60 FPS Android frame callback and basic AABB collision checks.
 
+## AL Code Options catalogue
+
+The Studio Library Store exposes exactly 10,000 generated, searchable source snippets in ten groups: variables, arithmetic, arrays, conditions, loops, switch, functions, classes/objects, output and native UI/2D calls. Entries are paginated and can be added to the project snippet collection and exported.
+
+These 10,000 entries are parameterized source templates built only from syntax and native calls already implemented by the C++ AL compiler and Rust CI Runtime. They are not 10,000 new built-in functions, libraries, keywords or VM instructions. Planned library cards such as Network, Database, Audio and advanced Graphics remain planned until their compiler/runtime implementations and tests exist.
+
 ## Bytecode and runtime
 
 - Binary .room v10: magic ALRM, versioned structure, typed classes/functions, instruction stream and verifier.
