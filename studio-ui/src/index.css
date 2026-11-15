@@ -501,6 +501,11 @@ button {
   border: 1px solid #28617a;
   background: #122a37;
 }
+.module-status.partial {
+  color: #ead59a;
+  border: 1px solid #705c2d;
+  background: #2c281c;
+}
 .module-status.prototype {
   color: #9ce2c2;
   border: 1px solid #286449;
