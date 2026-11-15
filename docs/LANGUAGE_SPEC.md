@@ -6,9 +6,9 @@
 
 AL is an independent language with its own lexer, parser, semantic analysis, compiler, bytecode format, virtual machine and runtime.
 
-- **Keyword vocabulary:** AL-defined readable English keyword spellings selected for the language. AL has its own deterministic grammar, parser and compiler.
-- **Source-code writing style:** Java/C++-inspired braces, semicolons, class declarations, typed variables and method declarations.
-- **Language rules:** C++-inspired strictness, including explicit types, compile-time validation, deterministic grammar and rejection of invalid operations.
+- **Keyword spellings and vocabulary:** AL uses familiar English keyword spellings influenced by Python. These spellings are part of AL's own language vocabulary; they are not Python syntax or a Python interpreter.
+- **Source-code writing style:** Java-like class declarations, braces, semicolons, access modifiers, typed variables and method declarations.
+- **Language rules:** C++-influenced strictness, including explicit types, compile-time validation, deterministic grammar and rejection of invalid operations.
 - **Execution:** .al source is compiled to verified .room bytecode; ALVM executes bytecode and never interprets the original source as a shortcut.
 
 The language design is not a clone of Python, Java or C++. Their influence is limited to selected vocabulary and familiar syntax conventions. The compiler, runtime and bytecode are AL-specific.
