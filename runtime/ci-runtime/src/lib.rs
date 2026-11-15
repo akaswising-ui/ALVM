@@ -712,9 +712,9 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
 
     // AL.String: byte-length and ASCII case conversion are deterministic on every host.
     if name.starts_with("AL.String.") {
-        let string = |index: usize| -> RtResult<&str> {
+        let string = |index: usize| -> RtResult<String> {
             match args.get(index) {
-                Some(RuntimeValue::String(value)) => Ok(value.as_str()),
+                Some(RuntimeValue::String(value)) => Ok(value.clone()),
                 _ => error("AL.String expected string argument"),
             }
         };
@@ -723,10 +723,10 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
             "AL.String.length" => stack.push(RuntimeValue::Int(value.len() as i64)),
             "AL.String.upper" => stack.push(RuntimeValue::String(value.to_ascii_uppercase())),
             "AL.String.lower" => stack.push(RuntimeValue::String(value.to_ascii_lowercase())),
-            "AL.String.contains" => stack.push(RuntimeValue::Bool(value.contains(string(1)?))),
-            "AL.String.startsWith" => stack.push(RuntimeValue::Bool(value.starts_with(string(1)?))),
-            "AL.String.endsWith" => stack.push(RuntimeValue::Bool(value.ends_with(string(1)?))),
-            "AL.String.replace" => stack.push(RuntimeValue::String(value.replace(string(1)?, string(2)?))),
+            "AL.String.contains" => { let search=string(1)?; stack.push(RuntimeValue::Bool(value.contains(search.as_str()))); }
+            "AL.String.startsWith" => { let prefix=string(1)?; stack.push(RuntimeValue::Bool(value.starts_with(prefix.as_str()))); }
+            "AL.String.endsWith" => { let suffix=string(1)?; stack.push(RuntimeValue::Bool(value.ends_with(suffix.as_str()))); }
+            "AL.String.replace" => { let search=string(1)?; let replacement=string(2)?; stack.push(RuntimeValue::String(value.replace(search.as_str(), replacement.as_str()))); }
             _ => return error(format!("Unknown AL.String API: {name}")),
         }
         return Ok(());
