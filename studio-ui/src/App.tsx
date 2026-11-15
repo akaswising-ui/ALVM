@@ -29,10 +29,10 @@ type Token = { type: string; value: string; line: number };
 type Instruction = { op: string; arg?: Value | number | { name: string; argc: number } };
 type GameObject = { id: string; kind: 'rect' | 'circle' | 'text'; x: number; y: number; w: number; h: number; color: string; text?: string; size?: number };
 type GameScene = { width: number; height: number; background: string; objects: GameObject[]; buttons: { id: string; label: string }[]; controls: { button: string; target: string; dx: number; dy: number }[]; chess?: boolean };
-type VarInfo = { name: string; type: 'int' | 'String' | 'boolean'; slot: number };
+type VarInfo = { name: string; type: 'int' | 'string' | 'boolean'; slot: number };
 type Program = { code: Instruction[]; vars: VarInfo[] };
 
-const sample = "// Write your AL program here.\nRoom Main {\n    public static void main() {\n        AL.print(\"Hello from AL\");\n    }\n}";
+const sample = "// Write your AL program here.\nclass Main {\n    public static void main() {\n        AL.print(\"Hello from AL\");\n    }\n}";
 
 function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
@@ -73,8 +73,11 @@ function tokenize(source: string): Token[] {
     const id = rest.match(/^[A-Za-z_][A-Za-z0-9_]*/);
     if (id) {
       const value = id[0];
-      const keywords = ['int', 'String', 'boolean', 'Room', 'public', 'static', 'void', 'main', 'if', 'else', 'while', 'true', 'false'];
-      tokens.push({ type: keywords.includes(value) ? value.toUpperCase() : 'IDENT', value, line });
+      const keywordType = value === 'class' || value === 'Room' || value === 'room' ? 'ROOM'
+        : value === 'string' ? 'STRING'
+        : ['int', 'boolean', 'public', 'static', 'void', 'main', 'if', 'else', 'while', 'true', 'false'].includes(value) ? value.toUpperCase()
+        : 'IDENT';
+      tokens.push({ type: keywordType, value, line });
       i += value.length;
       continue;
     }
@@ -300,7 +303,7 @@ function runVM(code: Instruction[], vars: VarInfo[]) {
       if (!info) throw new Error('ALVM: invalid variable slot');
       const valid = info.type === 'int'
         ? typeof value === 'number' && Number.isInteger(value)
-        : info.type === 'String' ? typeof value === 'string' : typeof value === 'boolean';
+        : info.type === 'string' ? typeof value === 'string' : typeof value === 'boolean';
       if (!valid) throw new Error('ALVM: type error. ' + info.name + ' requires ' + info.type);
       memory[info.slot] = value;
     } else if (ins.op === 'PRINT') output.push(String(pop()));
@@ -399,6 +402,8 @@ export default function App() {
   const [source, setSource] = useState(() => localStorage.getItem('alvm-source') || sample);
   const [filename, setFilename] = useState('Main.al');
   const [compiled, setCompiled] = useState<Program | null>(null);
+  const [compiledSource, setCompiledSource] = useState<string | null>(null);
+  const [compiledFromRoom, setCompiledFromRoom] = useState(false);
   const [output, setOutput] = useState<string[]>(['ALVM Studio ready.', 'Edit Main.al, then press Run.']);
   const [appVersion, setAppVersion] = useState('Checking app version...');
   const [runtimeVersion, setRuntimeVersion] = useState('...');
@@ -445,36 +450,44 @@ export default function App() {
     try {
       const program = new Compiler(source).compile();
       setCompiled(program);
-      log(['✓ AL compilation successful', 'Bytecode instructions: ' + program.code.length, 'Variables: ' + program.vars.length, 'Ready for ALVM execution.'], 'COMPILED');
+      setCompiledSource(source);
+      setCompiledFromRoom(false);
+      log(['✓ AL preview compilation successful', 'Bytecode instructions: ' + program.code.length, 'Variables: ' + program.vars.length, 'Ready for ALVM execution.'], 'COMPILED');
       return program;
     } catch (error) {
       setCompiled(null);
+      setCompiledSource(null);
+      setCompiledFromRoom(false);
       setGameScene(null);
       setActiveControl(null);
       log(['✕ ' + (error as Error).message], 'COMPILE ERROR');
       return null;
     }
   };
-  const run = () => {
-    const program = compile();
-    if (!program) return;
+  const executePreviewProgram = (program: Program) => {
     try {
       const result = runVM(program.code, program.vars);
       setGameScene(result.game);
       log(['✓ Program completed in ' + result.steps + ' VM steps.', '', ...result.output.map(line => 'AL OUTPUT  ' + line), '', 'MEMORY', ...result.memory.map(item => item.name + ' (' + item.type + ') = ' + item.value)], 'SUCCESS');
     } catch (error) { log(['✕ ' + (error as Error).message], 'RUNTIME ERROR'); }
   };
+  const currentProgram = (): Program | null => {
+    if (compiled && (compiledFromRoom || compiledSource === source)) return compiled;
+    return compile();
+  };
+  const run = () => {
+    const program = currentProgram();
+    if (!program) return;
+    executePreviewProgram(program);
+  };
   const compileRoom = () => {
     const program = compile();
     if (!program) return;
-    const blob = encodeRoom(program);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename.replace(/\.al$/i, '') + '.room';
-    anchor.click();
-    URL.revokeObjectURL(url);
-    log(['✓ Compiled AL bytecode.', 'Saved file: ' + anchor.download, 'Format: ALVM_ROOM v1'], 'COMPILED');
+    log([
+      '✓ Browser preview bytecode compiled in memory.',
+      'This browser preview cannot export the native ALRM .room v10 format.',
+      'Use ALVM Studio with its native C++ compiler and CI Runtime host for a real .room file.'
+    ], 'COMPILED');
   };
   const packageAl = () => {
     const createPackage = window.Android?.createAlPackage;
@@ -491,23 +504,24 @@ export default function App() {
       if (file.name.toLowerCase().endsWith('.room')) {
         const program = await decodeRoom(file);
         setCompiled(program);
+        setCompiledSource(null);
+        setCompiledFromRoom(true);
         setFilename(file.name);
-        log(['✓ Loaded ' + file.name, 'Bytecode instructions: ' + program.code.length, 'Press Execute .room to run.'], 'LOADED');
+        log(['✓ Loaded browser-preview bytecode: ' + file.name, 'Instructions: ' + program.code.length, 'This preview container is not native .room v10.'], 'LOADED');
       } else {
         setSource(await file.text());
         setFilename(file.name);
         setCompiled(null);
+        setCompiledSource(null);
+        setCompiledFromRoom(false);
         log(['Opened source file: ' + file.name], 'READY');
       }
     } catch (error) { log(['✕ ' + (error as Error).message], 'ERROR'); }
   };
   const executeRoom = () => {
-    if (!compiled) { log(['✕ No compiled .room file is loaded.'], 'ERROR'); return; }
-    try {
-      const result = runVM(compiled.code, compiled.vars);
-      setGameScene(result.game);
-      log(['✓ .room execution complete.', ...result.output.map(line => 'AL OUTPUT  ' + line), '', 'MEMORY', ...result.memory.map(item => item.name + ' = ' + item.value)], 'SUCCESS');
-    } catch (error) { log(['✕ ' + (error as Error).message], 'RUNTIME ERROR'); }
+    const program = currentProgram();
+    if (!program) return;
+    executePreviewProgram(program);
   };
   const saveSource = () => {
     const blob = new Blob([source], { type: 'text/plain' });
@@ -519,9 +533,11 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
   const newFile = () => {
-    setSource('Room Main {\n    public static void main() {\n        int value = 42;\n        AL.print(value);\n    }\n}');
+    setSource('class Main {\n    public static void main() {\n        int value = 42;\n        AL.print(value);\n    }\n}');
     setFilename('Untitled.al');
     setCompiled(null);
+    setCompiledSource(null);
+    setCompiledFromRoom(false);
     log(['New AL source file created.']);
   };
   const openFileManager = () => {
@@ -640,14 +656,14 @@ UI.circle("player", 80, 120, 18, 4294901760);`}</pre>
           ) : (
             <div className="editor-area">
               <div className="line-numbers">{Array.from({ length: lineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div>
-              <textarea aria-label="AL source editor" spellCheck={false} autoCapitalize="off" autoCorrect="off" value={source} onChange={event => { setSource(event.target.value); setCompiled(null); localStorage.setItem('alvm-source', event.target.value); }} />
+              <textarea aria-label="AL source editor" spellCheck={false} autoCapitalize="off" autoCorrect="off" value={source} onChange={event => { setSource(event.target.value); setCompiled(null); setCompiledSource(null); setCompiledFromRoom(false); localStorage.setItem('alvm-source', event.target.value); }} />
             </div>
           )}
           <div className="action-bar">
             <div>
               <button className="run-button" onClick={run}><Play size={15} fill="currentColor" />Run</button>
-              <button className="compile-button" onClick={compileRoom}><Braces size={15} />Compile .room</button>
-              <button className="execute-button" onClick={executeRoom}><Terminal size={15} />Execute .room</button>
+              <button className="compile-button" onClick={compileRoom}><Braces size={15} />{window.Android ? "Compile .room" : "Compile preview"}</button>
+              <button className="execute-button" onClick={executeRoom}><Terminal size={15} />{window.Android ? "Execute .room" : "Execute preview"}</button>
               <button className="package-button" onClick={packageAl}><Package size={15} />Package .AL</button>
             </div>
             <span>ALVM Studio · {appVersion}</span>
