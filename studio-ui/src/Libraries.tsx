@@ -4,7 +4,7 @@ import {
   Image, Layers, Network, ShieldCheck, Plus, Check, ExternalLink, Volume2, TerminalSquare
 } from 'lucide-react';
 
-type Entry = { id: string; title: string; description: string; snippet: string };
+type Entry = { id: string; title: string; description: string; snippet: string; category?: string };
 type Module = {
   id: string; name: string; group: string; status: string; detail: string;
   entries: Entry[];
