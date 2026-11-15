@@ -496,6 +496,11 @@ button {
   border-radius: 20px;
   font: 9px ui-monospace, monospace;
 }
+.module-status.available {
+  color: #a9e5ff;
+  border: 1px solid #28617a;
+  background: #122a37;
+}
 .module-status.prototype {
   color: #9ce2c2;
   border: 1px solid #286449;
