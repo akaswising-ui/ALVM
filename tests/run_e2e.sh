@@ -238,4 +238,48 @@ if "$BIN" compile "$ROOT/tests/mixed_numeric_type_error.al" -o "$TMP/mixed-numer
 fi
 test ! -e "$TMP/mixed-numeric.room"
 
+
+"$BIN" compile "$ROOT/examples/scientific_calculator.al" -o "$TMP/scientific-calculator.room"
+SCIENTIFIC_INITIAL="$("$BIN" ui "$TMP/scientific-calculator.room")"
+if [[ "$SCIENTIFIC_INITIAL" != *'"title":"AL Scientific Calculator"'* || "$SCIENTIFIC_INITIAL" != *'"id":"display","text":"0"'* ]]; then
+  printf 'Scientific calculator initial UI failed:\n%s\n' "$SCIENTIFIC_INITIAL" >&2
+  exit 1
+fi
+
+SCIENTIFIC_DECIMAL="$("$BIN" ui-event "$TMP/scientific-calculator.room" onKey 1 onKey 2 onKey decimal onKey 5 onKey plus onKey 7 onKey decimal onKey 2 onKey 5 onKey equals)"
+if [[ "$SCIENTIFIC_DECIMAL" != *'"id":"display","text":"19.75"'* ]]; then
+  printf 'Scientific calculator decimal addition failed:\n%s\n' "$SCIENTIFIC_DECIMAL" >&2
+  exit 1
+fi
+
+SCIENTIFIC_POWER="$("$BIN" ui-event "$TMP/scientific-calculator.room" onKey 2 onKey power onKey 3 onKey equals)"
+if [[ "$SCIENTIFIC_POWER" != *'"id":"display","text":"8"'* ]]; then
+  printf 'Scientific calculator power failed:\n%s\n' "$SCIENTIFIC_POWER" >&2
+  exit 1
+fi
+
+SCIENTIFIC_SQRT="$("$BIN" ui-event "$TMP/scientific-calculator.room" onKey 9 onKey sqrt)"
+if [[ "$SCIENTIFIC_SQRT" != *'"id":"display","text":"3"'* ]]; then
+  printf 'Scientific calculator square root failed:\n%s\n' "$SCIENTIFIC_SQRT" >&2
+  exit 1
+fi
+
+SCIENTIFIC_FACTORIAL="$("$BIN" ui-event "$TMP/scientific-calculator.room" onKey 5 onKey factorial)"
+if [[ "$SCIENTIFIC_FACTORIAL" != *'"id":"display","text":"120"'* ]]; then
+  printf 'Scientific calculator factorial failed:\n%s\n' "$SCIENTIFIC_FACTORIAL" >&2
+  exit 1
+fi
+
+SCIENTIFIC_MEMORY="$("$BIN" ui-event "$TMP/scientific-calculator.room" onKey 1 onKey 2 onKey decimal onKey 5 onKey mPlus onKey clearAll onKey mr)"
+if [[ "$SCIENTIFIC_MEMORY" != *'"id":"display","text":"12.5"'* || "$SCIENTIFIC_MEMORY" != *'"id":"memory","text":"M: 12.5"'* ]]; then
+  printf 'Scientific calculator memory failed:\n%s\n' "$SCIENTIFIC_MEMORY" >&2
+  exit 1
+fi
+
+SCIENTIFIC_DIVZERO="$("$BIN" ui-event "$TMP/scientific-calculator.room" onKey 8 onKey divide onKey 0 onKey equals)"
+if [[ "$SCIENTIFIC_DIVZERO" != *'"id":"display","text":"Cannot divide by zero"'* ]]; then
+  printf 'Scientific calculator divide-by-zero handling failed:\n%s\n' "$SCIENTIFIC_DIVZERO" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, AL.Math/AL.String, functions, arrays, objects, inheritance, constructors, overloading, foreach, switch and loop control"
