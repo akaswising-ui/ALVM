@@ -10,7 +10,160 @@ type Module = {
   entries: Entry[];
 };
 
+const padCodeId = (value: number) => String(value).padStart(4, '0');
+
+function createAlCodeOptions(): Entry[] {
+  const options: Entry[] = [];
+  const add = (category: string, index: number, title: string, description: string, snippet: string) => {
+    options.push({
+      id: 'al-' + category.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + padCodeId(index),
+      category,
+      title,
+      description,
+      snippet
+    });
+  };
+
+  // 1,000 scalar and inferred variable declarations.
+  const variableTypes = ['int', 'string', 'boolean', 'float', 'double', 'var'] as const;
+  for (let i = 0; i < 1000; i++) {
+    const type = variableTypes[i % variableTypes.length];
+    const name = 'value_' + padCodeId(i);
+    const value = type === 'string' ? '"AL ' + i + '"'
+      : type === 'boolean' ? (i % 2 === 0 ? 'true' : 'false')
+      : type === 'float' ? ((i % 90) + 1) + '.5f'
+      : type === 'double' ? ((i % 90) + 1) + '.75'
+      : String(i % 100);
+    add('Variables', i, type + ' declaration ' + padCodeId(i),
+      'Scalar declaration using a type supported by the native compiler. Insert inside main().',
+      type + ' ' + name + ' = ' + value + ';');
+  }
+
+  // 1,000 arithmetic expressions with matching numeric operand types.
+  const numericTypes = ['int', 'float', 'double'] as const;
+  for (let i = 0; i < 1000; i++) {
+    const type = numericTypes[i % numericTypes.length];
+    const left = (i % 40) + 2;
+    const right = ((i * 7) % 17) + 1;
+    const operators = type === 'int' ? ['+', '-', '*', '/', '%'] : ['+', '-', '*', '/'];
+    const op = operators[Math.floor(i / numericTypes.length) % operators.length];
+    const literal = (n: number) => type === 'float' ? n + '.5f' : type === 'double' ? n + '.25' : String(n);
+    const name = 'calculation_' + padCodeId(i);
+    add('Arithmetic', i, type + ' expression ' + padCodeId(i),
+      'Strict same-type arithmetic. Mixed float/double operations are intentionally not generated.',
+      type + ' ' + name + ' = ' + literal(left) + ' ' + op + ' ' + literal(right) + ';\nAL.print(' + name + ');');
+  }
+
+  // 1,000 sized-array declarations for the five implemented array element types.
+  const arrayTypes = ['int', 'string', 'boolean', 'float', 'double'] as const;
+  for (let i = 0; i < 1000; i++) {
+    const type = arrayTypes[i % arrayTypes.length];
+    const name = 'items_' + padCodeId(i);
+    const size = (i % 20) + 1;
+    add('Arrays', i, type + ' array ' + padCodeId(i),
+      'Sized array allocation and .length access, supported by the native bytecode runtime.',
+      type + '[] ' + name + ' = new ' + type + '[' + size + '];\nAL.print(' + name + '.length);');
+  }
+
+  // 1,000 if/else examples using typed boolean conditions.
+  const comparisons = ['==', '!=', '>', '<', '>=', '<='];
+  for (let i = 0; i < 1000; i++) {
+    const name = 'conditionValue_' + padCodeId(i);
+    const left = i % 100;
+    const right = (i * 3) % 100;
+    const op = comparisons[i % comparisons.length];
+    add('Conditions', i, 'if/else condition ' + padCodeId(i),
+      'A complete conditional statement. Insert inside main() or a function body.',
+      'int ' + name + ' = ' + left + ';\nif (' + name + ' ' + op + ' ' + right + ') {\n    AL.print("condition true");\n} else {\n    AL.print("condition false");\n}');
+  }
+
+  // 1,000 loop examples: for, while and do/while.
+  for (let i = 0; i < 1000; i++) {
+    const name = 'loopIndex_' + padCodeId(i);
+    const limit = (i % 12) + 1;
+    const kind = i % 3;
+    let snippet: string;
+    if (kind === 0) {
+      snippet = 'for (int ' + name + ' = 0; ' + name + ' < ' + limit + '; ' + name + '++) {\n    AL.print(' + name + ');\n}';
+    } else if (kind === 1) {
+      snippet = 'int ' + name + ' = ' + limit + ';\nwhile (' + name + ' > 0) {\n    AL.print(' + name + ');\n    ' + name + '--;\n}';
+    } else {
+      snippet = 'int ' + name + ' = ' + limit + ';\ndo {\n    AL.print(' + name + ');\n    ' + name + '--;\n} while (' + name + ' > 0);';
+    }
+    add('Loops', i, ['for loop ', 'while loop ', 'do/while loop '][kind] + padCodeId(i),
+      'Executable loop syntax with a finite counter. Insert inside main() or a function body.',
+      snippet);
+  }
+
+  // 1,000 switch examples with explicit case exits.
+  for (let i = 0; i < 1000; i++) {
+    const name = 'choice_' + padCodeId(i);
+    const selected = i % 3;
+    add('Switch', i, 'switch statement ' + padCodeId(i),
+      'Integer switch with cases, break and default. Case bodies do not rely on accidental fall-through.',
+      'int ' + name + ' = ' + selected + ';\nswitch (' + name + ') {\n    case 0:\n        AL.print("zero");\n        break;\n    case 1:\n        AL.print("one");\n        break;\n    default:\n        AL.print("other");\n}');
+  }
+
+  // 1,000 global function definitions. These belong at program scope, outside main().
+  for (let i = 0; i < 1000; i++) {
+    const suffix = padCodeId(i);
+    const left = 'left_' + suffix;
+    const right = 'right_' + suffix;
+    const name = 'addValues_' + suffix;
+    add('Functions', i, 'typed function ' + suffix,
+      'Global function definition. Place at program scope, outside main().',
+      'int ' + name + '(int ' + left + ', int ' + right + ') {\n    return ' + left + ' + ' + right + ';\n}');
+  }
+
+  // 1,000 class/object patterns using implemented fields, constructors and methods.
+  for (let i = 0; i < 1000; i++) {
+    const suffix = padCodeId(i);
+    const cls = 'Record_' + suffix;
+    add('Classes and objects', i, 'class with constructor ' + suffix,
+      'Class, field, constructor, this-field access and instance method. Place at program scope.',
+      'class ' + cls + ' {\n    int value;\n\n    ' + cls + '(int initialValue) {\n        this.value = initialValue;\n    }\n\n    int getValue() {\n        return this.value;\n    }\n}');
+  }
+
+  // 1,000 AL.print examples, using real scalar literals and the existing output call.
+  for (let i = 0; i < 1000; i++) {
+    const kind = i % 4;
+    const value = kind === 0 ? '"AL output ' + i + '"'
+      : kind === 1 ? String(i)
+      : kind === 2 ? (i % 2 === 0 ? 'true' : 'false')
+      : ((i % 90) + 1) + '.5f';
+    add('Output', i, 'AL.print example ' + padCodeId(i),
+      'Uses the implemented AL.print runtime call. Insert inside a function body.',
+      'AL.print(' + value + ');');
+  }
+
+  // 1,000 native UI calls only. No browser-only Game.* or Chess.* preview shortcuts.
+  for (let i = 0; i < 1000; i++) {
+    const suffix = padCodeId(i);
+    const kind = i % 5;
+    let snippet: string;
+    if (kind === 0) snippet = 'UI.screen("AL App ' + i + '");\nUI.text("status_' + suffix + '", "Ready");';
+    else if (kind === 1) snippet = 'UI.game("AL Game ' + i + '");\nUI.rect("ground_' + suffix + '", 0, 400, 320, 80, 4278255360);';
+    else if (kind === 2) snippet = 'UI.game("AL Shapes ' + i + '");\nUI.circle("player_' + suffix + '", 80, 120, 18, 4294901760);';
+    else if (kind === 3) snippet = 'UI.setInt("score_' + suffix + '", ' + (i % 500) + ');\nAL.print(UI.getInt("score_' + suffix + '", 0));';
+    else snippet = 'UI.screen("AL Screen ' + i + '");\nUI.text("message_' + suffix + '", "Hello from AL");';
+    add('Native UI and 2D', i, 'native UI pattern ' + suffix,
+      'Uses UI calls implemented by the native AL compiler and CI Runtime. Insert inside main().',
+      snippet);
+  }
+
+  return options;
+}
+
+const generatedCodeOptions = createAlCodeOptions();
+
 const modules: Module[] = [
+  {
+    id: 'code-options', name: '10,000 AL Code Options', group: 'AL language',
+    status: 'Available',
+    detail: '10,000 searchable AL source snippets generated from syntax and runtime calls already implemented by the native compiler. These are code patterns, not 10,000 new built-in APIs.',
+    entries: generatedCodeOptions
+  },
+
   {
     id: 'compiler', name: 'AL Compiler', group: 'Language core', status: 'Prototype',
     detail: 'Compile supported AL source into .room bytecode.',
@@ -128,11 +281,23 @@ const modules: Module[] = [
 type ProjectItem = { key: string; module: string; title: string; snippet: string };
 
 export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void }) {
-  const [selected, setSelected] = useState('website');
+  const [selected, setSelected] = useState('code-options');
   const [added, setAdded] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('All');
+  const [page, setPage] = useState(0);
   const active = modules.find(item => item.id === selected) || modules[0];
-  const entries = useMemo(() => active.entries.filter(item => (item.title + ' ' + item.description).toLowerCase().includes(query.toLowerCase())), [active, query]);
+  const categories = useMemo(
+    () => ['All', ...Array.from(new Set(active.entries.map(item => item.category).filter(Boolean) as string[])).sort()],
+    [active]
+  );
+  const entries = useMemo(() => active.entries.filter(item =>
+    (category === 'All' || item.category === category)
+    && (item.title + ' ' + item.description + ' ' + item.snippet).toLowerCase().includes(query.toLowerCase())
+  ), [active, query, category]);
+  const pageSize = 48;
+  const pageCount = Math.max(1, Math.ceil(entries.length / pageSize));
+  const visibleEntries = entries.slice(page * pageSize, (page + 1) * pageSize);
   const addEntry = (entry: Entry) => {
     const key = active.id + ':' + entry.id;
     const current: ProjectItem[] = JSON.parse(localStorage.getItem('alvm-project-library-items') || '[]');
@@ -152,12 +317,12 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
           <h2>Library Store</h2>
           <p>Choose a module, add reusable components to your project, and build with them.</p>
         </div>
-        <div className="library-count"><Boxes size={17} /> {modules.length} MODULES</div>
+        <div className="library-count"><Boxes size={17} /> {active.id === 'code-options' ? '10,000 CODE OPTIONS' : modules.length + ' MODULES'}</div>
       </div>
       <div className="library-layout">
         <nav className="library-list" aria-label="AL modules">
           {modules.map(module => (
-            <button key={module.id} className={selected === module.id ? 'library-item selected' : 'library-item'} onClick={() => { setSelected(module.id); setQuery(''); }}>
+            <button key={module.id} className={selected === module.id ? 'library-item selected' : 'library-item'} onClick={() => { setSelected(module.id); setQuery(''); setCategory('All'); setPage(0); }}>
               <span>{module.id === 'website' ? <Globe size={17} /> : module.id === 'standard' ? <Boxes size={17} /> : module.id === 'graphics' ? <Image size={17} /> : module.id === 'filesystem' ? <Folder size={17} /> : module.id === 'network' ? <Network size={17} /> : module.id === 'gui' ? <Layers size={17} /> : module.id === 'game' ? <Gamepad2 size={17} /> : module.id === 'database' ? <Database size={17} /> : module.id === 'audio' ? <Volume2 size={17} /> : module.id === 'system' ? <TerminalSquare size={17} /> : module.id === 'vm' ? <Cpu size={17} /> : <Code2 size={17} />}</span>
               <span>{module.name}</span>
               <small>{module.status === 'Planned' ? 'ROADMAP' : module.status === 'Prototype' ? 'CORE' : 'BUILDER'}</small>
@@ -168,28 +333,49 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
           <div className="library-detail-icon"><Globe size={24} /></div>
           <span className="library-eyebrow">{active.group}</span>
           <h3>{active.name}</h3>
-          <span className={active.status === 'Planned' ? 'module-status planned' : 'module-status prototype'}>{active.status}</span>
+          <span className={active.status === 'Planned' ? 'module-status planned' : active.status === 'Available' ? 'module-status available' : 'module-status prototype'}>{active.status}</span>
           <p>{active.detail}</p>
           {active.id === 'website' && <button className="builder-primary" onClick={onOpenWebsite}><ExternalLink size={16} /> Open Website Builder</button>}
           <div className="component-toolbar">
-            <b>Available components</b>
-            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search components..." aria-label="Search components" />
+            <b>{active.id === 'code-options' ? 'Searchable AL code patterns' : 'Available components'}</b>
+            {active.id === 'code-options' && (
+              <select value={category} onChange={event => { setCategory(event.target.value); setPage(0); }} aria-label="Filter code category">
+                {categories.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
+            )}
+            <input value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} placeholder={active.id === 'code-options' ? 'Search 10,000 code options...' : 'Search components...'} aria-label="Search components" />
           </div>
+          {active.id === 'code-options' && (
+            <div className="code-options-summary">
+              <b>{entries.length.toLocaleString()} matching snippets</b>
+              <span>Page {page + 1} of {pageCount} · Showing {entries.length === 0 ? 0 : page * pageSize + 1}-{Math.min((page + 1) * pageSize, entries.length)}</span>
+            </div>
+          )}
           <div className="component-grid">
-            {entries.map(entry => {
+            {visibleEntries.map(entry => {
               const key = active.id + ':' + entry.id;
               const isAdded = added.includes(key) || allItems.some(item => item.key === key);
               return (
                 <div className="component-card" key={key}>
-                  <div><b>{entry.title}</b><p>{entry.description}</p></div>
+                  <div><small className="component-category">{entry.category || active.name}</small><b>{entry.title}</b><p>{entry.description}</p></div>
                   <pre>{entry.snippet}</pre>
                   <button onClick={() => addEntry(entry)} className={isAdded ? 'added-button' : 'add-button'}>{isAdded ? <Check size={15} /> : <Plus size={15} />}{isAdded ? 'Added to project' : 'Add to project'}</button>
                 </div>
               );
             })}
             {entries.length === 0 && <p>No matching components.</p>}
+          {active.id === 'code-options' && pageCount > 1 && (
+            <div className="library-pagination">
+              <button onClick={() => setPage(0)} disabled={page === 0}>First</button>
+              <button onClick={() => setPage(value => Math.max(0, value - 1))} disabled={page === 0}>Previous</button>
+              <button onClick={() => setPage(value => Math.min(pageCount - 1, value + 1))} disabled={page >= pageCount - 1}>Next</button>
+              <button onClick={() => setPage(pageCount - 1)} disabled={page >= pageCount - 1}>Last</button>
+            </div>
+          )}
           </div>
-          <div className="module-note"><ShieldCheck size={16} /> Components are saved in this browser project. Planned library APIs are starter snippets, not executable AL features yet.</div>
+          <div className="module-note"><ShieldCheck size={16} /> {active.id === 'code-options'
+            ? 'These 10,000 entries are generated source patterns for syntax already supported by the native AL compiler. They do not add new keywords, runtime APIs, libraries or VM instructions.'
+            : 'Components are saved in this browser project. Planned library APIs are starter snippets, not executable AL features yet.'}</div>
         </article>
       </div>
       <section className="project-library-items">
