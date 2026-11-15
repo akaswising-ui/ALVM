@@ -282,4 +282,37 @@ if [[ "$SCIENTIFIC_DIVZERO" != *'"id":"display","text":"Cannot divide by zero"'*
   exit 1
 fi
 
+
+"$BIN" compile "$ROOT/examples/calculator_full.al" -o "$TMP/calculator-full.room"
+CALC_FULL_INITIAL="$("$BIN" ui "$TMP/calculator-full.room")"
+if [[ "$CALC_FULL_INITIAL" != *'"title":"ALVM Scientific Calculator"'* || "$CALC_FULL_INITIAL" != *'"id":"memoryValue","text":"0"'* ]]; then
+  printf 'Full calculator initial UI failed:\\n%s\\n' "$CALC_FULL_INITIAL" >&2
+  exit 1
+fi
+CALC_FULL_ADD="$("$BIN" ui-event "$TMP/calculator-full.room" onKey 8 onKey multiply onKey 7 onKey equals)"
+if [[ "$CALC_FULL_ADD" != *'"id":"display","text":"56"'* ]]; then
+  printf 'Full calculator multiplication failed:\\n%s\\n' "$CALC_FULL_ADD" >&2
+  exit 1
+fi
+CALC_FULL_SQRT="$("$BIN" ui-event "$TMP/calculator-full.room" onKey 8 onKey 1 onKey sqrt)"
+if [[ "$CALC_FULL_SQRT" != *'"id":"display","text":"9"'* ]]; then
+  printf 'Full calculator square root failed:\\n%s\\n' "$CALC_FULL_SQRT" >&2
+  exit 1
+fi
+CALC_FULL_FACTORIAL="$("$BIN" ui-event "$TMP/calculator-full.room" onKey 5 onKey factorial)"
+if [[ "$CALC_FULL_FACTORIAL" != *'"id":"display","text":"120"'* ]]; then
+  printf 'Full calculator factorial failed:\\n%s\\n' "$CALC_FULL_FACTORIAL" >&2
+  exit 1
+fi
+CALC_FULL_REPEAT="$("$BIN" ui-event "$TMP/calculator-full.room" onKey 7 onKey plus onKey 5 onKey equals onKey equals)"
+if [[ "$CALC_FULL_REPEAT" != *'"id":"display","text":"17"'* ]]; then
+  printf 'Full calculator repeated equals failed:\\n%s\\n' "$CALC_FULL_REPEAT" >&2
+  exit 1
+fi
+CALC_FULL_MEMORY="$("$BIN" ui-event "$TMP/calculator-full.room" onKey 9 onKey mplus onKey clear onKey mr)"
+if [[ "$CALC_FULL_MEMORY" != *'"id":"display","text":"9"'* || "$CALC_FULL_MEMORY" != *'"id":"memoryValue","text":"9"'* ]]; then
+  printf 'Full calculator memory failed:\\n%s\\n' "$CALC_FULL_MEMORY" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, AL.Math/AL.String, functions, arrays, objects, inheritance, constructors, overloading, foreach, switch and loop control"
