@@ -60,4 +60,36 @@ printf '%s\n' "$PACKAGE_RESULT" | grep -q '"ok":true'
 printf '%s\n' "$PACKAGE_RESULT" | grep -q '"moduleCount":1'
 printf '%s\n' "$PACKAGE_RESULT" | grep -q '"assetCount":1'
 
-echo "Rust CI Runtime game-loop/touch/collision and .AL package end-to-end tests passed."
+
+"$ALVM_BIN" compile "$ROOT/examples/scientific_calculator.al" -o "$WORK/scientific-calculator.room"
+SCIENTIFIC_INITIAL="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room")"
+printf '%s\n' "$SCIENTIFIC_INITIAL" | grep -q '"ok":true'
+printf '%s\n' "$SCIENTIFIC_INITIAL" | grep -q '"title":"AL Scientific Calculator"'
+SCIENTIFIC_DECIMAL="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room" \
+  --event onKey 1 --event onKey 2 --event onKey decimal --event onKey 5 \
+  --event onKey plus --event onKey 7 --event onKey decimal --event onKey 2 --event onKey 5 --event onKey equals)"
+printf '%s\n' "$SCIENTIFIC_DECIMAL" | grep -q '"ok":true'
+printf '%s\n' "$SCIENTIFIC_DECIMAL" | grep -q '"id":"display","kind":"text","text":"19.75"'
+SCIENTIFIC_POWER="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room" --event onKey 2 --event onKey power --event onKey 3 --event onKey equals)"
+printf '%s\n' "$SCIENTIFIC_POWER" | grep -q '"id":"display","kind":"text","text":"8"'
+SCIENTIFIC_SQRT="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room" --event onKey 9 --event onKey sqrt)"
+printf '%s\n' "$SCIENTIFIC_SQRT" | grep -q '"id":"display","kind":"text","text":"3"'
+SCIENTIFIC_FACTORIAL="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room" --event onKey 5 --event onKey factorial)"
+printf '%s\n' "$SCIENTIFIC_FACTORIAL" | grep -q '"id":"display","kind":"text","text":"120"'
+SCIENTIFIC_MEMORY="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room" \
+  --event onKey 1 --event onKey 2 --event onKey decimal --event onKey 5 \
+  --event onKey mPlus --event onKey clearAll --event onKey mr)"
+printf '%s\n' "$SCIENTIFIC_MEMORY" | grep -q '"id":"display","kind":"text","text":"12.5"'
+printf '%s\n' "$SCIENTIFIC_MEMORY" | grep -q '"id":"memory","kind":"text","text":"M: 12.5"'
+
+
+"$ALVM_BIN" compile "$ROOT/examples/calculator_full.al" -o "$WORK/calculator-full.room"
+CALCULATOR_FULL_ADD="$("$RUST_RUNNER" run "$WORK/calculator-full.room" --event onKey 8 --event onKey multiply --event onKey 7 --event onKey equals)"
+printf '%s\\n' "$CALCULATOR_FULL_ADD" | grep -q '"ok":true'
+printf '%s\\n' "$CALCULATOR_FULL_ADD" | grep -q '"text":"56"'
+CALCULATOR_FULL_FACTORIAL="$("$RUST_RUNNER" run "$WORK/calculator-full.room" --event onKey 5 --event onKey factorial)"
+printf '%s\\n' "$CALCULATOR_FULL_FACTORIAL" | grep -q '"text":"120"'
+CALCULATOR_FULL_REPEAT="$("$RUST_RUNNER" run "$WORK/calculator-full.room" --event onKey 7 --event onKey plus --event onKey 5 --event onKey equals --event onKey equals)"
+printf '%s\\n' "$CALCULATOR_FULL_REPEAT" | grep -q '"text":"17"'
+
+echo "Rust CI Runtime game-loop/touch/collision, full calculator and .AL package end-to-end tests passed."
