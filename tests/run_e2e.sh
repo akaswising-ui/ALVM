@@ -216,10 +216,26 @@ if [[ "$FLOATING_ACTUAL" != "$FLOATING_EXPECTED" ]]; then
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/stdlib_core.al" -o "$TMP/stdlib-core.room"
+STDLIB_EXPECTED="$(printf '7\\n3\\n8.5\\n9\\n8\\n9\\n9\\n32\\nALVM\\nalvm\\n4\\ntrue\\ntrue\\ntrue\\nALVM Language')"
+STDLIB_ACTUAL="$("$BIN" run "$TMP/stdlib-core.room")"
+if [[ "$STDLIB_ACTUAL" != "$STDLIB_EXPECTED" ]]; then
+  printf 'AL.Math/AL.String expected:\\n%s\\nactual:\\n%s\\n' "$STDLIB_EXPECTED" "$STDLIB_ACTUAL" >&2
+  exit 1
+fi
+
+for fixture in al_math_type_error al_string_type_error; do
+  if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
+    echo "FAIL: $fixture was accepted" >&2
+    exit 1
+  fi
+  test ! -e "$TMP/$fixture.room"
+done
+
 if "$BIN" compile "$ROOT/tests/mixed_numeric_type_error.al" -o "$TMP/mixed-numeric.room" 2>/dev/null; then
   echo "FAIL: mixed float/double arithmetic was accepted" >&2
   exit 1
 fi
 test ! -e "$TMP/mixed-numeric.room"
 
-echo "PASS: ALVM compiler, functions, arrays, objects, inheritance, constructors, function, method and constructor overloading, explicit super calls, foreach, switch and loop control"
+echo "PASS: ALVM compiler, AL.Math/AL.String, functions, arrays, objects, inheritance, constructors, overloading, foreach, switch and loop control"
