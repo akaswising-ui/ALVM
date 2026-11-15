@@ -49,7 +49,7 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 - OOP: virtual overriding/dynamic dispatch, interfaces, abstract classes, static members, access-control enforcement, object arrays and generic types.
 - Arrays/collections: multidimensional arrays, object arrays, resizable lists, maps, sets and generalized element types.
 - Runtime: exceptions, resource/finalization model, module loader, garbage collector and broader runtime type information.
-- System libraries: AL-native file APIs, database APIs and networking APIs. Android workspace file selection is an IDE feature, not the same as an AL File library.
+- Standard libraries: `AL.Math` and `AL.String` now have a tested native core slice. Resizable collections, file APIs, database APIs, networking and audio remain unimplemented. Android workspace file selection is an IDE feature, not the same as an AL File library.
 - UI/game: AL-native window and view toolkit, buttons, text fields, images, full multitouch/gesture system, sprite/assets renderer, rigid-body physics solver and audio. The existing bundled Chess/Game panels are Studio previews and are not native AL APIs.
 - Packaging: a defined `.AL` application container and compiler-driven packaging of AL projects into installable Android APKs. The current Android APK is the ALVM Studio IDE itself, not a user-created AL application.
 
