@@ -296,7 +296,10 @@ public class MainActivity extends Activity {
         importedRoomArtifact = false;
         String result = nativeCompile(normalizeForNativeAl(source), getFilesDir().getAbsolutePath());
         compiled = result != null && result.startsWith("Compiled ");
-        if (!compiled) return "✕ " + result;
+        if (!compiled) {
+            clearNativeProgramUi();
+            return "✕ " + result;
+        }
         compiledSourceSnapshot = source == null ? "" : source;
         compiledSourceFileName = currentFileName;
 
@@ -383,6 +386,17 @@ public class MainActivity extends Activity {
             pendingAlPackage = null;
             showOutputInWeb("✕ .AL package error: " + error.getMessage(), "ERROR");
         }
+    }
+
+    private void clearNativeProgramUi() {
+        lastRuntimeUiJson = "{\\"title\\":\\"AL Application\\",\\"elements\\":[]}";
+        runOnUiThread(() -> {
+            stopGameLoop();
+            if (nativeUiDialog != null && nativeUiDialog.isShowing()) {
+                nativeUiDialog.dismiss();
+            }
+            nativeUiDialog = null;
+        });
     }
 
     private String runCiRuntime(String entryName, String eventValue) {
