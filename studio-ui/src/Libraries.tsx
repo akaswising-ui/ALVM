@@ -155,6 +155,7 @@ function createAlCodeOptions(): Entry[] {
 }
 
 const generatedCodeOptions = createAlCodeOptions();
+if (generatedCodeOptions.length !== 10000) throw new Error('AL Code Options catalog must contain exactly 10,000 entries.');
 
 const modules: Module[] = [
   {
@@ -325,7 +326,7 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
             <button key={module.id} className={selected === module.id ? 'library-item selected' : 'library-item'} onClick={() => { setSelected(module.id); setQuery(''); setCategory('All'); setPage(0); }}>
               <span>{module.id === 'website' ? <Globe size={17} /> : module.id === 'standard' ? <Boxes size={17} /> : module.id === 'graphics' ? <Image size={17} /> : module.id === 'filesystem' ? <Folder size={17} /> : module.id === 'network' ? <Network size={17} /> : module.id === 'gui' ? <Layers size={17} /> : module.id === 'game' ? <Gamepad2 size={17} /> : module.id === 'database' ? <Database size={17} /> : module.id === 'audio' ? <Volume2 size={17} /> : module.id === 'system' ? <TerminalSquare size={17} /> : module.id === 'vm' ? <Cpu size={17} /> : <Code2 size={17} />}</span>
               <span>{module.name}</span>
-              <small>{module.status === 'Planned' ? 'ROADMAP' : module.status === 'Prototype' ? 'CORE' : 'BUILDER'}</small>
+              <small>{module.id === 'code-options' ? '10K CODE' : module.status === 'Planned' ? 'ROADMAP' : module.status === 'Prototype' ? 'CORE' : 'BUILDER'}</small>
             </button>
           ))}
         </nav>
@@ -364,6 +365,7 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
               );
             })}
             {entries.length === 0 && <p>No matching components.</p>}
+          </div>
           {active.id === 'code-options' && pageCount > 1 && (
             <div className="library-pagination">
               <button onClick={() => setPage(0)} disabled={page === 0}>First</button>
@@ -372,7 +374,6 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
               <button onClick={() => setPage(pageCount - 1)} disabled={page >= pageCount - 1}>Last</button>
             </div>
           )}
-          </div>
           <div className="module-note"><ShieldCheck size={16} /> {active.id === 'code-options'
             ? 'These 10,000 entries are generated source patterns for syntax already supported by the native AL compiler. They do not add new keywords, runtime APIs, libraries or VM instructions.'
             : 'Components are saved in this browser project. Planned library APIs are starter snippets, not executable AL features yet.'}</div>
