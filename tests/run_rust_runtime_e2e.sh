@@ -82,4 +82,14 @@ SCIENTIFIC_MEMORY="$("$RUST_RUNNER" run "$WORK/scientific-calculator.room" \
 printf '%s\n' "$SCIENTIFIC_MEMORY" | grep -q '"id":"display","kind":"text","text":"12.5"'
 printf '%s\n' "$SCIENTIFIC_MEMORY" | grep -q '"id":"memory","kind":"text","text":"M: 12.5"'
 
-echo "Rust CI Runtime game-loop/touch/collision and .AL package end-to-end tests passed."
+
+"$ALVM_BIN" compile "$ROOT/examples/calculator_full.al" -o "$WORK/calculator-full.room"
+CALCULATOR_FULL_ADD="$("$RUST_RUNNER" run "$WORK/calculator-full.room" --event onKey 8 --event onKey multiply --event onKey 7 --event onKey equals)"
+printf '%s\\n' "$CALCULATOR_FULL_ADD" | grep -q '"ok":true'
+printf '%s\\n' "$CALCULATOR_FULL_ADD" | grep -q '"text":"56"'
+CALCULATOR_FULL_FACTORIAL="$("$RUST_RUNNER" run "$WORK/calculator-full.room" --event onKey 5 --event onKey factorial)"
+printf '%s\\n' "$CALCULATOR_FULL_FACTORIAL" | grep -q '"text":"120"'
+CALCULATOR_FULL_REPEAT="$("$RUST_RUNNER" run "$WORK/calculator-full.room" --event onKey 7 --event onKey plus --event onKey 5 --event onKey equals --event onKey equals)"
+printf '%s\\n' "$CALCULATOR_FULL_REPEAT" | grep -q '"text":"17"'
+
+echo "Rust CI Runtime game-loop/touch/collision, full calculator and .AL package end-to-end tests passed."
