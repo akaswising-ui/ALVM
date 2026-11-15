@@ -451,7 +451,7 @@ class Main {
 
                 if (decimalMode == 0) {
                     int whole = magnitude / 1000000;
-                    if (whole > 999999) {
+                    if (whole > 999) {
                         UI.setText("status", "Maximum input is 9999");
                     } else {
                         whole = whole * 10 + digit;
