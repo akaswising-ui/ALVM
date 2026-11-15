@@ -310,8 +310,10 @@ class Main {
                             left = result;
                             value = result;
                         }
-                    } else if (operation == 0) {
-                        left = value;
+                    } else {
+                        if (operation == 0) {
+                            left = value;
+                        }
                     }
 
                     if (key == "plus") { operation = 1; }
@@ -339,9 +341,11 @@ class Main {
                             fresh = 1;
                             digits = 0;
                         }
-                    } else if (repeatOperation != 0 && fresh == 1) {
-                        value = calculate(value, repeatValue, repeatOperation);
-                        fresh = 1;
+                    } else {
+                        if (repeatOperation != 0 && fresh == 1) {
+                            value = calculate(value, repeatValue, repeatOperation);
+                            fresh = 1;
+                        }
                     }
                     break;
 
