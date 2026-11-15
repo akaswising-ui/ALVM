@@ -33,6 +33,21 @@ The Studio Library Store exposes exactly 10,000 generated, searchable source sni
 
 These 10,000 entries are parameterized source templates built only from syntax and native calls already implemented by the C++ AL compiler and Rust CI Runtime. They are not 10,000 new built-in functions, libraries, keywords or VM instructions. Planned library cards such as Network, Database, Audio and advanced Graphics remain planned until their compiler/runtime implementations and tests exist.
 
+## Implemented core standard-library slice
+
+The native compiler and both VM runtimes support the following AL-native calls through the existing \`UiCall\` bytecode instruction in \`.room v10\`; no source code is executed by the runtime:
+
+- \`AL.Math.abs(int|float|double)\`: returns the same numeric type; integer overflow is rejected.
+- \`AL.Math.min\` / \`AL.Math.max\`: two arguments of the same numeric type.
+- \`AL.Math.sqrt(double)\` and \`AL.Math.pow(double, double)\`: return \`double\`; negative square-root input is rejected.
+- \`AL.Math.floor\` / \`ceil\` / \`round(double)\`: return \`int\` and reject results outside the signed 64-bit range.
+- \`AL.String.length(string)\`: returns UTF-8 byte length.
+- \`AL.String.upper\` / \`lower\`: ASCII case conversion.
+- \`AL.String.contains\` / \`startsWith\` / \`endsWith\`: return \`boolean\`.
+- \`AL.String.replace(string, search, replacement)\`: replaces all non-overlapping matches; an empty search string leaves the source unchanged.
+
+The compiler rejects unsupported names, argument counts and types at compile time. String length is byte-based, and case conversion is ASCII-only; these functions are not yet a full Unicode text library.
+
 ## Bytecode and runtime
 
 - Binary .room v10: magic ALRM, versioned structure, typed classes/functions, instruction stream and verifier.
@@ -63,4 +78,4 @@ ALPK v1 has one entry module. External libraries, dependencies and multiple-modu
 
 ## Still incomplete
 
-Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, full standard libraries, multi-module package linking, external dependencies, advanced native input devices, rigid-body physics, audio, complete graphics/sprite APIs and AL-to-Android-APK generation remain planned or partial. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
+Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, remaining standard libraries (collections, files, network, database and audio), multi-module package linking, external dependencies, advanced native input devices, rigid-body physics, audio, complete graphics/sprite APIs and AL-to-Android-APK generation remain planned or partial. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
