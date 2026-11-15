@@ -401,7 +401,21 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void hideNativeProgramUi() {
+        runOnUiThread(() -> {
+            stopGameLoop();
+            if (nativeUiDialog != null && nativeUiDialog.isShowing()) {
+                nativeUiDialog.dismiss();
+            }
+            nativeUiDialog = null;
+        });
+    }
+
     private String runCiRuntime(String entryName, String eventValue) {
+        return runCiRuntime(entryName, eventValue, true);
+    }
+
+    private String runCiRuntime(String entryName, String eventValue, boolean renderNativeUi) {
         if (ciRuntime == null) ciRuntime = new CiRuntimeHost(this);
         JSONObject result = ciRuntime.run(roomPath(), entryName, eventValue);
         lastRuntimeVersion = result.optString("runtimeVersion", lastRuntimeVersion);
@@ -409,7 +423,8 @@ public class MainActivity extends Activity {
         lastRuntimeUiJson = ui == null
                 ? "{\"title\":\"AL Application\",\"elements\":[]}"
                 : ui.toString();
-        publishNativeUi();
+        if (renderNativeUi) publishNativeUi();
+        else hideNativeProgramUi();
         if (!result.optBoolean("ok", false)) {
             return "✕ " + result.optString("error", "CI Runtime execution failed.");
         }
@@ -421,7 +436,7 @@ public class MainActivity extends Activity {
      * Changed editor source is fully compiled before the VM is allowed to run.
      * A successfully imported .room remains runnable until the editor is changed.
      */
-    private String executeCurrentProgram(String source, String fileName) {
+    private String executeCurrentProgram(String source, String fileName, boolean showAppUi) {
         String sourceText = source == null ? "" : source;
         if (!importedRoomArtifact) {
             String normalizedName = normalizeAlFileName(fileName);
@@ -436,16 +451,16 @@ public class MainActivity extends Activity {
                 if (!compiled) return compileResult;
             }
         }
-        return executeCompiledRoom();
+        return executeCompiledRoom(showAppUi);
     }
 
     /** Both buttons execute the same verified .room through the Rust CI Runtime. */
-    private String executeCompiledRoom() {
+    private String executeCompiledRoom(boolean showAppUi) {
         File room = new File(roomPath());
         if (!room.isFile() || room.length() < 8) {
             return "✕ No valid compiled .room file is loaded.";
         }
-        String output = runCiRuntime("main", "");
+        String output = runCiRuntime("main", "", showAppUi);
         if (output.startsWith("✕ ")) return output;
         return "✓ Program completed in CI Runtime v" + lastRuntimeVersion + ".\n\n"
                 + (output.trim().isEmpty()
@@ -454,11 +469,11 @@ public class MainActivity extends Activity {
     }
 
     private String runNative(String source, String fileName) {
-        return executeCurrentProgram(source, fileName);
+        return executeCurrentProgram(source, fileName, true);
     }
 
     private String executeNativeRoom(String source, String fileName) {
-        return executeCurrentProgram(source, fileName);
+        return executeCurrentProgram(source, fileName, false);
     }
 
     private String normalizeAlFileName(String name) {
