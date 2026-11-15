@@ -29,7 +29,7 @@ Android uses a Java host/JNI bridge and the same C++ compiler and Rust runtime. 
 
 ## AL Code Options catalogue
 
-The Studio Library Store exposes exactly 10,000 generated, searchable source snippets in ten groups: variables, arithmetic, arrays, conditions, loops, switch, functions, classes/objects, output and native UI/2D calls. Entries are paginated and can be added to the project snippet collection and exported.
+The Studio Library Store exposes exactly 10,000 generated, searchable source snippets in ten groups: variables, arithmetic, arrays, conditions, loops, switch, functions, classes/objects, output and native UI/2D calls. Entries are paginated, searchable by category, can be added to the project snippet collection, and export as an `AL-Library-Snippets.txt` reference file (not a compilable `.al` program).
 
 These 10,000 entries are parameterized source templates built only from syntax and native calls already implemented by the C++ AL compiler and Rust CI Runtime. They are not 10,000 new built-in functions, libraries, keywords or VM instructions. Planned library cards such as Network, Database, Audio and advanced Graphics remain planned until their compiler/runtime implementations and tests exist.
 
