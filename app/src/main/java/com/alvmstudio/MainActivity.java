@@ -284,8 +284,10 @@ public class MainActivity extends Activity {
     }
 
     private String normalizeForNativeAl(String source) {
-        return source.replaceAll("\\bRoom\\b", "room")
-                .replaceAll("\\bString\\b", "string");
+        // Preserve case-sensitive identifiers exactly as the programmer wrote them.
+        // The native parser accepts class/room/Room as program containers and
+        // lowercase string as AL's scalar string type.
+        return source == null ? "" : source;
     }
 
     private String compileNative(String source, String fileName) {
@@ -666,7 +668,7 @@ public class MainActivity extends Activity {
                     compiledSourceSnapshot = null;
                     compiledSourceFileName = "";
                     importedRoomArtifact = false;
-                    String source = "room Main {\n    public static void main() {\n        AL.print(42);\n    }\n}\n";
+                    String source = "class Main {\n    public static void main() {\n        AL.print(42);\n    }\n}\n";
                     saveProjectSourceNow(source);
                     loadAlIntoWebApp(source, name);
                     showOutputInWeb("Created " + name + " in Projects.", "READY");
