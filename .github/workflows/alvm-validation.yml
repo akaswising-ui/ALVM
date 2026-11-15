@@ -1,0 +1,66 @@
+name: ALVM validation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native-and-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure C++ compiler
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build C++ compiler and VM
+        run: cmake --build build --parallel 2
+
+      - name: Run C++ unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Run C++ compiler/VM end-to-end tests
+        run: bash tests/run_e2e.sh build/alvm "$PWD"
+
+      - name: Test and build Rust CI Runtime and AL packager
+        run: |
+          cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
+          cargo build --manifest-path runtime/ci-runtime/Cargo.toml --bins
+
+      - name: Run Rust CI Runtime end-to-end tests
+        run: bash tests/run_rust_runtime_e2e.sh build/alvm "$PWD" runtime/ci-runtime/target/debug/ci-runtime runtime/ci-runtime/target/debug/alpack
+
+  browser-ide:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: studio-ui
+        run: npm install --no-package-lock
+
+      - name: Type-check browser IDE
+        working-directory: studio-ui
+        run: npx tsc --noEmit
+
+      - name: Build browser IDE
+        working-directory: studio-ui
+        run: npm run build
