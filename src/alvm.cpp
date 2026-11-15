@@ -408,7 +408,7 @@ class IRGenerator {
       case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));emit(Op::Dup);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::NewArray:expression(*e.left);emit(Op::NewArraySized,e.text=="int"?(int64_t)Type::Int:e.text=="string"?(int64_t)Type::String:e.text=="float"?(int64_t)Type::Float:e.text=="double"?(int64_t)Type::Double:(int64_t)Type::Bool);break;
       case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
-      case Expr::MethodCall:if(e.resolvedFunction.rfind("UI.",0)==0||e.resolvedFunction.rfind("AL.Math.",0)==0||e.resolvedFunction.rfind("AL.String.",0)==0){for(const auto& arg:e.elements)expression(*arg);emit(Op::UiCall,(int64_t)e.elements.size(),e.resolvedFunction);}else{expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));}break;
+      case Expr::MethodCall:if(e.resolvedFunction.rfind("UI.",0)==0||e.resolvedFunction.rfind("AL.Math.",0)==0||e.resolvedFunction.rfind("AL.String.",0)==0){for(const auto& arg:e.elements)expression(*arg);emit(Op::UiCall,(int64_t)e.elements.size(),e.resolvedFunction.rfind("UI.",0)==0?e.text:e.resolvedFunction);}else{expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));}break;
       case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;
       case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;
