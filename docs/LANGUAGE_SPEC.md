@@ -66,7 +66,7 @@ Switch and loop control lower to existing jump instructions. Stage 14 separately
 
 ## Not implemented
 
-`foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, full standard library modules, editable text fields, richer layout containers, touch/gesture APIs, graphics/game/audio APIs, `.AL` packaging and building a user AL program into an Android APK are future features.
+`foreach`, `do`-less switch expressions, switch pattern matching, labels/goto, virtual overriding, interfaces, abstract classes, static members, enforced access control, generics, enums, exceptions, modules, remaining standard library modules (collections, files, network, database, audio and APIs beyond the Stage 18 Math/String slice), editable text fields, richer layout containers, touch/gesture APIs, graphics/game/audio APIs, `.AL` packaging and building a user AL program into an Android APK are future features.
 
 
 ## Foreach array iteration
@@ -268,6 +268,48 @@ double[] precise = [1.25, 2.5, 3.75];
 - Float and double are supported as scalar class fields and function return types.
 - Float payloads are serialized as IEEE-754 binary32 bits in the low 32 bits of the instruction's signed i64 argument. Double payloads use the complete 64-bit argument.
 - This upgrade uses `.room` version 10. Version 9 bytecode is intentionally rejected and must be recompiled from `.al` source.
+
+## Stage 18: AL.Math and AL.String core library
+
+The following APIs are implemented by the C++ compiler and both the C++ desktop VM and Rust CI Runtime. They use the existing \`UiCall\` bytecode instruction in \`.room v10\`; no source code is executed by the runtime.
+
+\`\`\`al
+class Main {
+    public static void main() {
+        int absolute = AL.Math.abs(-7);
+        int low = AL.Math.min(8, 3);
+        double root = AL.Math.sqrt(81.0);
+        int rounded = AL.Math.round(8.5);
+
+        string upper = AL.String.upper("alvm");
+        int bytes = AL.String.length("ALVM");
+        boolean found = AL.String.contains("ALVM Studio", "Studio");
+        string renamed = AL.String.replace("ALVM Studio", "Studio", "Language");
+
+        AL.print(absolute);
+        AL.print(low);
+        AL.print(root);
+        AL.print(rounded);
+        AL.print(upper);
+        AL.print(bytes);
+        AL.print(found);
+        AL.print(renamed);
+    }
+}
+\`\`\`
+
+- \`AL.Math.abs(int|float|double)\` preserves its argument type. The minimum signed \`int\` value raises overflow.
+- \`AL.Math.min\` and \`AL.Math.max\` require two arguments of exactly the same numeric type.
+- \`AL.Math.sqrt(double)\` returns \`double\` and rejects negative inputs.
+- \`AL.Math.pow(double, double)\` returns \`double\`.
+- \`AL.Math.floor\`, \`AL.Math.ceil\` and \`AL.Math.round\` each accept \`double\` and return \`int\`; values outside the signed 64-bit range fail.
+- \`AL.String.length(string)\` returns UTF-8 byte length, not Unicode code-point or grapheme count.
+- \`AL.String.upper\` and \`AL.String.lower\` perform ASCII-only case conversion.
+- \`AL.String.contains\`, \`AL.String.startsWith\` and \`AL.String.endsWith\` return \`boolean\`.
+- \`AL.String.replace(source, search, replacement)\` replaces all non-overlapping matches. An empty search string returns the source unchanged.
+- Unknown library names and invalid argument types/counts are compile-time errors. Runtime checks remain in place for malformed bytecode.
+
+This is the first native standard-library slice. It does not imply that \`AL.Collections\`, \`AL.Files\`, \`AL.Network\`, \`AL.Database\`, \`AL.Audio\` or the remaining \`AL.Math\` / \`AL.String\` APIs are implemented.
 
 ## Native game-loop, canvas touch and collision APIs
 
