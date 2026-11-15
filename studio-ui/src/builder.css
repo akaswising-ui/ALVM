@@ -1,7 +1,14 @@
 
 /* Website builder and component store */
 .component-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 14px}
-.component-toolbar input,.website-toolbar input:not([type=color]),.website-editor input,.website-editor textarea{background:#0c1421;color:#e8eaf2;border:1px solid #344158;border-radius:8px;padding:10px;font:inherit;min-width:0}
+.component-toolbar input,.component-toolbar select,.website-toolbar input:not([type=color]),.website-editor input,.website-editor textarea{background:#0c1421;color:#e8eaf2;border:1px solid #344158;border-radius:8px;padding:10px;font:inherit;min-width:0}
+.component-toolbar select{max-width:190px}
+.component-category{display:block;color:#9a8fe5;font:10px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.04em}
+.code-options-summary{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:-3px 0 14px;color:#a9b6cb;font-size:11px}
+.code-options-summary b{color:#dfe7f5}
+.library-pagination{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:18px 0}
+.library-pagination button{padding:8px 12px;border-radius:7px;border:1px solid #344158;background:#1a2638;color:#e4eaf4;font:inherit}
+.library-pagination button:disabled{opacity:.4;cursor:not-allowed}
 .component-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .component-card{border:1px solid #303b50;border-radius:11px;background:#141e2d;padding:14px;display:flex;flex-direction:column;gap:10px}
 .component-card p,.project-library-items>p{color:#94a3b8;font-size:12px;margin:6px 0}
