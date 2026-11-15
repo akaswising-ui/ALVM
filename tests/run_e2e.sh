@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Regression coverage also compiles and exercises examples/calculator_full.al
 BIN="$1"
 ROOT="$2"
 TMP="$(mktemp -d)"
