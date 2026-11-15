@@ -276,6 +276,38 @@ class SemanticAnalyzer {
           else throw Error("Unknown AL UI API: UI."+e.text);
           e.resolvedFunction="UI."+e.text;break;
         }
+        const bool alMath = e.left->kind==Expr::FieldAccess
+          && e.left->left && e.left->left->kind==Expr::Variable
+          && e.left->left->text=="AL" && e.left->text=="Math";
+        const bool alString = e.left->kind==Expr::FieldAccess
+          && e.left->left && e.left->left->kind==Expr::Variable
+          && e.left->left->text=="AL" && e.left->text=="String";
+        if(alMath || alString) {
+          std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));
+          auto require=[&](size_t count){if(actual.size()!=count)throw Error("AL."+std::string(alMath?"Math.":"String.")+e.text+" expects "+std::to_string(count)+" arguments");};
+          auto numeric=[](Type value){return value==Type::Int||value==Type::Float||value==Type::Double;};
+          if(alMath) {
+            if(e.text=="abs") {
+              require(1);if(!numeric(actual[0]))throw Error("AL.Math.abs requires int, float or double");e.inferred=actual[0];
+            } else if(e.text=="min"||e.text=="max") {
+              require(2);if(actual[0]!=actual[1]||!numeric(actual[0]))throw Error("AL.Math."+e.text+" requires two matching numeric types");e.inferred=actual[0];
+            } else if(e.text=="sqrt") {
+              require(1);if(actual[0]!=Type::Double)throw Error("AL.Math.sqrt requires double");e.inferred=Type::Double;
+            } else if(e.text=="pow") {
+              require(2);if(actual[0]!=Type::Double||actual[1]!=Type::Double)throw Error("AL.Math.pow requires two double arguments");e.inferred=Type::Double;
+            } else if(e.text=="floor"||e.text=="ceil"||e.text=="round") {
+              require(1);if(actual[0]!=Type::Double)throw Error("AL.Math."+e.text+" requires double");e.inferred=Type::Int;
+            } else throw Error("Unknown AL.Math API: "+e.text);
+            e.resolvedFunction="AL.Math."+e.text;break;
+          } else {
+            if(e.text=="length") {require(1);if(actual[0]!=Type::String)throw Error("AL.String.length requires string");e.inferred=Type::Int;}
+            else if(e.text=="upper"||e.text=="lower") {require(1);if(actual[0]!=Type::String)throw Error("AL.String."+e.text+" requires string");e.inferred=Type::String;}
+            else if(e.text=="contains"||e.text=="startsWith"||e.text=="endsWith") {require(2);if(actual[0]!=Type::String||actual[1]!=Type::String)throw Error("AL.String."+e.text+" requires two strings");e.inferred=Type::Bool;}
+            else if(e.text=="replace") {require(3);if(actual[0]!=Type::String||actual[1]!=Type::String||actual[2]!=Type::String)throw Error("AL.String.replace requires three strings");e.inferred=Type::String;}
+            else throw Error("Unknown AL.String API: "+e.text);
+            e.resolvedFunction="AL.String."+e.text;break;
+          }
+        }
         Type objectType=checkExpr(*e.left);ClassInfo& cls=classFor(objectType);auto it=cls.methods.find(e.text);if(it==cls.methods.end())throw Error("Unknown method '"+e.text+"' on "+typeName(objectType));std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:it->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for method: "+e.text);if(ambiguous)throw Error("Ambiguous overload for method: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
       case Expr::Call:{if(e.text=="main")throw Error("main() cannot be called as a normal function");auto found=functionOverloads.find(e.text);if(found==functionOverloads.end())throw Error("Unknown function: "+e.text);std::vector<Type> actual;for(auto& arg:e.elements)actual.push_back(checkExpr(*arg));const Signature* best=nullptr;int bestScore=-1;bool ambiguous=false;for(const auto& candidate:found->second){if(candidate.params.size()!=actual.size())continue;bool viable=true;int score=0;for(size_t i=0;i<actual.size();++i){if(!isAssignable(actual[i],candidate.params[i])){viable=false;break;}if(actual[i]==candidate.params[i])++score;}if(viable&&score>bestScore){best=&candidate;bestScore=score;ambiguous=false;}else if(viable&&score==bestScore){ambiguous=true;}}if(!best)throw Error("No matching overload for function: "+e.text);if(ambiguous)throw Error("Ambiguous overload for function: "+e.text);e.resolvedFunction=best->symbol;e.inferred=best->result;break;}
       case Expr::ArrayLiteral:{if(e.elements.empty())throw Error("An array literal must contain at least one element so its type can be inferred");Type item=checkExpr(*e.elements[0]);if(item!=Type::Int&&item!=Type::String&&item!=Type::Bool&&item!=Type::Float&&item!=Type::Double)throw Error("Array elements must have one supported scalar type");for(size_t i=1;i<e.elements.size();++i)if(checkExpr(*e.elements[i])!=item)throw Error("Array literal elements must all have the same type");e.inferred=arrayOf(item);break;}
@@ -376,7 +408,7 @@ class IRGenerator {
       case Expr::NewObject:emit(Op::NewObject,classIds.at(e.text));emit(Op::Dup);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::NewArray:expression(*e.left);emit(Op::NewArraySized,e.text=="int"?(int64_t)Type::Int:e.text=="string"?(int64_t)Type::String:e.text=="float"?(int64_t)Type::Float:e.text=="double"?(int64_t)Type::Double:(int64_t)Type::Bool);break;
       case Expr::FieldAccess:expression(*e.left);emit(Op::GetField,e.resolvedField);break;
-      case Expr::MethodCall:if(e.resolvedFunction.rfind("UI.",0)==0){for(const auto& arg:e.elements)expression(*arg);emit(Op::UiCall,(int64_t)e.elements.size(),e.text);}else{expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));}break;
+      case Expr::MethodCall:if(e.resolvedFunction.rfind("UI.",0)==0||e.resolvedFunction.rfind("AL.Math.",0)==0||e.resolvedFunction.rfind("AL.String.",0)==0){for(const auto& arg:e.elements)expression(*arg);emit(Op::UiCall,(int64_t)e.elements.size(),e.resolvedFunction);}else{expression(*e.left);for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));}break;
       case Expr::Call:for(const auto& arg:e.elements)expression(*arg);emit(Op::Call,functionIds.at(e.resolvedFunction));break;
       case Expr::ArrayLiteral:for(const auto& item:e.elements)expression(*item);emit(Op::NewArray,(int64_t)e.elements.size());break;
       case Expr::Index:expression(*e.left);expression(*e.right);emit(Op::ArrayGet);break;
@@ -525,7 +557,7 @@ static void verify(const BytecodeProgram& program){
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
         case Op::NewArraySized:if(i.arg!=(int64_t)Type::Int&&i.arg!=(int64_t)Type::String&&i.arg!=(int64_t)Type::Bool&&i.arg!=(int64_t)Type::Float&&i.arg!=(int64_t)Type::Double)throw Error("Invalid sized-array element type");need=1;delta=0;break;
-        case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=(i.text=="getInt"||i.text=="collides")?1-(int)i.arg:-(int)i.arg;break;
+        case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=(i.text=="getInt"||i.text=="collides"||i.text=="AL.Math.abs"||i.text=="AL.Math.min"||i.text=="AL.Math.max"||i.text=="AL.Math.sqrt"||i.text=="AL.Math.pow"||i.text=="AL.Math.floor"||i.text=="AL.Math.ceil"||i.text=="AL.Math.round"||i.text=="AL.String.length"||i.text=="AL.String.upper"||i.text=="AL.String.lower"||i.text=="AL.String.contains"||i.text=="AL.String.startsWith"||i.text=="AL.String.endsWith"||i.text=="AL.String.replace")?1-(int)i.arg:-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
           const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
@@ -637,6 +669,56 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
       case Op::Pop:pop();break;
       case Op::UiCall:{
         std::vector<Value> args((size_t)i.arg);for(size_t k=args.size();k>0;--k)args[k-1]=pop();
+        if(i.text.rfind("AL.Math.",0)==0) {
+          auto asDouble=[&](size_t n)->double {
+            if(n>=args.size())throw Error("AL.Math missing argument");
+            if(auto v=std::get_if<double>(&args[n]))return *v;
+            throw Error("AL.Math expected double argument");
+          };
+          auto sameNumeric=[&](size_t n)->Value {
+            if(n>=args.size())throw Error("AL.Math missing argument");
+            if(auto v=std::get_if<int64_t>(&args[n]))return *v;
+            if(auto v=std::get_if<float>(&args[n]))return *v;
+            if(auto v=std::get_if<double>(&args[n]))return *v;
+            throw Error("AL.Math expected numeric argument");
+          };
+          if(i.text=="AL.Math.abs") {
+            Value v=sameNumeric(0);
+            if(auto n=std::get_if<int64_t>(&v)){if(*n==std::numeric_limits<int64_t>::min())throw Error("Integer overflow in AL.Math.abs");stack.emplace_back(*n<0?-*n:*n);}
+            else if(auto n=std::get_if<float>(&v))stack.emplace_back(std::fabs(*n));
+            else stack.emplace_back(std::fabs(std::get<double>(v)));
+          } else if(i.text=="AL.Math.min"||i.text=="AL.Math.max") {
+            Value a=sameNumeric(0),b=sameNumeric(1);
+            if(a.index()!=b.index())throw Error("AL.Math.min/max operand type mismatch");
+            if(auto x=std::get_if<int64_t>(&a)){auto y=std::get<int64_t>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(*x,y):std::max(*x,y));}
+            else if(auto x=std::get_if<float>(&a)){auto y=std::get<float>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(*x,y):std::max(*x,y));}
+            else {auto x=std::get<double>(a),y=std::get<double>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(x,y):std::max(x,y));}
+          } else if(i.text=="AL.Math.sqrt") {
+            double value=asDouble(0);if(value<0)throw Error("AL.Math.sqrt domain error");stack.emplace_back(std::sqrt(value));
+          } else if(i.text=="AL.Math.pow") stack.emplace_back(std::pow(asDouble(0),asDouble(1)));
+          else if(i.text=="AL.Math.floor") stack.emplace_back((int64_t)std::floor(asDouble(0)));
+          else if(i.text=="AL.Math.ceil") stack.emplace_back((int64_t)std::ceil(asDouble(0)));
+          else if(i.text=="AL.Math.round") stack.emplace_back((int64_t)std::round(asDouble(0)));
+          else throw Error("Unknown AL.Math API: "+i.text);
+        }
+        else if(i.text.rfind("AL.String.",0)==0) {
+          auto asString=[&](size_t n)->std::string{if(n>=args.size()||!std::holds_alternative<std::string>(args[n]))throw Error("AL.String expected string argument");return std::get<std::string>(args[n]);};
+          const std::string value=asString(0);
+          if(i.text=="AL.String.length")stack.emplace_back((int64_t)value.size());
+          else if(i.text=="AL.String.upper"||i.text=="AL.String.lower"){
+            std::string result=value;
+            std::transform(result.begin(),result.end(),result.begin(),[&](unsigned char ch){return (char)(i.text=="AL.String.upper"?std::toupper(ch):std::tolower(ch));});
+            stack.emplace_back(std::move(result));
+          } else if(i.text=="AL.String.contains")stack.emplace_back(value.find(asString(1))!=std::string::npos);
+          else if(i.text=="AL.String.startsWith"){const auto prefix=asString(1);stack.emplace_back(value.rfind(prefix,0)==0);}
+          else if(i.text=="AL.String.endsWith"){const auto suffix=asString(1);stack.emplace_back(value.size()>=suffix.size()&&value.compare(value.size()-suffix.size(),suffix.size(),suffix)==0);}
+          else if(i.text=="AL.String.replace"){
+            const auto search=asString(1),replacement=asString(2);std::string result=value;
+            if(!search.empty()){size_t at=0;while((at=result.find(search,at))!=std::string::npos){result.replace(at,search.size(),replacement);at+=replacement.size();}}
+            stack.emplace_back(std::move(result));
+          } else throw Error("Unknown AL.String API: "+i.text);
+        }
+        else {
         auto asString=[&](size_t n)->std::string{if(n>=args.size()||!std::holds_alternative<std::string>(args[n]))throw Error("UI API expected string argument");return std::get<std::string>(args[n]);};
         auto asInt=[&](size_t n)->int64_t{if(n>=args.size())throw Error("UI API missing integer argument");return integer(args[n]);};
         auto findElement=[&](const std::string& id)->UiElement*{for(auto& e:activeUiElements)if(e.id==id)return &e;return nullptr;};
@@ -665,7 +747,9 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
         else throw Error("Unknown UI opcode: "+i.text);
         break;
-      }case Op::Neg:{
+      
+        }
+}case Op::Neg:{
         Value value=pop();
         if(auto a=std::get_if<int64_t>(&value)){if(*a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-*a);}
         else if(auto a=std::get_if<float>(&value))stack.emplace_back(-*a);
