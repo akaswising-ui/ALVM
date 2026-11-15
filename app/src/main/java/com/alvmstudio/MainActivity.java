@@ -227,7 +227,8 @@ public class MainActivity extends Activity {
                 
                 + "event.preventDefault();event.stopImmediatePropagation();"
                 + "var result=Android.runSource(source,fileName);"
-                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
+                + "var status=result.indexOf('✕')>=0?(result.indexOf('AL compile error')>=0?'COMPILE ERROR':'RUNTIME ERROR'):'SUCCESS';"
+                + "window.__alvmShowOutput(result,status);return;}"
                 + "if(button.matches('.compile-button')){"
                 
                 + "event.preventDefault();event.stopImmediatePropagation();"
@@ -236,7 +237,8 @@ public class MainActivity extends Activity {
                 + "if(button.matches('.execute-button')){"
                 + "event.preventDefault();event.stopImmediatePropagation();"
                 + "var result=Android.executeRoom(source,fileName);"
-                + "window.__alvmShowOutput(result,result.indexOf('✕')>=0||result.indexOf('error')>=0?'RUNTIME ERROR':'SUCCESS');return;}"
+                + "var status=result.indexOf('✕')>=0?(result.indexOf('AL compile error')>=0?'COMPILE ERROR':'RUNTIME ERROR'):'SUCCESS';"
+                + "window.__alvmShowOutput(result,status);return;}"
                 + "if(button.closest('.file-actions')){"
                 + "var label=(button.innerText||button.textContent||'').toLowerCase();"
                 + "if(label.indexOf('save')>=0){event.preventDefault();event.stopImmediatePropagation();"
