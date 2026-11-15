@@ -27,8 +27,8 @@ printf '%s\n' "$FLOATING" | grep -Fq '"output":"3.75\n4.75\n3.75\n2\n3.75\ntrue"
 
 "$ALVM_BIN" compile "$ROOT/examples/stdlib_core.al" -o "$WORK/stdlib-core.room"
 STDLIB_RESULT="$("$RUST_RUNNER" run "$WORK/stdlib-core.room")"
-printf '%s\\n' "$STDLIB_RESULT" | grep -q '"ok":true'
-printf '%s\\n' "$STDLIB_RESULT" | grep -Fq '"output":"7\\n3\\n8.5\\n9\\n8\\n9\\n9\\n32\\nALVM\\nalvm\\n4\\ntrue\\ntrue\\ntrue\\nALVM Language"'
+printf '%s\n' "$STDLIB_RESULT" | grep -q '"ok":true'
+printf '%s\n' "$STDLIB_RESULT" | grep -Fq '"output":"7\n3\n8.5\n9\n8\n9\n9\n32\nALVM\nalvm\n4\ntrue\ntrue\ntrue\nALVM Language"'
 
 "$ALVM_BIN" compile "$ROOT/examples/touch_loop.al" -o "$WORK/touch-loop.room"
 GAME_MAIN="$("$RUST_RUNNER" run "$WORK/touch-loop.room")"
