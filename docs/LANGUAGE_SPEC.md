@@ -235,7 +235,18 @@ score--;
 
 ## Program entry declaration spelling
 
-The outer program container accepts both `room Name { ... }` and `Room Name { ... }`. The two spellings have identical semantics and produce the same `.room` bytecode. This does not change `class` declarations used for AL object types.
+The preferred program form is Java-like:
+
+```al
+class Main {
+    public static void main() {
+        int result = 10 + 20;
+        AL.print(result);
+    }
+}
+```
+
+The first `class Main { ... }` is the program container. The parser also accepts the older `room Name { ... }` and `Room Name { ... }` container spellings for compatibility. A `class Name { ... }` declaration inside the program container declares an AL object type. The container spelling does not turn AL into Java; AL's grammar, compiler, bytecode and runtime remain independent.
 
 ## Stage 17: floating-point scalar values and arrays
 
