@@ -379,7 +379,14 @@ fn verify(program: &Program) -> RtResult<()> {
                         return error("Invalid UI call argument count");
                     }
                     need = arg;
-                    delta = (if instruction.text == "getInt" || instruction.text == "collides" { 1 } else { 0 }) - arg;
+                    delta = (if matches!(instruction.text.as_str(),
+                        "getInt" | "collides"
+                        | "AL.Math.abs" | "AL.Math.min" | "AL.Math.max"
+                        | "AL.Math.sqrt" | "AL.Math.pow" | "AL.Math.floor"
+                        | "AL.Math.ceil" | "AL.Math.round"
+                        | "AL.String.length" | "AL.String.upper" | "AL.String.lower"
+                        | "AL.String.contains" | "AL.String.startsWith"
+                        | "AL.String.endsWith" | "AL.String.replace") { 1 } else { 0 }) - arg;
                 }
                 CALL => {
                     if arg <= 0 || arg as usize >= functions.len() {
@@ -646,6 +653,85 @@ fn ui_elements_collide(left: &UiElement, right: &UiElement) -> bool {
 
 fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<RuntimeValue>, state: &mut UiState) -> RtResult<()> {
     let name = instruction.text.as_str();
+
+    // AL.Math: strict numeric overloads are resolved by the compiler.
+    if name.starts_with("AL.Math.") {
+        let numeric = |index: usize| -> RtResult<RuntimeValue> {
+            args.get(index).cloned().ok_or_else(|| RuntimeError("AL.Math missing argument".into()))
+        };
+        let double = |index: usize| -> RtResult<f64> {
+            match args.get(index) {
+                Some(RuntimeValue::Double(value)) => Ok(*value),
+                _ => error("AL.Math expected double argument"),
+            }
+        };
+        match name {
+            "AL.Math.abs" => match numeric(0)? {
+                RuntimeValue::Int(value) => {
+                    let absolute = value.checked_abs().ok_or_else(|| RuntimeError("Integer overflow in AL.Math.abs".into()))?;
+                    stack.push(RuntimeValue::Int(absolute));
+                }
+                RuntimeValue::Float(value) => stack.push(RuntimeValue::Float(value.abs())),
+                RuntimeValue::Double(value) => stack.push(RuntimeValue::Double(value.abs())),
+                _ => return error("AL.Math.abs expected a numeric argument"),
+            },
+            "AL.Math.min" | "AL.Math.max" => {
+                let left = numeric(0)?;
+                let right = numeric(1)?;
+                let result = match (left, right) {
+                    (RuntimeValue::Int(a), RuntimeValue::Int(b)) =>
+                        RuntimeValue::Int(if name.ends_with("min") { a.min(b) } else { a.max(b) }),
+                    (RuntimeValue::Float(a), RuntimeValue::Float(b)) =>
+                        RuntimeValue::Float(if name.ends_with("min") { a.min(b) } else { a.max(b) }),
+                    (RuntimeValue::Double(a), RuntimeValue::Double(b)) =>
+                        RuntimeValue::Double(if name.ends_with("min") { a.min(b) } else { a.max(b) }),
+                    _ => return error("AL.Math.min/max operand type mismatch"),
+                };
+                stack.push(result);
+            }
+            "AL.Math.sqrt" => {
+                let value = double(0)?;
+                if value < 0.0 { return error("AL.Math.sqrt domain error"); }
+                stack.push(RuntimeValue::Double(value.sqrt()));
+            }
+            "AL.Math.pow" => stack.push(RuntimeValue::Double(double(0)?.powf(double(1)?))),
+            "AL.Math.floor" | "AL.Math.ceil" | "AL.Math.round" => {
+                let value = double(0)?;
+                let rounded = if name.ends_with("floor") { value.floor() }
+                    else if name.ends_with("ceil") { value.ceil() }
+                    else { value.round() };
+                if !rounded.is_finite() || rounded < i64::MIN as f64 || rounded >= -(i64::MIN as f64) {
+                    return error("AL.Math rounding result is outside int range");
+                }
+                stack.push(RuntimeValue::Int(rounded as i64));
+            }
+            _ => return error(format!("Unknown AL.Math API: {name}")),
+        }
+        return Ok(());
+    }
+
+    // AL.String: byte-length and ASCII case conversion are deterministic on every host.
+    if name.starts_with("AL.String.") {
+        let string = |index: usize| -> RtResult<&str> {
+            match args.get(index) {
+                Some(RuntimeValue::String(value)) => Ok(value.as_str()),
+                _ => error("AL.String expected string argument"),
+            }
+        };
+        let value = string(0)?;
+        match name {
+            "AL.String.length" => stack.push(RuntimeValue::Int(value.len() as i64)),
+            "AL.String.upper" => stack.push(RuntimeValue::String(value.to_ascii_uppercase())),
+            "AL.String.lower" => stack.push(RuntimeValue::String(value.to_ascii_lowercase())),
+            "AL.String.contains" => stack.push(RuntimeValue::Bool(value.contains(string(1)?))),
+            "AL.String.startsWith" => stack.push(RuntimeValue::Bool(value.starts_with(string(1)?))),
+            "AL.String.endsWith" => stack.push(RuntimeValue::Bool(value.ends_with(string(1)?))),
+            "AL.String.replace" => stack.push(RuntimeValue::String(value.replace(string(1)?, string(2)?))),
+            _ => return error(format!("Unknown AL.String API: {name}")),
+        }
+        return Ok(());
+    }
+
     if matches!(name, "screen" | "game") {
         state.title = expect_string(args, 0)?;
         if name == "game" {
