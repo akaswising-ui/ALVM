@@ -696,9 +696,14 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
           } else if(i.text=="AL.Math.sqrt") {
             double value=asDouble(0);if(value<0)throw Error("AL.Math.sqrt domain error");stack.emplace_back(std::sqrt(value));
           } else if(i.text=="AL.Math.pow") stack.emplace_back(std::pow(asDouble(0),asDouble(1)));
-          else if(i.text=="AL.Math.floor") stack.emplace_back((int64_t)std::floor(asDouble(0)));
-          else if(i.text=="AL.Math.ceil") stack.emplace_back((int64_t)std::ceil(asDouble(0)));
-          else if(i.text=="AL.Math.round") stack.emplace_back((int64_t)std::round(asDouble(0)));
+          else if(i.text=="AL.Math.floor"||i.text=="AL.Math.ceil"||i.text=="AL.Math.round") {
+            double value=asDouble(0);
+            double rounded=i.text=="AL.Math.floor"?std::floor(value):i.text=="AL.Math.ceil"?std::ceil(value):std::round(value);
+            const double upperExclusive=9223372036854775808.0;
+            const double lowerInclusive=-9223372036854775808.0;
+            if(!std::isfinite(rounded)||rounded<lowerInclusive||rounded>=upperExclusive)throw Error("AL.Math rounding result is outside int range");
+            stack.emplace_back((int64_t)rounded);
+          }
           else throw Error("Unknown AL.Math API: "+i.text);
         }
         else if(i.text.rfind("AL.String.",0)==0) {
@@ -746,10 +751,9 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         }
         else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
         else throw Error("Unknown UI opcode: "+i.text);
-        break;
-      
         }
-}case Op::Neg:{
+        break;
+      }case Op::Neg:{
         Value value=pop();
         if(auto a=std::get_if<int64_t>(&value)){if(*a==std::numeric_limits<int64_t>::min())throw Error("Integer overflow");stack.emplace_back(-*a);}
         else if(auto a=std::get_if<float>(&value))stack.emplace_back(-*a);
