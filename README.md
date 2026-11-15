@@ -2,6 +2,8 @@
 
 AL is an independent programming language with its own grammar, lexer, parser, semantic/type analysis, IR, bytecode, verifier and runtime.
 
+The consolidated status, dependencies and acceptance criteria for all remaining subsystems are tracked in [docs/MASTER_IMPLEMENTATION_PLAN.md](docs/MASTER_IMPLEMENTATION_PLAN.md). This is the master feature list; its status table distinguishes implemented, partial and planned work.
+
 ## Language identity
 
 - **Keyword spellings/vocabulary:** AL uses its own grammar with familiar English spellings influenced by Python.
