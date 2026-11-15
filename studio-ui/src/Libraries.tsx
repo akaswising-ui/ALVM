@@ -390,7 +390,7 @@ export default function Libraries({ onOpenWebsite }: { onOpenWebsite: () => void
           const url = URL.createObjectURL(blob);
           const anchor = document.createElement('a');
           anchor.href = url;
-          anchor.download = 'AL-Library-Imports.al';
+          anchor.download = 'AL-Library-Snippets.txt';
           anchor.click();
           URL.revokeObjectURL(url);
         }} disabled={allItems.length === 0}><FileCode2 size={15} /> Export library snippets</button>
