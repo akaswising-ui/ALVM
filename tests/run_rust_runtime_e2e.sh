@@ -13,6 +13,25 @@ HELLO="$("$RUST_RUNNER" run "$WORK/hello.room")"
 printf '%s\n' "$HELLO" | grep -q '"ok":true'
 printf '%s\n' "$HELLO" | grep -q '"output":"30"'
 
+"$ALVM_BIN" compile "$ROOT/examples/window_gate.al" -o "$WORK/window-gate.room"
+WINDOW_OPEN="$("$RUST_RUNNER" run "$WORK/window-gate.room")"
+printf '%s\\n' "$WINDOW_OPEN" | grep -q '"ok":true'
+printf '%s\\n' "$WINDOW_OPEN" | grep -q '"visible":true'
+printf '%s\\n' "$WINDOW_OPEN" | grep -q '"title":"ALWindowGate"'
+printf '%s\\n' "$WINDOW_OPEN" | grep -q '"id":"status"'
+
+"$ALVM_BIN" compile "$ROOT/tests/window_without_change.al" -o "$WORK/window-hidden.room"
+WINDOW_HIDDEN="$("$RUST_RUNNER" run "$WORK/window-hidden.room")"
+printf '%s\\n' "$WINDOW_HIDDEN" | grep -q '"ok":true'
+printf '%s\\n' "$WINDOW_HIDDEN" | grep -q '"visible":false'
+printf '%s\\n' "$WINDOW_HIDDEN" | grep -q '"id":"hidden-status"'
+
+"$ALVM_BIN" compile "$ROOT/tests/window_conditional_not_reached.al" -o "$WORK/window-conditional.room"
+WINDOW_CONDITIONAL="$("$RUST_RUNNER" run "$WORK/window-conditional.room")"
+printf '%s\\n' "$WINDOW_CONDITIONAL" | grep -q '"ok":true'
+printf '%s\\n' "$WINDOW_CONDITIONAL" | grep -q '"visible":false'
+printf '%s\\n' "$WINDOW_CONDITIONAL" | grep -q '"id":"conditional-status"'
+
 "$ALVM_BIN" compile "$ROOT/examples/calculator.al" -o "$WORK/calculator.room"
 CALCULATOR="$("$RUST_RUNNER" run "$WORK/calculator.room" \
   --event onKey 2 --event onKey 3 --event onKey plus \
