@@ -73,5 +73,20 @@ class AndroidApkBuilderTests(unittest.TestCase):
                 BUILDER.verify_player_apk(apk, "armeabi-v7a")
 
 
+    def test_generated_player_displays_al_language_identity(self) -> None:
+        template = BUILDER.TEMPLATE
+        strings = (template / "app/src/main/res/values/strings.xml").read_text(encoding="utf-8")
+        player = (template / "app/src/main/java/com/alvmplayer/PlayerActivity.java").read_text(encoding="utf-8")
+        manifest = (template / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        metadata = (template / "app/src/main/assets/al-language.json").read_text(encoding="utf-8")
+
+        self.assertIn('name="made_with_al">MADE WITH AL</string>', strings)
+        self.assertIn("R.string.made_with_al", player)
+        self.assertIn('android:name="com.alvm.language"', manifest)
+        self.assertIn('"applicationLanguage": "AL"', metadata)
+        self.assertIn('"sourceExtension": ".al"', metadata)
+        self.assertIn('"bytecodeVersion": 10', metadata)
+
+
 if __name__ == "__main__":
     unittest.main()
