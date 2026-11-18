@@ -48,6 +48,14 @@ static std::vector<Token> lex(const std::string& src) {
   out.push_back({"<eof>",line,col});return out;
 }
 
+static bool validWindowName(const std::string& name) {
+  auto alpha=[](unsigned char ch){return (ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z');};
+  auto digit=[](unsigned char ch){return ch>='0'&&ch<='9';};
+  if(name.empty()||!alpha((unsigned char)name[0]))return false;
+  for(size_t i=1;i<name.size();++i){unsigned char ch=(unsigned char)name[i];if(!alpha(ch)&&!digit(ch)&&ch!='_')return false;}
+  return true;
+}
+
 enum class Type : int { Int=0, String=1, Bool=2, IntArray=3, StringArray=4, BoolArray=5, Void=6, Unknown=7, Float=8, Double=9, FloatArray=10, DoubleArray=11, UserBase=100 };
 static std::vector<std::string> userTypeNames;
 static std::map<std::string,Type> userTypeMap;
@@ -328,7 +336,7 @@ class SemanticAnalyzer {
       case Stmt::FieldAssign:{Type objectType=checkExpr(*s.condition);ClassInfo& cls=classFor(objectType);auto it=cls.fieldSlots.find(s.name);if(it==cls.fieldSlots.end())throw Error("Unknown field '"+s.name+"' on "+typeName(objectType));Type expected=cls.fieldTypes[(size_t)it->second],actual=checkExpr(*s.expr);if(!isAssignable(actual,expected))throw Error("Cannot assign "+typeName(actual)+" to field "+s.name+" of type "+typeName(expected));s.incrementExpr=std::make_unique<Expr>();s.incrementExpr->number=it->second;break;}
       case Stmt::ExprStatement:checkExpr(*s.expr);break;
       case Stmt::Print:if(checkExpr(*s.expr)==Type::Void)throw Error("Cannot print a void function result");break;
-      case Stmt::ChangeWindow:if(checkExpr(*s.expr)!=Type::String)throw Error("change window requires a string title");break;
+      case Stmt::ChangeWindow:if(s.expr->kind!=Expr::String)throw Error("change window requires a quoted window name");if(!validWindowName(s.expr->text))throw Error("window name must match [A-Za-z][A-Za-z0-9_]*");break;
       case Stmt::Return:{if(currentReturn==Type::Void){if(s.expr)throw Error("Void function cannot return a value");}else{if(!s.expr)throw Error("Non-void function must return a value");Type actual=checkExpr(*s.expr);if(!isAssignable(actual,currentReturn))throw Error("Return type mismatch: expected "+typeName(currentReturn)+", got "+typeName(actual));}break;}
       case Stmt::If:if(checkExpr(*s.condition)!=Type::Bool)throw Error("if condition must be boolean");checkStmt(*s.first);if(s.second)checkStmt(*s.second);break;
       case Stmt::While:if(checkExpr(*s.condition)!=Type::Bool)throw Error("while condition must be boolean");++loopDepth;++breakDepth;checkStmt(*s.first);--breakDepth;--loopDepth;break;
@@ -730,7 +738,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         auto asString=[&](size_t n)->std::string{if(n>=args.size()||!std::holds_alternative<std::string>(args[n]))throw Error("UI API expected string argument");return std::get<std::string>(args[n]);};
         auto asInt=[&](size_t n)->int64_t{if(n>=args.size())throw Error("UI API missing integer argument");return integer(args[n]);};
         auto findElement=[&](const std::string& id)->UiElement*{for(auto& e:activeUiElements)if(e.id==id)return &e;return nullptr;};
-        if(i.text=="openWindow"){std::string title=asString(0);if(title.find_first_not_of(" \\t\\r\\n")==std::string::npos)throw Error("change window title cannot be empty");activeUiTitle=std::move(title);activeUiVisible=true;}
+        if(i.text=="openWindow"){std::string title=asString(0);if(!validWindowName(title))throw Error("invalid window name in .room bytecode");activeUiTitle=std::move(title);activeUiVisible=true;}
         else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game")activeUiElements.clear();}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
