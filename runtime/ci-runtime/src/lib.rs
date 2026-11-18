@@ -2216,7 +2216,29 @@ mod tests {
         let open = Instruction { op: UI_CALL, arg: 1, text: "openWindow".into() };
         ui_call(&open, &[RuntimeValue::String("ALWindow".into())], &mut stack, &mut state).unwrap();
         assert!(state.visible);
-        assert_eq!(state.title, "AL Window");
+        assert_eq!(state.title, "ALWindow");
+    }
+
+    #[test]
+    fn a_new_main_run_resets_the_window_visibility_gate() {
+        let open_program = test_room_bytes(vec![
+            Instruction { op: PUSH_STRING, arg: 0, text: "FirstWindow".into() },
+            Instruction { op: UI_CALL, arg: 1, text: "openWindow".into() },
+            Instruction { op: HALT, arg: 0, text: String::new() },
+        ]);
+        let opened = run_room_bytes(&open_program, "main", "", "test");
+        assert_eq!(opened["ok"], true);
+        assert_eq!(opened["ui"]["visible"], true);
+        assert_eq!(opened["ui"]["title"], "FirstWindow");
+
+        let hidden_program = test_room_bytes(vec![
+            Instruction { op: PUSH_STRING, arg: 0, text: "HiddenScreen".into() },
+            Instruction { op: UI_CALL, arg: 1, text: "screen".into() },
+            Instruction { op: HALT, arg: 0, text: String::new() },
+        ]);
+        let hidden = run_room_bytes(&hidden_program, "main", "", "test");
+        assert_eq!(hidden["ok"], true);
+        assert_eq!(hidden["ui"]["visible"], false);
     }
 
     #[test]
