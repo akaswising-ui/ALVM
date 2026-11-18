@@ -38,7 +38,7 @@ public final class PlayerActivity extends Activity {
     private String frameCallback = "";
     private int frameRate = 0;
     private Runnable frameTask;
-    private boolean paused;
+    private boolean paused = true;
     private JSONArray currentElements = new JSONArray();
 
     @Override
@@ -237,7 +237,7 @@ public final class PlayerActivity extends Activity {
             public void run() {
                 if (paused || isFinishing() || !callback.equals(frameCallback)) return;
                 JSONObject frame = runtime.run(roomFile.getAbsolutePath(), callback, "frame");
-                applyResult(frame, false);
+                applyResult(frame, true);
                 if (frameTask == this && !paused) {
                     handler.postDelayed(this, Math.max(16, 1000 / frameRate));
                 }
