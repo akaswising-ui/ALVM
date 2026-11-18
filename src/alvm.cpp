@@ -703,7 +703,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
             if(a.index()!=b.index())throw Error("AL.Math.min/max operand type mismatch");
             if(auto x=std::get_if<int64_t>(&a)){auto y=std::get<int64_t>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(*x,y):std::max(*x,y));}
             else if(auto x=std::get_if<float>(&a)){auto y=std::get<float>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(*x,y):std::max(*x,y));}
-            else {auto x=std::get<double>(a),y=std::get<double>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(x,y):std::max(x,y));}
+            else {auto xDouble=std::get<double>(a),yDouble=std::get<double>(b);stack.emplace_back(i.text=="AL.Math.min"?std::min(xDouble,yDouble):std::max(xDouble,yDouble));}
           } else if(i.text=="AL.Math.sqrt") {
             double value=asDouble(0);if(value<0)throw Error("AL.Math.sqrt domain error");stack.emplace_back(std::sqrt(value));
           } else if(i.text=="AL.Math.pow") stack.emplace_back(std::pow(asDouble(0),asDouble(1)));
