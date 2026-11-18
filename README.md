@@ -43,6 +43,12 @@ The File Manager exposes **Convert to APK** for `.al` files. The exporter compil
 
 The in-app export is a buildable Android project ZIP, not an APK binary. It includes the Player Activity, compiled `.room v10`, this phone's `libalvm.so`, and a GitHub Actions workflow at `.github/workflows/build-apk.yml`. Open the project in Android Studio (JDK 17, Android SDK 35, Gradle 8.9) or push it to a GitHub repository and download the `AL-Android-Player-APK` Actions artifact. The export targets only the ABI of the device that generated it. The separate `.AL` runtime package format is not an APK. Multi-source module linking is not implemented, so separate `.al` files are managed independently rather than linked into one program.
 
+## AL application language identity
+
+Every standalone Android app generated from an `.al` source displays **MADE WITH AL** as a persistent footer, including its program screen and startup/error shell. The generated app also exposes `com.alvm.language=AL` in Android manifest metadata and includes `assets/al-language.json` with the language name, `.al` source extension and .room v10 format information.
+
+The generated app's visible language identity is AL. It does not show Java, C++ or Rust as the app's source language in its user interface. Those are implementation details of the Android host and ALVM runtime; the actual app logic remains compiled from AL source and executed as .room bytecode by ALVM. This branding does not claim that every layer of ALVM itself is written in AL.
+
 ## Generate a standalone Android APK
 
 ALVM now includes a real APK build script for desktop/CI environments. It compiles the selected AL source with the C++ compiler, validates the `.room v10` header, builds ALVM Studio's Android JNI/Rust runtime library, inserts that library and bytecode into the standalone Player template, then runs Gradle to create an installable debug APK.
