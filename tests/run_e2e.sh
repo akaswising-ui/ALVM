@@ -152,7 +152,7 @@ fi
 
 "$BIN" compile "$ROOT/examples/window_gate.al" -o "$TMP/window-gate.room"
 WINDOW_GATE_UI="$("$BIN" ui "$TMP/window-gate.room")"
-if [[ "$WINDOW_GATE_UI" != *'"visible":true'* || "$WINDOW_GATE_UI" != *'"title":"AL Window Gate"'* ]]; then
+if [[ "$WINDOW_GATE_UI" != *'"visible":true'* || "$WINDOW_GATE_UI" != *'"title":"ALWindowGate"'* ]]; then
   printf 'Explicit AL window command failed to open the native window:\\n%s\\n' "$WINDOW_GATE_UI" >&2
   exit 1
 fi
@@ -161,6 +161,13 @@ fi
 WINDOW_HIDDEN_UI="$("$BIN" ui "$TMP/window-hidden.room")"
 if [[ "$WINDOW_HIDDEN_UI" != *'"visible":false'* || "$WINDOW_HIDDEN_UI" != *'"id":"hidden-status"'* ]]; then
   printf 'AL UI opened without change window:\\n%s\\n' "$WINDOW_HIDDEN_UI" >&2
+  exit 1
+fi
+
+"$BIN" compile "$ROOT/tests/window_conditional_not_reached.al" -o "$TMP/window-conditional.room"
+WINDOW_CONDITIONAL_UI="$("$BIN" ui "$TMP/window-conditional.room")"
+if [[ "$WINDOW_CONDITIONAL_UI" != *'"visible":false'* || "$WINDOW_CONDITIONAL_UI" != *'"id":"conditional-status"'* ]]; then
+  printf 'Unexecuted change window command opened the AL window:\\n%s\\n' "$WINDOW_CONDITIONAL_UI" >&2
   exit 1
 fi
 
