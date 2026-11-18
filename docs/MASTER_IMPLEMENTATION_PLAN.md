@@ -29,7 +29,7 @@ AL source uses Python-influenced English keyword spellings, Java-like class/bloc
 | Complete graphics/game engine | Planned | Images/sprites, asset lifecycle, transforms, scene graph, keyboard/touch input, animation, timing, physics and playable sample games written in AL |
 | .AL package | Partially implemented | ALPK v1 single entry module plus optional assets; no multi-module linker or external dependencies |
 | Multi-module linking | Planned | Module/import grammar, symbol visibility, dependency graph, cycles, linker, package manifest and runtime module loader |
-| AL application APK generation | Planned | Android app template, runtime/library bundling, permissions, asset packaging, Gradle build, signing configuration and installable test APK |
+| AL application APK generation | Partially implemented | One-file AL-to-Android debug APK builder and CI workflow; Player template, .room v10 bytecode and Rust runtime bundling are built/tested in Gradle. Direct on-device Gradle/SDK packaging, multi-module linking and release signing remain incomplete |
 | IDE / Library Store / code catalogue | Partially implemented | Preserve editor/workspace/compile/run/execute/preview; distinguish native actions from reduced browser preview |
 
 ## Required implementation tracks
@@ -88,7 +88,7 @@ Acceptance: two independent AL-authored sample games, automated rule/state tests
 2. Compile modules independently, build a dependency graph and link verified bytecode with patched class/function references.
 3. Extend ALPK manifest for multiple modules, entry point, assets, library versions, dependency hashes and permissions.
 4. Verify every module and dependency before execution; reject duplicate symbols, cycles where unsupported, path traversal, incompatible ABI/API and untrusted native payloads.
-5. Generate a real Android project/APK from an ALPK app, including the native CI Runtime, Java host, manifest permissions, resources and Gradle build. Keep signing credentials under the developer's control.
+5. The first single-source Android Player path is implemented: compile .al to .room v10, package a Player Activity and ABI-matched native Rust CI Runtime, then assemble an installable debug APK with Gradle from desktop/CI. Extend this to ALPK and multi-module apps, add on-device or remote build integration, test install/launch on emulators/devices, and keep release signing credentials under the developer's control.
 
 Acceptance: multi-module compile/link/run example, broken/missing dependency rejection, package integrity tests, APK build in CI, APK installation and end-to-end launch on an Android emulator/device.
 
