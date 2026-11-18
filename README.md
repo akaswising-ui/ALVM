@@ -35,6 +35,12 @@ The Studio Library Store exposes exactly 10,000 generated, searchable source sni
 
 These 10,000 entries are parameterized source templates built only from syntax and native calls already implemented by the C++ AL compiler and Rust CI Runtime. They are not 10,000 new built-in functions, libraries, keywords or VM instructions. Planned library cards such as Network, Database, Audio and advanced Graphics remain planned until their compiler/runtime implementations and tests exist.
 
+## Workspace file manager
+
+The Android File Manager can list and manage multiple independent `.al` source files and `.room` build files. A source-file action menu supports opening, renaming, deleting and selecting the AL package export path. The multi-select screen supports bulk deletion.
+
+The File Manager also exposes a **Convert to APK** entry for `.al` files. It currently reports that standalone APK generation is not implemented and offers the working `.AL` runtime-package export instead. `.AL` is not an APK: generating an installable per-program APK still needs a standalone Android app template, Gradle/NDK build backend and signing flow. Multi-source module linking is also not implemented, so separate `.al` files are managed independently rather than linked into one program.
+
 ## Explicit AL native window gate
 
 A native application window is shown only when the AL program executes `change window "AppTitle";`. `UI.screen(...)`, `UI.game(...)` and view-building calls do not open it by themselves. The statement is parsed and type-checked by the native C++ AL compiler, lowered to the existing `.room v10` `UiCall` instruction, and handled by the Rust CI Runtime. The Android host displays the window only when the runtime returns `visible: true`.
