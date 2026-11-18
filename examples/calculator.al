@@ -1,5 +1,6 @@
 room Main {
     public static void main() {
+        change window "AL Calculator";
         UI.screen("AL Calculator");
         UI.text("display", "0");
 
