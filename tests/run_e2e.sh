@@ -120,7 +120,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base; do
+for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base change_window_type_error; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -140,13 +140,27 @@ fi
 "$BIN" disasm "$TMP/constructors.room" | grep -q 'function Player.$ctor'
 "$BIN" compile "$ROOT/examples/calculator.al" -o "$TMP/calculator.room"
 UI_INITIAL="$("$BIN" ui "$TMP/calculator.room")"
-if [[ "$UI_INITIAL" != *'"title":"AL Calculator"'* || "$UI_INITIAL" != *'"id":"display","text":"0"'* ]]; then
+if [[ "$UI_INITIAL" != *'"title":"AL Calculator"'* || "$UI_INITIAL" != *'"visible":true'* || "$UI_INITIAL" != *'"id":"display","text":"0"'* ]]; then
   printf 'AL UI initial render failed:\n%s\n' "$UI_INITIAL" >&2
   exit 1
 fi
 UI_EVENTS="$("$BIN" ui-event "$TMP/calculator.room" onKey 7 onKey plus onKey 5 onKey equals)"
 if [[ "$UI_EVENTS" != *'"id":"display","text":"12"'* ]]; then
   printf 'AL UI button callback sequence failed:\n%s\n' "$UI_EVENTS" >&2
+  exit 1
+fi
+
+"$BIN" compile "$ROOT/examples/window_gate.al" -o "$TMP/window-gate.room"
+WINDOW_GATE_UI="$("$BIN" ui "$TMP/window-gate.room")"
+if [[ "$WINDOW_GATE_UI" != *'"visible":true'* || "$WINDOW_GATE_UI" != *'"title":"AL Window Gate"'* ]]; then
+  printf 'Explicit AL window command failed to open the native window:\\n%s\\n' "$WINDOW_GATE_UI" >&2
+  exit 1
+fi
+
+"$BIN" compile "$ROOT/tests/window_without_change.al" -o "$TMP/window-hidden.room"
+WINDOW_HIDDEN_UI="$("$BIN" ui "$TMP/window-hidden.room")"
+if [[ "$WINDOW_HIDDEN_UI" != *'"visible":false'* || "$WINDOW_HIDDEN_UI" != *'"id":"hidden-status"'* ]]; then
+  printf 'AL UI opened without change window:\\n%s\\n' "$WINDOW_HIDDEN_UI" >&2
   exit 1
 fi
 
