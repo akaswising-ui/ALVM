@@ -730,7 +730,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         auto asString=[&](size_t n)->std::string{if(n>=args.size()||!std::holds_alternative<std::string>(args[n]))throw Error("UI API expected string argument");return std::get<std::string>(args[n]);};
         auto asInt=[&](size_t n)->int64_t{if(n>=args.size())throw Error("UI API missing integer argument");return integer(args[n]);};
         auto findElement=[&](const std::string& id)->UiElement*{for(auto& e:activeUiElements)if(e.id==id)return &e;return nullptr;};
-        if(i.text=="openWindow"){std::string title=asString(0);if(title.empty())throw Error("change window title cannot be empty");activeUiTitle=std::move(title);activeUiVisible=true;}
+        if(i.text=="openWindow"){std::string title=asString(0);if(title.find_first_not_of(" \\t\\r\\n")==std::string::npos)throw Error("change window title cannot be empty");activeUiTitle=std::move(title);activeUiVisible=true;}
         else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game")activeUiElements.clear();}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
