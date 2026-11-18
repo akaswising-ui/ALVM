@@ -216,8 +216,18 @@ def build(args: argparse.Namespace) -> Path:
     native_library = project_dir / "app" / "src" / "main" / "jniLibs" / abi / "libalvm.so"
     extract_native_library(STUDIO_APK, abi, native_library)
 
-    shutil.copytree(TEMPLATE, project_dir, dirs_exist_ok=True)
+    shutil.copytree(
+        TEMPLATE, project_dir, dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("workflow-template"),
+    )
     replace_template_markers(project_dir, output_name, display_name, application_id, abi)
+
+    workflow_source = TEMPLATE / "workflow-template" / "build-apk.yml"
+    workflow_destination = project_dir / ".github" / "workflows" / "build-apk.yml"
+    if not workflow_source.is_file():
+        raise BuildError("Exported Android Player APK workflow template is missing.")
+    workflow_destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(workflow_source, workflow_destination)
 
     assets_dir = project_dir / "app" / "src" / "main" / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
