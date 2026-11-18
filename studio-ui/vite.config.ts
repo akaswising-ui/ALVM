@@ -6,7 +6,7 @@ export default defineConfig({
   base: './',
   build: {
     outDir: '../app/src/main/assets',
-    emptyOutDir: true,
+    emptyOutDir: false,
     sourcemap: false,
     assetsDir: 'assets'
   }
