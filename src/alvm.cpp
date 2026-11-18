@@ -615,7 +615,7 @@ static std::string jsonEscape(const std::string& value){
   }}return out;
 }
 static std::string uiJson(){
-  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"visible\":\"+(activeUiVisible?\"true\":\"false\")+\",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate)+",\"elements\":[";
+  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"visible\":"+(activeUiVisible?"true":"false")+",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate)+",\"elements\":[";
   for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
     out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+"}";
   }return out+"]}";
