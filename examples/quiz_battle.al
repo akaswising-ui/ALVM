@@ -1,6 +1,6 @@
 room Main {
     public static void main() {
-        change window "AL Quiz Battle";
+        change window "ALQuizBattle";
         UI.screen("AL Quiz Battle");
 
         UI.text("heading", "QUIZ BATTLE");
