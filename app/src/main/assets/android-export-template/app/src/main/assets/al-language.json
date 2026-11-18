@@ -1,0 +1,10 @@
+{
+  "formatVersion": 1,
+  "applicationLanguage": "AL",
+  "applicationLanguageName": "AL Programming Language",
+  "sourceExtension": ".al",
+  "bytecodeMagic": "ALRM",
+  "bytecodeVersion": 10,
+  "runtimeName": "ALVM",
+  "branding": "MADE WITH AL"
+}
