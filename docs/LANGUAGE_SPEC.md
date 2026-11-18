@@ -165,10 +165,13 @@ boolean[] flags = new boolean[3];
 
 ## AL-native UI API (Stage 15)
 
-The native Android runtime supports a declarative screen API:
+The native Android runtime supports a declarative screen API. A program must explicitly request its native window with `change window`:
 
 ```al
-UI.screen("AL App");
+class Main {
+    public static void main() {
+        change window "AL App";
+        UI.screen("AL App");
 UI.text("display", "0");
 UI.button("one", "1", "onButton");
     }
@@ -179,7 +182,8 @@ UI.button("one", "1", "onButton");
 }
 ```
 
-- `UI.screen(string title)` sets the screen title.
+- `change window stringTitle;` is an AL statement that requests the native application window and sets its initial title. The expression must have type `string`; an empty title is rejected at runtime.
+- `UI.screen(string title)` sets the screen title but does not open a native window.
 - `UI.text(string id, string value)` creates or replaces a text view.
 - `UI.button(string id, string label, string callbackName)` creates a button. The callback must be a global `void` function with one `string` parameter.
 - `UI.setText(string id, stringOrInt value)` updates an existing text view.
@@ -187,13 +191,14 @@ UI.button("one", "1", "onButton");
 - `UI.clear()` removes all current components and integer state.
 - Button clicks pass the button ID to the AL callback. The C++ VM executes the callback, while the Android Java host creates and updates native Android Views.
 
-The `.room` format is version 9. The `UiCall` opcode carries UI commands to the VM. `examples/calculator.al` is a complete AL-authored calculator sample; neither its layout nor arithmetic is preloaded in the Android host.
+The `.room` format is version 10. The `change window` statement lowers to the existing `UiCall` opcode with the `openWindow` operation; no new bytecode opcode or format migration is required. `examples/calculator.al` is a complete AL-authored calculator sample; neither its layout nor arithmetic is preloaded in the Android host.
 
 ## Stage 16: Native 2D drawing API
 
 AL programs can create a native Android 2D drawing surface:
 
 ```al
+change window "My 2D Game";
 UI.game("My 2D Game");
 UI.rect("ground", 0, 400, 320, 80, 4278255360);
 UI.circle("player", 80, 360, 18, 4294901760);
@@ -202,7 +207,8 @@ UI.remove("player");
 ```
 
 - The logical drawing surface is 320 by 480 units and scales to the available Android view.
-- `UI.game(string title)` sets the game title and clears current UI elements.
+- `UI.game(string title)` sets the game title and clears current UI elements; it does not open the native window.
+- The Android host displays accumulated native UI only when the AL program executes `change window`. If that statement is absent, UI calls may update runtime state but the native window remains hidden.
 - `UI.rect(string id, int x, int y, int width, int height, int argb)` draws a filled rectangle.
 - `UI.circle(string id, int centerX, int centerY, int radius, int argb)` draws a filled circle.
 - `UI.line(string id, int x1, int y1, int x2, int y2, int argb)` draws a line.
@@ -316,6 +322,7 @@ This is the first native standard-library slice. It does not imply that \`AL.Col
 The Android native UI bridge supports these AL calls:
 
 ```al
+change window "My Touch Game";
 UI.touchArea("move", 0, 0, 320, 480, "onTouch");
 UI.frameLoop("update", 30);
 boolean hit = UI.collides("player", "wall");
