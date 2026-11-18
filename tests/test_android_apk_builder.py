@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+import zipfile
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "build_android_apk.py"
@@ -53,6 +54,23 @@ class AndroidApkBuilderTests(unittest.TestCase):
         BUILDER.require_elf_arch(bytes(valid), "arm64-v8a")
         with self.assertRaises(BUILDER.BuildError):
             BUILDER.require_elf_arch(bytes(valid), "armeabi-v7a")
+
+
+    def test_checks_standalone_player_apk_contents(self) -> None:
+        elf = bytearray(20)
+        elf[:4] = b"\x7fELF"
+        elf[18:20] = struct.pack("<H", 183)
+        room = b"ALRM" + struct.pack("<I", 10)
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "player.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest")
+                archive.writestr("classes.dex", b"dex-content")
+                archive.writestr("assets/main.room", room)
+                archive.writestr("lib/arm64-v8a/libalvm.so", bytes(elf))
+            BUILDER.verify_player_apk(apk, "arm64-v8a")
+            with self.assertRaises(BUILDER.BuildError):
+                BUILDER.verify_player_apk(apk, "armeabi-v7a")
 
 
 if __name__ == "__main__":
