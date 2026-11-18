@@ -746,7 +746,7 @@ public class MainActivity extends Activity {
         if (file == null || file.getName() == null) return;
         new AlertDialog.Builder(this)
                 .setTitle("Generate Android application")
-                .setMessage("ALVM will compile this .al file to verified .room v10 bytecode and create a standalone Android Gradle project. The project includes a Player Activity, the Rust CI Runtime native library for this phone's CPU ABI, your compiled program, and a GitHub Actions APK workflow.")
+                .setMessage("ALVM will compile this .al file to verified .room v10 bytecode and create a standalone Android Gradle project. The project includes a Player Activity, the Rust CI Runtime native library for this phone's CPU ABI, your compiled program, and a GitHub Actions APK workflow.\\n\\nThis saves a project ZIP, not an APK binary. Open it in Android Studio and build the debug APK, or push the extracted project to GitHub and download the AL-Android-Player-APK artifact from Actions. ALVM Studio does not bundle the Android SDK or Gradle build engine. A Play Store release APK must be signed with your own release key.")
                 .setPositiveButton("GENERATE ANDROID PROJECT", (dialog, which) -> exportWorkspaceAndroidProject(file))
                 .setNegativeButton("CANCEL", null)
                 .show();
