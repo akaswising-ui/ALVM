@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">{{APP_NAME_XML}}</string>
+    <string name="made_with_al">MADE WITH AL</string>
+    <string name="al_language_description">This application was created with the AL programming language.</string>
 </resources>
