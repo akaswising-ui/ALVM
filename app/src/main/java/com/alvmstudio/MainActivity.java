@@ -834,6 +834,8 @@ public class MainActivity extends Activity {
                         "app/src/main/java/com/alvmplayer/PlayerActivity.java", outputName, applicationId, abi);
                 addAndroidTemplateFile(zip, "android-export-template/README.md",
                         "README.md", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/.github/workflows/build-apk.yml",
+                        ".github/workflows/build-apk.yml", outputName, applicationId, abi);
 
                 addAndroidZipEntry(zip, "app/src/main/assets/main.room", roomBytes);
                 addAndroidZipEntry(zip, "app/src/main/jniLibs/" + abi + "/libalvm.so", nativeLibraryBytes);
