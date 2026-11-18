@@ -147,10 +147,12 @@ def extract_native_library(apk_path: Path, abi: str, destination: Path) -> None:
     destination.write_bytes(data)
 
 
-def replace_template_markers(project_dir: Path, app_name: str, application_id: str, abi: str) -> None:
+def replace_template_markers(
+    project_dir: Path, project_name: str, display_name: str, application_id: str, abi: str
+) -> None:
     replacements = {
-        "{{APP_NAME}}": app_name,
-        "{{APP_NAME_XML}}": html.escape(app_name),
+        "{{APP_NAME}}": project_name,
+        "{{APP_NAME_XML}}": html.escape(display_name),
         "{{APP_ID}}": application_id,
         "{{ABI}}": abi,
     }
@@ -173,10 +175,11 @@ def replace_template_markers(project_dir: Path, app_name: str, application_id: s
 
 def build(args: argparse.Namespace) -> Path:
     source = resolve_source(args.source, args.source_root)
-    app_name = args.name.strip() if args.name else source.stem
-    if not app_name:
-        app_name = "ALApp"
-    output_name = safe_output_name(app_name)
+    display_name = args.name.strip() if args.name else source.stem
+    display_name = "".join(character for character in display_name if character.isprintable())[:80]
+    if not display_name:
+        display_name = "ALApp"
+    output_name = safe_output_name(display_name)
     application_id = validate_application_id(
         args.application_id or default_application_id(output_name)
     )
@@ -214,7 +217,7 @@ def build(args: argparse.Namespace) -> Path:
     extract_native_library(STUDIO_APK, abi, native_library)
 
     shutil.copytree(TEMPLATE, project_dir, dirs_exist_ok=True)
-    replace_template_markers(project_dir, output_name, application_id, abi)
+    replace_template_markers(project_dir, output_name, display_name, application_id, abi)
 
     assets_dir = project_dir / "app" / "src" / "main" / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
