@@ -42,6 +42,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Test Android APK builder
+        run: |
+          python3 -m py_compile tools/build_android_apk.py tests/test_android_apk_builder.py
+          python3 -m unittest discover -s tests -p 'test_android_apk_builder.py' -v
+
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
