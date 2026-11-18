@@ -1,6 +1,6 @@
 Room TreasureGrid {
     public static void main() {
-        change window "TREASURE GRID";
+        change window "TreasureGrid";
         UI.game("TREASURE GRID");
         UI.text("help", "Find gems. Each trap removes 2 points.");
         UI.text("scoreLabel", "SCORE");
