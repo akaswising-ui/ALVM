@@ -754,6 +754,7 @@ public class MainActivity extends Activity {
 
     private void exportWorkspaceAndroidProject(DocumentFile file) {
         if (file == null || file.getName() == null) return;
+        File temporaryCompileDirectory = null;
         try {
             String source;
             try (InputStream input = getContentResolver().openInputStream(file.getUri())) {
@@ -765,12 +766,16 @@ public class MainActivity extends Activity {
             }
 
             showOutputInWeb("Compiling " + file.getName() + " for Android export...", "BUILDING");
-            String compileResult = nativeCompile(source, getFilesDir().getAbsolutePath());
+            temporaryCompileDirectory = new File(getCacheDir(), "al-android-export-" + System.nanoTime());
+            if (!temporaryCompileDirectory.mkdirs()) {
+                throw new IllegalStateException("Could not create a temporary Android export build folder.");
+            }
+            String compileResult = nativeCompile(source, temporaryCompileDirectory.getAbsolutePath());
             if (compileResult == null || !compileResult.startsWith("Compiled ")) {
                 throw new IllegalStateException(compileResult == null ? "AL compiler returned no result." : compileResult);
             }
 
-            File roomFile = new File(roomPath());
+            File roomFile = new File(temporaryCompileDirectory, "main.room");
             if (!roomFile.isFile() || roomFile.length() < 8 || roomFile.length() > 64L * 1024L * 1024L) {
                 throw new IllegalStateException("Compiler did not produce a valid-size .room module.");
             }
