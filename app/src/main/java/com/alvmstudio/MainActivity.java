@@ -562,17 +562,206 @@ public class MainActivity extends Activity {
         String[] options = new String[files.size()];
         for (int i = 0; i < files.size(); i++) options[i] = labels.get(i);
         AlertDialog.Builder dialog = new AlertDialog.Builder(this)
-                .setTitle("ALVM Studio  /  File Manager")
-                .setPositiveButton("CI RUNTIME", (d, which) -> showCiRuntimeManager())
+                .setTitle("ALVM Studio  /  Multi-file Manager")
+                .setPositiveButton("SELECT MULTIPLE", (d, which) -> showBulkFileManager())
                 .setNeutralButton("IMPORT FILE", (d, which) -> importExternalFile())
                 .setNegativeButton("NEW .AL FILE", (d, which) -> createNewFile());
         if (options.length > 0) {
             DocumentFile[] fileArray = files.toArray(new DocumentFile[0]);
-            dialog.setItems(options, (d, which) -> openWorkspaceFile(fileArray[which]));
+            dialog.setItems(options, (d, which) -> showWorkspaceFileActions(fileArray[which]));
         } else {
-            dialog.setMessage("Workspace is ready.\n\nProjects  /  .al source files\nBuild  /  .room bytecode\nData  /  workspace.json");
+            dialog.setMessage("Workspace is ready.\\n\\nProjects  /  multiple .al source files\\nBuild  /  .room bytecode\\nData  /  workspace.json\\n\\nCreate, import, rename, open or delete files here.");
         }
         dialog.show();
+    }
+
+    private void showWorkspaceFileActions(DocumentFile file) {
+        if (file == null || file.getName() == null) return;
+        String name = file.getName();
+        boolean isAl = name.toLowerCase().endsWith(".al");
+        String[] actions = isAl
+                ? new String[]{"OPEN IN EDITOR", "RENAME FILE", "DELETE FILE", "CONVERT TO APK"}
+                : new String[]{"OPEN BYTECODE", "RENAME FILE", "DELETE FILE"};
+        new AlertDialog.Builder(this)
+                .setTitle(name)
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) {
+                        openWorkspaceFile(file);
+                    } else if (which == 1) {
+                        renameWorkspaceFile(file);
+                    } else if (which == 2) {
+                        confirmDeleteWorkspaceFile(file);
+                    } else if (which == 3 && isAl) {
+                        showApkConversionDialog(file);
+                    }
+                })
+                .setNegativeButton("BACK", (dialog, which) -> openFileManager())
+                .show();
+    }
+
+    private void showBulkFileManager() {
+        if (!initWorkspaceFolders()) return;
+        List<DocumentFile> files = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        addFilesFromFolder(projectsFolder, "Projects", files, labels, ".al");
+        addFilesFromFolder(buildFolder, "Build", files, labels, ".room");
+        if (files.isEmpty()) {
+            showOutputInWeb("No workspace files to manage.", "READY");
+            return;
+        }
+
+        DocumentFile[] fileArray = files.toArray(new DocumentFile[0]);
+        String[] options = labels.toArray(new String[0]);
+        boolean[] selected = new boolean[options.length];
+        new AlertDialog.Builder(this)
+                .setTitle("Select multiple files")
+                .setMultiChoiceItems(options, selected, (dialog, which, checked) -> selected[which] = checked)
+                .setPositiveButton("DELETE SELECTED", (dialog, which) -> {
+                    int deleted = 0;
+                    int failed = 0;
+                    boolean deletedCurrent = false;
+                    for (int i = 0; i < fileArray.length; i++) {
+                        if (selected[i]) {
+                            if (currentDocument != null && currentDocument.getUri().equals(fileArray[i].getUri())) {
+                                deletedCurrent = true;
+                            }
+                            if (fileArray[i].delete()) deleted++;
+                            else failed++;
+                        }
+                    }
+                    if (deletedCurrent) {
+                        currentDocument = null;
+                        currentFileName = "Main.al";
+                        compiled = false;
+                        compiledSourceSnapshot = null;
+                        compiledSourceFileName = "";
+                        importedRoomArtifact = false;
+                        loadAlIntoWebApp("", currentFileName);
+                    }
+                    if (failed == 0) {
+                        showOutputInWeb("Deleted " + deleted + " selected file(s).", "SUCCESS");
+                    } else {
+                        showOutputInWeb("Deleted " + deleted + " file(s); could not delete " + failed + ".", "ERROR");
+                    }
+                })
+                .setNeutralButton("DONE", null)
+                .show();
+    }
+
+    private void renameWorkspaceFile(DocumentFile file) {
+        if (file == null || file.getName() == null) return;
+        String oldName = file.getName();
+        EditText nameInput = new EditText(this);
+        nameInput.setSingleLine(true);
+        nameInput.setText(oldName);
+        nameInput.setSelection(oldName.lastIndexOf('.') > 0 ? oldName.lastIndexOf('.') : oldName.length());
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setPadding(dp(18), dp(4), dp(18), 0);
+        wrapper.addView(nameInput);
+        new AlertDialog.Builder(this)
+                .setTitle("Rename workspace file")
+                .setView(wrapper)
+                .setPositiveButton("RENAME", (dialog, which) -> {
+                    String requested = nameInput.getText().toString().trim();
+                    if (requested.isEmpty() || requested.indexOf('/') >= 0 || requested.indexOf((char) 92) >= 0) {
+                        showOutputInWeb("Use a file name without folders or path separators.", "ERROR");
+                        return;
+                    }
+                    boolean alFile = oldName.toLowerCase().endsWith(".al");
+                    boolean roomFile = oldName.toLowerCase().endsWith(".room");
+                    String extension = alFile ? ".al" : roomFile ? ".room" : "";
+                    if (extension.isEmpty()) {
+                        showOutputInWeb("Only .al and .room workspace files can be renamed here.", "ERROR");
+                        return;
+                    }
+                    if (!requested.toLowerCase().endsWith(extension)) {
+                        int dot = requested.lastIndexOf('.');
+                        if (dot > 0) requested = requested.substring(0, dot);
+                        requested += extension;
+                    }
+                    String newName = requested;
+                    DocumentFile parent = alFile ? projectsFolder : buildFolder;
+                    if (parent == null) {
+                        showOutputInWeb("Workspace folder is not available.", "ERROR");
+                        return;
+                    }
+                    DocumentFile existing = parent.findFile(newName);
+                    if (existing != null && !oldName.equals(newName)) {
+                        showOutputInWeb("A file with that name already exists: " + newName, "ERROR");
+                        return;
+                    }
+                    boolean wasCurrent = currentDocument != null
+                            && currentDocument.getUri().equals(file.getUri());
+                    if (!file.renameTo(newName)) {
+                        showOutputInWeb("Could not rename " + oldName + ".", "ERROR");
+                        return;
+                    }
+                    if (wasCurrent) {
+                        currentDocument = parent.findFile(newName);
+                        if (alFile) currentFileName = newName;
+                        compiled = false;
+                        compiledSourceSnapshot = null;
+                        compiledSourceFileName = "";
+                        importedRoomArtifact = false;
+                        writeWorkspaceData();
+                    }
+                    showOutputInWeb("Renamed " + oldName + " to " + newName + ".", "SUCCESS");
+                })
+                .setNegativeButton("CANCEL", null)
+                .show();
+    }
+
+    private void confirmDeleteWorkspaceFile(DocumentFile file) {
+        if (file == null || file.getName() == null) return;
+        String name = file.getName();
+        new AlertDialog.Builder(this)
+                .setTitle("Delete " + name + "?")
+                .setMessage("This removes the selected file from the ALVM Studio workspace.")
+                .setPositiveButton("DELETE", (dialog, which) -> {
+                    boolean wasCurrent = currentDocument != null
+                            && currentDocument.getUri().equals(file.getUri());
+                    if (!file.delete()) {
+                        showOutputInWeb("Could not delete " + name + ".", "ERROR");
+                        return;
+                    }
+                    if (wasCurrent) {
+                        currentDocument = null;
+                        currentFileName = "Main.al";
+                        compiled = false;
+                        compiledSourceSnapshot = null;
+                        compiledSourceFileName = "";
+                        importedRoomArtifact = false;
+                        loadAlIntoWebApp("", currentFileName);
+                    }
+                    showOutputInWeb("Deleted " + name + ".", "SUCCESS");
+                })
+                .setNegativeButton("CANCEL", null)
+                .show();
+    }
+
+    private void showApkConversionDialog(DocumentFile file) {
+        if (file == null || file.getName() == null) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Convert AL file to APK")
+                .setMessage("The selected file can be compiled by ALVM, but this app does not yet contain a standalone Android APK builder or signing pipeline. Creating an .apk here would be a fake file.\\n\\nYou can export the supported .AL runtime package now. True APK generation needs a separate Android app template and Gradle/NDK build backend.")
+                .setPositiveButton("EXPORT .AL PACKAGE", (dialog, which) -> exportWorkspaceAlPackage(file))
+                .setNegativeButton("CANCEL", null)
+                .show();
+    }
+
+    private void exportWorkspaceAlPackage(DocumentFile file) {
+        try {
+            String source;
+            try (InputStream input = getContentResolver().openInputStream(file.getUri())) {
+                if (input == null) throw new IllegalStateException("Cannot read selected AL source file.");
+                source = new String(readAll(input), StandardCharsets.UTF_8);
+            }
+            String fileName = file.getName();
+            String appName = fileName.substring(0, fileName.length() - 3);
+            buildAlPackageFromSource(source, appName);
+        } catch (Exception error) {
+            showOutputInWeb("✕ Could not prepare the AL package: " + error.getMessage(), "ERROR");
+        }
     }
 
     private void addFilesFromFolder(DocumentFile folder, String prefix,
