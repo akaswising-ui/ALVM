@@ -25,7 +25,7 @@ AL source uses Python-influenced English keyword spellings, Java-like class/bloc
 | AL.Network | Planned | Permission-gated HTTP client, timeouts, cancellation, TLS validation and offline/runtime tests |
 | AL.Database | Planned | SQLite-backed local database API, schema/query parameter binding, transactions and migration tests |
 | AL.Audio | Planned | Android native audio resources, lifecycle cleanup, package asset loading and audio-device capability tests |
-| AL.UI / AL.Graphics / AL.Game | Partially implemented | Native screen/text/button/2D shape/touch/frame-loop/AABB collision slice exists |
+| AL.UI / AL.Graphics / AL.Game | Partially implemented | Native screen/text/button/2D shape/touch/frame-loop/AABB collision slice exists; `change window` explicitly gates Android window visibility |
 | Complete graphics/game engine | Planned | Images/sprites, asset lifecycle, transforms, scene graph, keyboard/touch input, animation, timing, physics and playable sample games written in AL |
 | .AL package | Partially implemented | ALPK v1 single entry module plus optional assets; no multi-module linker or external dependencies |
 | Multi-module linking | Planned | Module/import grammar, symbol visibility, dependency graph, cycles, linker, package manifest and runtime module loader |
