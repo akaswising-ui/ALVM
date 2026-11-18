@@ -147,6 +147,34 @@ def extract_native_library(apk_path: Path, abi: str, destination: Path) -> None:
     destination.write_bytes(data)
 
 
+def verify_player_apk(apk_path: Path, abi: str) -> None:
+    if not zipfile.is_zipfile(apk_path):
+        raise BuildError("Gradle output is not a valid APK/ZIP archive.")
+    try:
+        with zipfile.ZipFile(apk_path, "r") as archive:
+            names = set(archive.namelist())
+            required = {
+                "AndroidManifest.xml",
+                "classes.dex",
+                "assets/main.room",
+                "lib/" + abi + "/libalvm.so",
+            }
+            missing = sorted(required - names)
+            if missing:
+                raise BuildError("Generated APK is missing required entries: " + ", ".join(missing))
+            room = archive.read("assets/main.room")
+            if len(room) < 8 or room[:4] != b"ALRM":
+                raise BuildError("Generated APK contains invalid .room bytecode.")
+            version = struct.unpack("<I", room[4:8])[0]
+            if version != 10:
+                raise BuildError("Generated APK does not contain .room v10 bytecode.")
+            require_elf_arch(archive.read("lib/" + abi + "/libalvm.so"), abi)
+            if len(archive.read("classes.dex")) < 8:
+                raise BuildError("Generated APK contains an empty or truncated classes.dex.")
+    except zipfile.BadZipFile as error:
+        raise BuildError("Gradle output is not a readable APK archive.") from error
+
+
 def replace_template_markers(
     project_dir: Path, project_name: str, display_name: str, application_id: str, abi: str
 ) -> None:
@@ -245,6 +273,7 @@ def build(args: argparse.Namespace) -> Path:
     built_apk = project_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
     if not built_apk.is_file() or built_apk.stat().st_size < 1024:
         raise BuildError("Gradle reported success but no valid Player APK was produced.")
+    verify_player_apk(built_apk, abi)
 
     output_path = Path(args.output).expanduser() if args.output else (
         ROOT / "dist" / (output_name + ".apk")
