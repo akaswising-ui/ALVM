@@ -141,11 +141,11 @@ function createAlCodeOptions(): Entry[] {
     const suffix = padCodeId(i);
     const kind = i % 5;
     let snippet: string;
-    if (kind === 0) snippet = 'change window "AL App ' + i + '";\nUI.screen("AL App ' + i + '");\nUI.text("status_' + suffix + '", "Ready");';
-    else if (kind === 1) snippet = 'change window "AL Game ' + i + '";\nUI.game("AL Game ' + i + '");\nUI.rect("ground_' + suffix + '", 0, 400, 320, 80, 4278255360);';
-    else if (kind === 2) snippet = 'change window "AL Shapes ' + i + '";\nUI.game("AL Shapes ' + i + '");\nUI.circle("player_' + suffix + '", 80, 120, 18, 4294901760);';
+    if (kind === 0) snippet = 'change window "ALApp_' + i + '";\nUI.screen("AL App ' + i + '");\nUI.text("status_' + suffix + '", "Ready");';
+    else if (kind === 1) snippet = 'change window "ALGame_' + i + '";\nUI.game("AL Game ' + i + '");\nUI.rect("ground_' + suffix + '", 0, 400, 320, 80, 4278255360);';
+    else if (kind === 2) snippet = 'change window "ALShapes_' + i + '";\nUI.game("AL Shapes ' + i + '");\nUI.circle("player_' + suffix + '", 80, 120, 18, 4294901760);';
     else if (kind === 3) snippet = 'UI.setInt("score_' + suffix + '", ' + (i % 500) + ');\nAL.print(UI.getInt("score_' + suffix + '", 0));';
-    else snippet = 'change window "AL Screen ' + i + '";\nUI.screen("AL Screen ' + i + '");\nUI.text("message_' + suffix + '", "Hello from AL");';
+    else snippet = 'change window "ALScreen_' + i + '";\nUI.screen("AL Screen ' + i + '");\nUI.text("message_' + suffix + '", "Hello from AL");';
     add('Native UI and 2D', i, 'native UI pattern ' + suffix,
       'Uses UI calls implemented by the native AL compiler and CI Runtime. Insert inside main().',
       snippet);
