@@ -852,6 +852,12 @@ public class MainActivity extends Activity {
         } catch (Exception error) {
             pendingAndroidProject = null;
             showOutputInWeb("✕ Android project generation failed: " + error.getMessage(), "BUILD ERROR");
+        } finally {
+            if (temporaryCompileDirectory != null) {
+                File temporaryRoom = new File(temporaryCompileDirectory, "main.room");
+                if (temporaryRoom.exists()) temporaryRoom.delete();
+                temporaryCompileDirectory.delete();
+            }
         }
     }
 
