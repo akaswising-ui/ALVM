@@ -2214,7 +2214,7 @@ mod tests {
         assert!(!state.visible);
 
         let open = Instruction { op: UI_CALL, arg: 1, text: "openWindow".into() };
-        ui_call(&open, &[RuntimeValue::String("AL Window".into())], &mut stack, &mut state).unwrap();
+        ui_call(&open, &[RuntimeValue::String("ALWindow".into())], &mut stack, &mut state).unwrap();
         assert!(state.visible);
         assert_eq!(state.title, "AL Window");
     }
