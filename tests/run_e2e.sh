@@ -120,7 +120,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base change_window_type_error; do
+for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base change_window_type_error change_window_invalid_name; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
