@@ -205,7 +205,7 @@ public class MainActivity extends Activity {
                 + "window.__alvmNativeHooksInstalled=true;"
                 + "window.__alvmShowOutput=function(message,status){"
                 + "var area=document.querySelector('.console-output');"
-                + "if(area){area.replaceChildren();String(message||'(no output)').split('\\n').forEach(function(line){"
+                + "if(area){area.replaceChildren();String(message||'(no output)').split('\n').forEach(function(line){"
                 + "var row=document.createElement('div');row.textContent=line||' ';"
                 + "if(line.indexOf('✕')===0||line.toLowerCase().indexOf('error')>=0)row.className='error-line';"
                 + "else if(line.indexOf('✓')===0)row.className='success-line';"
@@ -570,7 +570,7 @@ public class MainActivity extends Activity {
             DocumentFile[] fileArray = files.toArray(new DocumentFile[0]);
             dialog.setItems(options, (d, which) -> showWorkspaceFileActions(fileArray[which]));
         } else {
-            dialog.setMessage("Workspace is ready.\\n\\nProjects  /  multiple .al source files\\nBuild  /  .room bytecode\\nData  /  workspace.json\\n\\nCreate, import, rename, open or delete files here.");
+            dialog.setMessage("Workspace is ready.\n\nProjects  /  multiple .al source files\nBuild  /  .room bytecode\nData  /  workspace.json\n\nCreate, import, rename, open or delete files here.");
         }
         dialog.show();
     }
@@ -743,7 +743,7 @@ public class MainActivity extends Activity {
         if (file == null || file.getName() == null) return;
         new AlertDialog.Builder(this)
                 .setTitle("Convert AL file to APK")
-                .setMessage("The selected file can be compiled by ALVM, but this app does not yet contain a standalone Android APK builder or signing pipeline. Creating an .apk here would be a fake file.\\n\\nYou can export the supported .AL runtime package now. True APK generation needs a separate Android app template and Gradle/NDK build backend.")
+                .setMessage("The selected file can be compiled by ALVM, but this app does not yet contain a standalone Android APK builder or signing pipeline. Creating an .apk here would be a fake file.\n\nYou can export the supported .AL runtime package now. True APK generation needs a separate Android app template and Gradle/NDK build backend.")
                 .setPositiveButton("EXPORT .AL PACKAGE", (dialog, which) -> exportWorkspaceAlPackage(file))
                 .setNegativeButton("CANCEL", null)
                 .show();
