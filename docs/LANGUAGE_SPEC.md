@@ -172,8 +172,8 @@ class Main {
     public static void main() {
         change window "AL App";
         UI.screen("AL App");
-UI.text("display", "0");
-UI.button("one", "1", "onButton");
+        UI.text("display", "0");
+        UI.button("one", "1", "onButton");
     }
 
     void onButton(string buttonId) {
