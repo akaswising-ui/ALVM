@@ -43,7 +43,6 @@ A native application window is shown only when the AL program executes `change w
 class Main {
     public static void main() {
         change window "MyApp";
-        UI.screen("My App");
         UI.text("status", "Ready");
     }
 }
