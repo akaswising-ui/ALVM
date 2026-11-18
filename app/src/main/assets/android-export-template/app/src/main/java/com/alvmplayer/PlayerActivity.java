@@ -105,6 +105,18 @@ public final class PlayerActivity extends Activity {
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        TextView languageBrand = new TextView(this);
+        languageBrand.setText(getString(R.string.made_with_al));
+        languageBrand.setTextColor(Color.rgb(126, 154, 198));
+        languageBrand.setTextSize(11);
+        languageBrand.setGravity(Gravity.CENTER);
+        languageBrand.setLetterSpacing(0.08f);
+        languageBrand.setPadding(0, dp(10), 0, dp(2));
+        languageBrand.setContentDescription(getString(R.string.al_language_description));
+        root.addView(languageBrand, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         setContentView(root);
     }
 
