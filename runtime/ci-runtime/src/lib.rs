@@ -735,7 +735,10 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
 
     if name == "openWindow" {
         let title = expect_string(args, 0)?;
-        if title.trim().is_empty() { return error("change window title cannot be empty"); }
+        let mut chars = title.chars();
+        let valid = chars.next().map(|ch| ch.is_ascii_alphabetic()).unwrap_or(false)
+            && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        if !valid { return error("window name must match [A-Za-z][A-Za-z0-9_]*"); }
         state.title = title;
         state.visible = true;
     } else if matches!(name, "screen" | "game") {
