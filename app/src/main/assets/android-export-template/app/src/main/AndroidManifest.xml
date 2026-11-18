@@ -4,6 +4,12 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <meta-data
+            android:name="com.alvm.language"
+            android:value="AL" />
+        <meta-data
+            android:name="com.alvm.language.branding"
+            android:value="Made with AL" />
         <activity
             android:name="com.alvmplayer.PlayerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
