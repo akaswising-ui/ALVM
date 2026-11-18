@@ -5,10 +5,39 @@ on:
     branches: [main, "feature/**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      source_file:
+        description: "Repository path to the AL source (.al)"
+        required: true
+        default: "examples/calculator.al"
+        type: string
+      app_name:
+        description: "Name shown below the Android app icon"
+        required: true
+        default: "AL Calculator"
+        type: string
+      application_id:
+        description: "Android package ID"
+        required: true
+        default: "com.alvm.generated.calculator"
+        type: string
+      abi:
+        description: "CPU architecture for the generated APK"
+        required: true
+        default: "arm64-v8a"
+        type: choice
+        options:
+          - arm64-v8a
+          - armeabi-v7a
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      AL_SOURCE_FILE: ${{ github.event.inputs.source_file || 'examples/calculator.al' }}
+      AL_APP_NAME: ${{ github.event.inputs.app_name || 'AL Calculator' }}
+      AL_APPLICATION_ID: ${{ github.event.inputs.application_id || 'com.alvm.generated.calculator' }}
+      AL_ABI: ${{ github.event.inputs.abi || 'arm64-v8a' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,10 +74,10 @@ jobs:
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
-      - name: Install Rust Android targets
+      - name: Install Rust Android targets and test the CI Runtime
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
-          cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all
+          cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all -- --check
           cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
 
       - name: Set up Gradle
@@ -56,60 +85,24 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK with Rust CI Runtime
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
-
-      - name: Compile a sample AL program for the standalone Player
+      - name: Compile AL source and generate standalone Android APK
         run: |
-          cmake -S . -B build/compiler -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/compiler --parallel
-          build/compiler/alvm compile examples/calculator.al -o build/calculator.room
-          test -s build/calculator.room
+          python3 tools/build_android_apk.py "$AL_SOURCE_FILE" \
+            --source-root "$GITHUB_WORKSPACE" \
+            --name "$AL_APP_NAME" \
+            --application-id "$AL_APPLICATION_ID" \
+            --abi "$AL_ABI" \
+            --output dist/ALVM-standalone-player.apk
 
-      - name: Build standalone Android Player template
-        run: |
-          set -euo pipefail
-          PLAYER_PROJECT="$GITHUB_WORKSPACE/build/android-player-smoke"
-          mkdir -p "$PLAYER_PROJECT"
-          cp -R app/src/main/assets/android-export-template/. "$PLAYER_PROJECT/"
-          python3 - <<'PY'
-          from pathlib import Path
-          root = Path("build/android-player-smoke")
-          replacements = {
-              "{{APP_NAME}}": "AL Calculator",
-              "{{APP_NAME_XML}}": "AL Calculator",
-              "{{APP_ID}}": "com.alvm.generated.calculator",
-              "{{ABI}}": "arm64-v8a",
-          }
-          targets = [
-              root / "settings.gradle",
-              root / "app/build.gradle",
-              root / "app/src/main/res/values/strings.xml",
-              root / "README.md",
-          ]
-          for path in targets:
-              text = path.read_text(encoding="utf-8")
-              for marker, value in replacements.items():
-                  text = text.replace(marker, value)
-              path.write_text(text, encoding="utf-8")
-          PY
-          mkdir -p "$PLAYER_PROJECT/app/src/main/assets"
-          mkdir -p "$PLAYER_PROJECT/app/src/main/jniLibs/arm64-v8a"
-          cp build/calculator.room "$PLAYER_PROJECT/app/src/main/assets/main.room"
-          unzip -p app/build/outputs/apk/debug/app-debug.apk lib/arm64-v8a/libalvm.so \
-            > "$PLAYER_PROJECT/app/src/main/jniLibs/arm64-v8a/libalvm.so"
-          test -s "$PLAYER_PROJECT/app/src/main/jniLibs/arm64-v8a/libalvm.so"
-          gradle --no-daemon --stacktrace -p "$PLAYER_PROJECT" :app:assembleDebug
-
-      - name: Upload standalone Player smoke-test APK
+      - name: Upload generated Android Player APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALVM-Standalone-Player-Smoke-Test
-          path: build/android-player-smoke/app/build/outputs/apk/debug/app-debug.apk
+          name: ALVM-Generated-Android-APK
+          path: dist/ALVM-standalone-player.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload debug APK
+      - name: Upload ALVM Studio debug APK
         uses: actions/upload-artifact@v4
         with:
           name: ALVM-Studio-debug-APK
