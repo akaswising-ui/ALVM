@@ -107,6 +107,7 @@ public final class CiRuntimeHost {
             failure.put("runtimeVersion", BUNDLED_VERSION);
             JSONObject ui = new JSONObject();
             ui.put("title", "AL Application");
+            ui.put("visible", false);
             ui.put("elements", new org.json.JSONArray());
             failure.put("ui", ui);
         } catch (JSONException ignored) { }
