@@ -1,6 +1,6 @@
 Room TouchLoop {
     public static void main() {
-        change window "AL TOUCH LOOP";
+        change window "ALTouchLoop";
         UI.game("AL TOUCH LOOP");
         UI.rect("player", 20, 20, 40, 40, 4278255360);
         UI.rect("wall", 45, 30, 40, 60, 4294901760);
