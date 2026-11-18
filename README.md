@@ -35,6 +35,20 @@ The Studio Library Store exposes exactly 10,000 generated, searchable source sni
 
 These 10,000 entries are parameterized source templates built only from syntax and native calls already implemented by the C++ AL compiler and Rust CI Runtime. They are not 10,000 new built-in functions, libraries, keywords or VM instructions. Planned library cards such as Network, Database, Audio and advanced Graphics remain planned until their compiler/runtime implementations and tests exist.
 
+## Explicit AL native window gate
+
+A native application window is shown only when the AL program executes `change window "App Title";`. `UI.screen(...)`, `UI.game(...)` and view-building calls do not open it by themselves. The statement is parsed and type-checked by the native C++ AL compiler, lowered to the existing `.room v10` `UiCall` instruction, and handled by the Rust CI Runtime. The Android host displays the window only when the runtime returns `visible: true`.
+
+```al
+class Main {
+    public static void main() {
+        change window "My App";
+        UI.screen("My App");
+        UI.text("status", "Ready");
+    }
+}
+```
+
 ## Implemented core standard-library slice
 
 The native compiler and both VM runtimes support the following AL-native calls through the existing \`UiCall\` bytecode instruction in \`.room v10\`; no source code is executed by the runtime:
