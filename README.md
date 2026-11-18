@@ -39,7 +39,9 @@ These 10,000 entries are parameterized source templates built only from syntax a
 
 The Android File Manager can list and manage multiple independent `.al` source files and `.room` build files. A source-file action menu supports opening, renaming, deleting and selecting the AL package export path. The multi-select screen supports bulk deletion.
 
-The File Manager also exposes a **Convert to APK** entry for `.al` files. It currently reports that standalone APK generation is not implemented and offers the working `.AL` runtime-package export instead. `.AL` is not an APK: generating an installable per-program APK still needs a standalone Android app template, Gradle/NDK build backend and signing flow. Multi-source module linking is also not implemented, so separate `.al` files are managed independently rather than linked into one program.
+The File Manager exposes **Convert to APK** for `.al` files. The exporter compiles the selected source with the native C++ compiler, checks the `.room v10` header, and creates a standalone Android Gradle project ZIP. The ZIP contains the compiled program, a dedicated Android Player Activity, the JNI bridge, and the installed `libalvm.so` (including the Rust CI Runtime) for the phone's current ABI. The Player executes verified `.room` bytecode and renders the supported native text, button, 2D drawing, touch-area and frame-loop UI.
+
+This is a buildable Android project, not an APK binary. ALVM Studio does not bundle Android SDK or Gradle, so the ZIP must be opened in Android Studio (JDK 17, Android SDK 35, Gradle 8.9) and built to create `app-debug.apk`. Release publishing requires the user's own signing key. The export currently targets only the ABI of the device that generated it. The separate `.AL` runtime package format is not an APK. Multi-source module linking is not implemented, so separate `.al` files are managed independently rather than linked into one program.
 
 ## Explicit AL native window gate
 
