@@ -114,3 +114,72 @@ jobs:
           path: dist/ALVM-standalone-player.apk
           if-no-files-found: error
           retention-days: 14
+
+  build-studio:
+    name: Build ALVM Studio Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build bundled offline Studio UI
+        working-directory: studio-ui
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK, NDK and CMake
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build ALVM Studio APK
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify ALVM Studio APK
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          apk = Path("app/build/outputs/apk/debug/app-debug.apk")
+          if not apk.is_file() or apk.stat().st_size < 100_000:
+              raise SystemExit("ALVM Studio APK missing or unexpectedly small")
+          with zipfile.ZipFile(apk) as archive:
+              names = set(archive.namelist())
+              for item in ("AndroidManifest.xml", "classes.dex"):
+                  if item not in names:
+                      raise SystemExit(f"APK missing required entry: {item}")
+              if not any(name.startswith("assets/") for name in names):
+                  raise SystemExit("Bundled Studio assets are missing")
+          print(f"Verified ALVM Studio APK: {apk} ({apk.stat().st_size} bytes)")
+          PY
+
+      - name: Upload ALVM Studio Latest APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVM-Studio-Latest-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
