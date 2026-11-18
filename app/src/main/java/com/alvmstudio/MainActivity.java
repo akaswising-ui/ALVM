@@ -828,6 +828,8 @@ public class MainActivity extends Activity {
                         "app/src/main/AndroidManifest.xml", outputName, applicationId, abi);
                 addAndroidTemplateFile(zip, "android-export-template/app/src/main/res/values/strings.xml",
                         "app/src/main/res/values/strings.xml", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/app/src/main/assets/al-language.json",
+                        "app/src/main/assets/al-language.json", outputName, applicationId, abi);
                 addAndroidTemplateFile(zip, "android-export-template/app/src/main/java/com/alvmstudio/CiRuntimeHost.java",
                         "app/src/main/java/com/alvmstudio/CiRuntimeHost.java", outputName, applicationId, abi);
                 addAndroidTemplateFile(zip, "android-export-template/app/src/main/java/com/alvmplayer/PlayerActivity.java",
