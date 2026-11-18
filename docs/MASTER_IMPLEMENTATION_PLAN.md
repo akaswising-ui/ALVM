@@ -29,7 +29,7 @@ AL source uses Python-influenced English keyword spellings, Java-like class/bloc
 | Complete graphics/game engine | Planned | Images/sprites, asset lifecycle, transforms, scene graph, keyboard/touch input, animation, timing, physics and playable sample games written in AL |
 | .AL package | Partially implemented | ALPK v1 single entry module plus optional assets; no multi-module linker or external dependencies |
 | Multi-module linking | Planned | Module/import grammar, symbol visibility, dependency graph, cycles, linker, package manifest and runtime module loader |
-| AL application APK generation | Partially implemented | One-file AL-to-Android debug APK builder and CI workflow; Player template, .room v10 bytecode and Rust runtime bundling are built/tested in Gradle. Direct on-device Gradle/SDK packaging, multi-module linking and release signing remain incomplete |
+| AL application APK generation | Partially implemented | One-file AL-to-Android debug APK builder, Player template, runtime bundling and GitHub Actions workflow are in place; CI execution and emulator/device install-launch smoke tests remain to be verified. Direct on-device Gradle/SDK packaging, multi-module linking and release signing remain incomplete |
 | IDE / Library Store / code catalogue | Partially implemented | Preserve editor/workspace/compile/run/execute/preview; distinguish native actions from reduced browser preview |
 
 ## Required implementation tracks
