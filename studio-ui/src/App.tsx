@@ -646,7 +646,7 @@ for (int i = 0; i < 5; i++) {
     }
 }`}</pre>
               <h3>Implemented native UI and 2D calls</h3>
-              <pre>{`change window "My App";
+              <pre>{`change window "MyApp";
 UI.screen("My App");
 UI.text("status", "Ready");
 UI.game("My 2D Game");
