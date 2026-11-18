@@ -53,6 +53,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import java.util.zip.ZipFile;
 
 public class MainActivity extends Activity {
 
@@ -790,9 +791,11 @@ public class MainActivity extends Activity {
             }
 
             String abi = android.os.Process.is64Bit() ? "arm64-v8a" : "armeabi-v7a";
-            File nativeLibrary = new File(getApplicationInfo().nativeLibraryDir, "libalvm.so");
-            if (!nativeLibrary.isFile() || nativeLibrary.length() == 0) {
-                throw new IllegalStateException("Bundled libalvm.so was not found for " + abi + ".");
+            byte[] nativeLibraryBytes = readBundledNativeLibrary(abi);
+            if (nativeLibraryBytes.length < 4 || nativeLibraryBytes[0] != 0x7f
+                    || nativeLibraryBytes[1] != 'E' || nativeLibraryBytes[2] != 'L'
+                    || nativeLibraryBytes[3] != 'F') {
+                throw new IllegalStateException("Bundled libalvm.so is missing or is not a valid ELF library for " + abi + ".");
             }
             String baseName = file.getName().replaceFirst("(?i)\\.al$", "");
             if (baseName.trim().isEmpty()) baseName = "ALApp";
@@ -828,9 +831,7 @@ public class MainActivity extends Activity {
                         "README.md", outputName, applicationId, abi);
 
                 addAndroidZipEntry(zip, "app/src/main/assets/main.room", roomBytes);
-                try (InputStream nativeInput = new FileInputStream(nativeLibrary)) {
-                    addAndroidZipEntry(zip, "app/src/main/jniLibs/" + abi + "/libalvm.so", readAll(nativeInput));
-                }
+                addAndroidZipEntry(zip, "app/src/main/jniLibs/" + abi + "/libalvm.so", nativeLibraryBytes);
                 String sourceName = file.getName().replaceAll("[^A-Za-z0-9._-]", "_");
                 addAndroidZipEntry(zip, "AL_Source/" + sourceName, source.getBytes(StandardCharsets.UTF_8));
                 zip.finish();
@@ -846,6 +847,25 @@ public class MainActivity extends Activity {
         } catch (Exception error) {
             pendingAndroidProject = null;
             showOutputInWeb("✕ Android project generation failed: " + error.getMessage(), "BUILD ERROR");
+        }
+    }
+
+    private byte[] readBundledNativeLibrary(String abi) throws Exception {
+        File extracted = new File(getApplicationInfo().nativeLibraryDir, "libalvm.so");
+        if (extracted.isFile() && extracted.length() > 0) {
+            try (InputStream input = new FileInputStream(extracted)) {
+                return readAll(input);
+            }
+        }
+        String apkEntry = "lib/" + abi + "/libalvm.so";
+        try (ZipFile apk = new ZipFile(getPackageCodePath())) {
+            ZipEntry entry = apk.getEntry(apkEntry);
+            if (entry == null || entry.getSize() <= 0) {
+                throw new IllegalStateException("The installed APK does not contain " + apkEntry + ".");
+            }
+            try (InputStream input = apk.getInputStream(entry)) {
+                return readAll(input);
+            }
         }
     }
 
