@@ -497,6 +497,7 @@ struct UiElement {
 #[derive(Default)]
 struct UiState {
     title: String,
+    visible: bool,
     elements: Vec<UiElement>,
     ints: HashMap<String, i64>,
     frame_callback: String,
@@ -505,7 +506,7 @@ struct UiState {
 
 impl UiState {
     fn new() -> Self {
-        Self { title: "AL Application".into(), elements: Vec::new(), ints: HashMap::new(), frame_callback: String::new(), frame_rate: 0 }
+        Self { title: "AL Application".into(), visible: false, elements: Vec::new(), ints: HashMap::new(), frame_callback: String::new(), frame_rate: 0 }
     }
 
     fn find(&self, id: &str) -> Option<usize> {
@@ -732,7 +733,12 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         return Ok(());
     }
 
-    if matches!(name, "screen" | "game") {
+    if name == "openWindow" {
+        let title = expect_string(args, 0)?;
+        if title.trim().is_empty() { return error("change window title cannot be empty"); }
+        state.title = title;
+        state.visible = true;
+    } else if matches!(name, "screen" | "game") {
         state.title = expect_string(args, 0)?;
         if name == "game" {
             state.elements.clear();
@@ -1225,12 +1231,13 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             ints: state.ints.clone(),
             frame_callback: state.frame_callback.clone(),
             frame_rate: state.frame_rate,
+            visible: state.visible,
         }))
     })();
     match result {
         Ok((output, state)) => json!({
             "ok": true, "output": output,
-            "ui": { "title": state.title, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate },
+            "ui": { "title": state.title, "visible": state.visible, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate },
             "runtimeVersion": version,
         }),
         Err(error) => {
@@ -1238,7 +1245,7 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             json!({
                 "ok": false, "output": "",
                 "error": format!("CI Runtime error: {}", error.0),
-                "ui": { "title": state.title, "elements": state.elements },
+                "ui": { "title": state.title, "visible": state.visible, "elements": state.elements },
                 "runtimeVersion": version,
             })
         }
@@ -1267,7 +1274,7 @@ fn run_room_file(room_path: &str, entry_name: &str, event_value: &str, version: 
 
 fn current_ui_json() -> JsonValue {
     let state = lock_ui();
-    json!({ "title": state.title, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate })
+    json!({ "title": state.title, "visible": state.visible, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate })
 }
 
 pub fn run_room(room_path: &str, entry_name: &str, event_value: &str) -> JsonValue {
@@ -2194,6 +2201,20 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+
+    #[test]
+    fn explicit_window_command_is_the_visibility_gate() {
+        let mut state = UiState::new();
+        let mut stack = Vec::new();
+        let screen = Instruction { op: UI_CALL, arg: 1, text: "screen".into() };
+        ui_call(&screen, &[RuntimeValue::String("Hidden screen".into())], &mut stack, &mut state).unwrap();
+        assert!(!state.visible);
+
+        let open = Instruction { op: UI_CALL, arg: 1, text: "openWindow".into() };
+        ui_call(&open, &[RuntimeValue::String("AL Window".into())], &mut stack, &mut state).unwrap();
+        assert!(state.visible);
+        assert_eq!(state.title, "AL Window");
+    }
 
     #[test]
     fn ui_collision_detects_overlapping_rectangles() {
