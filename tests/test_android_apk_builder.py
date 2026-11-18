@@ -82,6 +82,7 @@ class AndroidApkBuilderTests(unittest.TestCase):
 
         self.assertIn('name="made_with_al">MADE WITH AL</string>', strings)
         self.assertIn("R.string.made_with_al", player)
+        self.assertIn("root.addView(languageBrand", player)
         self.assertIn('android:name="com.alvm.language"', manifest)
         self.assertIn('"applicationLanguage": "AL"', metadata)
         self.assertIn('"sourceExtension": ".al"', metadata)
