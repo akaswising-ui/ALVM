@@ -41,7 +41,29 @@ The Android File Manager can list and manage multiple independent `.al` source f
 
 The File Manager exposes **Convert to APK** for `.al` files. The exporter compiles the selected source with the native C++ compiler, checks the `.room v10` header, and creates a standalone Android Gradle project ZIP. The ZIP contains the compiled program, a dedicated Android Player Activity, the JNI bridge, and the installed `libalvm.so` (including the Rust CI Runtime) for the phone's current ABI. The Player executes verified `.room` bytecode and renders the supported native text, button, 2D drawing, touch-area and frame-loop UI.
 
-This is a buildable Android project, not an APK binary. ALVM Studio does not bundle Android SDK or Gradle, so the ZIP must be opened in Android Studio (JDK 17, Android SDK 35, Gradle 8.9) and built to create `app-debug.apk`. Release publishing requires the user's own signing key. The export currently targets only the ABI of the device that generated it. The separate `.AL` runtime package format is not an APK. Multi-source module linking is not implemented, so separate `.al` files are managed independently rather than linked into one program.
+The in-app export is a buildable Android project ZIP, not an APK binary. It includes the Player Activity, compiled `.room v10`, this phone's `libalvm.so`, and a GitHub Actions workflow at `.github/workflows/build-apk.yml`. Open the project in Android Studio (JDK 17, Android SDK 35, Gradle 8.9) or push it to a GitHub repository and download the `AL-Android-Player-APK` Actions artifact. The export targets only the ABI of the device that generated it. The separate `.AL` runtime package format is not an APK. Multi-source module linking is not implemented, so separate `.al` files are managed independently rather than linked into one program.
+
+## Generate a standalone Android APK
+
+ALVM now includes a real APK build script for desktop/CI environments. It compiles the selected AL source with the C++ compiler, validates the `.room v10` header, builds ALVM Studio's Android JNI/Rust runtime library, inserts that library and bytecode into the standalone Player template, then runs Gradle to create an installable debug APK.
+
+Requirements: JDK 17, CMake and a C++17 compiler, Rust/Cargo, Android SDK Platform 35, Build Tools 35.0.0, Android NDK 27.2.12479018, CMake 3.22.1, and Gradle 8.9.
+
+Example from the repository root:
+
+```bash
+python3 tools/build_android_apk.py examples/calculator.al \
+  --name "AL Calculator" \
+  --application-id com.example.alcalculator \
+  --abi arm64-v8a \
+  --output dist/ALCalculator.apk
+```
+
+The generated APK is debug-signed and installable for testing. A Play Store release needs a private release key and a release-signing configuration; the script does not invent or store signing credentials.
+
+GitHub Actions can build a source file already committed in this repository: open **Actions → ALVM Android APK → Run workflow**, select the `.al` repository path, app name, application ID and ABI, then download the `ALVM-Generated-Android-APK` artifact. The workflow builds from the committed source; it cannot read files that exist only in the phone's private workspace.
+
+The Android app itself does not embed the Android SDK, NDK or Gradle. On the phone, **Convert to APK** compiles the source and exports the standalone Player project ZIP; final APK assembly happens in Android Studio, on a configured computer, or through GitHub Actions. Multi-file module linking is not yet implemented, so the builder currently accepts one `.al` entry program.
 
 ## Explicit AL native window gate
 
