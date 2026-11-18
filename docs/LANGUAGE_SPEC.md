@@ -170,7 +170,7 @@ The native Android runtime supports a declarative screen API. A program must exp
 ```al
 class Main {
     public static void main() {
-        change window "AL App";
+        change window "ALApp";
         UI.screen("AL App");
         UI.text("display", "0");
         UI.button("one", "1", "onButton");
@@ -182,7 +182,8 @@ class Main {
 }
 ```
 
-- `change window stringTitle;` is an AL statement that requests the native application window and sets its initial title. The expression must have type `string`; an empty title is rejected at runtime.
+- `change window "WindowName";` is a dedicated AL statement. It accepts one quoted identifier literal matching `[A-Za-z][A-Za-z0-9_]*`; spaces, hyphens, expressions and non-string values are compile-time errors. The statement opens the native Android window and supplies its initial name.
+- The window remains hidden until this statement executes. A program that only calls `UI.screen`, `UI.game`, `UI.text` or other view APIs does not open a window.
 - `UI.screen(string title)` sets the screen title but does not open a native window.
 - `UI.text(string id, string value)` creates or replaces a text view.
 - `UI.button(string id, string label, string callbackName)` creates a button. The callback must be a global `void` function with one `string` parameter.
@@ -198,7 +199,7 @@ The `.room` format is version 10. The `change window` statement lowers to the ex
 AL programs can create a native Android 2D drawing surface:
 
 ```al
-change window "My 2D Game";
+change window "My2DGame";
 UI.game("My 2D Game");
 UI.rect("ground", 0, 400, 320, 80, 4278255360);
 UI.circle("player", 80, 360, 18, 4294901760);
@@ -322,7 +323,7 @@ This is the first native standard-library slice. It does not imply that \`AL.Col
 The Android native UI bridge supports these AL calls:
 
 ```al
-change window "My Touch Game";
+change window "MyTouchGame";
 UI.touchArea("move", 0, 0, 320, 480, "onTouch");
 UI.frameLoop("update", 30);
 boolean hit = UI.collides("player", "wall");
