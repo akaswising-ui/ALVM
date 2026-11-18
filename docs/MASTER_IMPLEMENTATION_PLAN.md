@@ -30,6 +30,7 @@ AL source uses Python-influenced English keyword spellings, Java-like class/bloc
 | .AL package | Partially implemented | ALPK v1 single entry module plus optional assets; no multi-module linker or external dependencies |
 | Multi-module linking | Planned | Module/import grammar, symbol visibility, dependency graph, cycles, linker, package manifest and runtime module loader |
 | AL application APK generation | Partially implemented | One-file AL-to-Android debug APK builder, Player template, runtime bundling and GitHub Actions workflow are in place; CI execution and emulator/device install-launch smoke tests remain to be verified. Direct on-device Gradle/SDK packaging, multi-module linking and release signing remain incomplete |
+| Generated app AL identity | Partially implemented | Standalone AL Player apps show a persistent “MADE WITH AL” footer, expose Android manifest metadata and bundle `assets/al-language.json`; extend the same identity contract to future app templates |
 | IDE / Library Store / code catalogue | Partially implemented | Preserve editor/workspace/compile/run/execute/preview; distinguish native actions from reduced browser preview |
 
 ## Required implementation tracks
