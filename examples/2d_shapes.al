@@ -1,5 +1,6 @@
 room Main {
     public static void main() {
+        change window "AL 2D Engine Demo";
         UI.game("AL 2D Engine Demo");
 
         // Logical canvas: 320 x 480 units.
