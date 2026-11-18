@@ -61,6 +61,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_WEB_FILE_CHOOSER = 15;
     private static final int REQUEST_RUNTIME_UPDATE = 16;
     private static final int REQUEST_EXPORT_AL_PACKAGE = 17;
+    private static final int REQUEST_EXPORT_ANDROID_PROJECT = 18;
     private static final String PREFS = "alvm_workspace";
     private static final String PREF_TREE_URI = "workspace_tree_uri";
 
@@ -93,6 +94,7 @@ public class MainActivity extends Activity {
     private boolean compiled = false;
     private Dialog nativeUiDialog;
     private byte[] pendingAlPackage;
+    private byte[] pendingAndroidProject;
     private final Handler gameLoopHandler = new Handler(Looper.getMainLooper());
     private Runnable gameLoopRunnable;
     private String gameLoopCallback = "";
@@ -742,11 +744,134 @@ public class MainActivity extends Activity {
     private void showApkConversionDialog(DocumentFile file) {
         if (file == null || file.getName() == null) return;
         new AlertDialog.Builder(this)
-                .setTitle("Convert AL file to APK")
-                .setMessage("The selected file can be compiled by ALVM, but this app does not yet contain a standalone Android APK builder or signing pipeline. Creating an .apk here would be a fake file.\n\nYou can export the supported .AL runtime package now. True APK generation needs a separate Android app template and Gradle/NDK build backend.")
-                .setPositiveButton("EXPORT .AL PACKAGE", (dialog, which) -> exportWorkspaceAlPackage(file))
+                .setTitle("Generate Android application")
+                .setMessage("ALVM will compile this .al file to verified .room v10 bytecode and create a standalone Android Gradle project. The project includes a player Activity, the Rust CI Runtime native library for this phone's CPU ABI, and your compiled program.\n\nThis exports a buildable project ZIP, not an APK. ALVM Studio does not bundle the Android SDK or Gradle build engine, so open the ZIP in Android Studio and build the APK there. A release APK must be signed with your own release key.")
+                .setPositiveButton("GENERATE ANDROID PROJECT", (dialog, which) -> exportWorkspaceAndroidProject(file))
                 .setNegativeButton("CANCEL", null)
                 .show();
+    }
+
+    private void exportWorkspaceAndroidProject(DocumentFile file) {
+        if (file == null || file.getName() == null) return;
+        try {
+            String source;
+            try (InputStream input = getContentResolver().openInputStream(file.getUri())) {
+                if (input == null) throw new IllegalStateException("Cannot read selected AL source file.");
+                source = new String(readAll(input), StandardCharsets.UTF_8);
+            }
+            if (source.getBytes(StandardCharsets.UTF_8).length > 4 * 1024 * 1024) {
+                throw new IllegalStateException("AL source exceeds the 4 MiB Android export limit.");
+            }
+
+            showOutputInWeb("Compiling " + file.getName() + " for Android export...", "BUILDING");
+            String compileResult = nativeCompile(source, getFilesDir().getAbsolutePath());
+            if (compileResult == null || !compileResult.startsWith("Compiled ")) {
+                throw new IllegalStateException(compileResult == null ? "AL compiler returned no result." : compileResult);
+            }
+
+            File roomFile = new File(roomPath());
+            if (!roomFile.isFile() || roomFile.length() < 8 || roomFile.length() > 64L * 1024L * 1024L) {
+                throw new IllegalStateException("Compiler did not produce a valid-size .room module.");
+            }
+            byte[] roomBytes;
+            try (InputStream input = new FileInputStream(roomFile)) {
+                roomBytes = readAll(input);
+            }
+            if (roomBytes.length < 8 || roomBytes[0] != 'A' || roomBytes[1] != 'L'
+                    || roomBytes[2] != 'R' || roomBytes[3] != 'M') {
+                throw new IllegalStateException("Compiler output has an invalid .room header.");
+            }
+            long roomVersion = ((long) roomBytes[4] & 255L)
+                    | (((long) roomBytes[5] & 255L) << 8)
+                    | (((long) roomBytes[6] & 255L) << 16)
+                    | (((long) roomBytes[7] & 255L) << 24);
+            if (roomVersion != 10L) {
+                throw new IllegalStateException("Android Player expects .room v10, compiler produced v" + roomVersion + ".");
+            }
+
+            String abi = android.os.Process.is64Bit() ? "arm64-v8a" : "armeabi-v7a";
+            File nativeLibrary = new File(getApplicationInfo().nativeLibraryDir, "libalvm.so");
+            if (!nativeLibrary.isFile() || nativeLibrary.length() == 0) {
+                throw new IllegalStateException("Bundled libalvm.so was not found for " + abi + ".");
+            }
+            String baseName = file.getName().replaceFirst("(?i)\\.al$", "");
+            if (baseName.trim().isEmpty()) baseName = "ALApp";
+            String outputName = baseName.replaceAll("[^A-Za-z0-9._-]", "_");
+            if (outputName.isEmpty() || outputName.equals(".") || outputName.equals("..")) outputName = "ALApp";
+            String packageSuffix = baseName.toLowerCase(java.util.Locale.ROOT)
+                    .replaceAll("[^a-z0-9_]", "_");
+            if (packageSuffix.isEmpty() || !Character.isLetter(packageSuffix.charAt(0))) {
+                packageSuffix = "app_" + packageSuffix.replaceFirst("^_+", "");
+            }
+            if (packageSuffix.length() > 40) packageSuffix = packageSuffix.substring(0, 40);
+            String applicationId = "com.alvm.generated." + packageSuffix;
+
+            ByteArrayOutputStream projectBytes = new ByteArrayOutputStream();
+            try (ZipOutputStream zip = new ZipOutputStream(projectBytes)) {
+                addAndroidTemplateFile(zip, "android-export-template/settings.gradle",
+                        "settings.gradle", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/build.gradle",
+                        "build.gradle", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/gradle.properties",
+                        "gradle.properties", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/app/build.gradle",
+                        "app/build.gradle", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/app/src/main/AndroidManifest.xml",
+                        "app/src/main/AndroidManifest.xml", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/app/src/main/res/values/strings.xml",
+                        "app/src/main/res/values/strings.xml", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/app/src/main/java/com/alvmstudio/CiRuntimeHost.java",
+                        "app/src/main/java/com/alvmstudio/CiRuntimeHost.java", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/app/src/main/java/com/alvmplayer/PlayerActivity.java",
+                        "app/src/main/java/com/alvmplayer/PlayerActivity.java", outputName, applicationId, abi);
+                addAndroidTemplateFile(zip, "android-export-template/README.md",
+                        "README.md", outputName, applicationId, abi);
+
+                addAndroidZipEntry(zip, "app/src/main/assets/main.room", roomBytes);
+                try (InputStream nativeInput = new FileInputStream(nativeLibrary)) {
+                    addAndroidZipEntry(zip, "app/src/main/jniLibs/" + abi + "/libalvm.so", readAll(nativeInput));
+                }
+                String sourceName = file.getName().replaceAll("[^A-Za-z0-9._-]", "_");
+                addAndroidZipEntry(zip, "AL_Source/" + sourceName, source.getBytes(StandardCharsets.UTF_8));
+                zip.finish();
+            }
+
+            pendingAndroidProject = projectBytes.toByteArray();
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(Intent.EXTRA_TITLE, outputName + "-Android-Project.zip");
+            showOutputInWeb("✓ AL source compiled to .room v10. Generating standalone Android project for " + abi + "...", "READY");
+            startActivityForResult(intent, REQUEST_EXPORT_ANDROID_PROJECT);
+        } catch (Exception error) {
+            pendingAndroidProject = null;
+            showOutputInWeb("✕ Android project generation failed: " + error.getMessage(), "BUILD ERROR");
+        }
+    }
+
+    private void addAndroidTemplateFile(ZipOutputStream zip, String assetPath, String zipPath,
+                                        String appName, String applicationId, String abi) throws Exception {
+        String template;
+        try (InputStream input = getAssets().open(assetPath)) {
+            template = new String(readAll(input), StandardCharsets.UTF_8);
+        }
+        template = template.replace("{{APP_NAME_XML}}", xmlEscape(appName))
+                .replace("{{APP_NAME}}", appName)
+                .replace("{{APP_ID}}", applicationId)
+                .replace("{{ABI}}", abi);
+        addAndroidZipEntry(zip, zipPath, template.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String xmlEscape(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;");
+    }
+
+    private void addAndroidZipEntry(ZipOutputStream zip, String name, byte[] bytes) throws Exception {
+        zip.putNextEntry(new ZipEntry(name));
+        zip.write(bytes);
+        zip.closeEntry();
     }
 
     private void exportWorkspaceAlPackage(DocumentFile file) {
@@ -1501,6 +1626,24 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_EXPORT_ANDROID_PROJECT) {
+            byte[] projectBytes = pendingAndroidProject;
+            pendingAndroidProject = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null || projectBytes == null) {
+                showOutputInWeb("Android project export cancelled.", "READY");
+                return;
+            }
+            try (OutputStream output = getContentResolver().openOutputStream(data.getData())) {
+                if (output == null) throw new IllegalStateException("Android could not open the selected destination.");
+                output.write(projectBytes);
+                output.flush();
+                showOutputInWeb("✓ Standalone Android project ZIP saved. Open it in Android Studio and build the APK.", "SUCCESS");
+            } catch (Exception error) {
+                showOutputInWeb("✕ Could not save Android project ZIP: " + error.getMessage(), "ERROR");
+            }
+            return;
+        }
 
         if (requestCode == REQUEST_EXPORT_AL_PACKAGE) {
             byte[] packageBytes = pendingAlPackage;
