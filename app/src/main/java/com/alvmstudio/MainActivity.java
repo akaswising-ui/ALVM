@@ -393,7 +393,7 @@ public class MainActivity extends Activity {
     }
 
     private void clearNativeProgramUi() {
-        lastRuntimeUiJson = "{\"title\":\"AL Application\",\"elements\":[]}";
+        lastRuntimeUiJson = "{\"title\":\"AL Application\",\"visible\":false,\"elements\":[]}";
         runOnUiThread(() -> {
             stopGameLoop();
             if (nativeUiDialog != null && nativeUiDialog.isShowing()) {
@@ -422,12 +422,13 @@ public class MainActivity extends Activity {
         JSONObject result = ciRuntime.run(roomPath(), entryName, eventValue);
         lastRuntimeVersion = result.optString("runtimeVersion", lastRuntimeVersion);
         JSONObject ui = result.optJSONObject("ui");
-        lastRuntimeUiJson = ui == null
-                ? "{\"title\":\"AL Application\",\"elements\":[]}"
+        boolean runtimeOk = result.optBoolean("ok", false);
+        lastRuntimeUiJson = !runtimeOk || ui == null
+                ? "{\"title\":\"AL Application\",\"visible\":false,\"elements\":[]}"
                 : ui.toString();
-        if (renderNativeUi) publishNativeUi();
+        if (renderNativeUi && runtimeOk) publishNativeUi();
         else hideNativeProgramUi();
-        if (!result.optBoolean("ok", false)) {
+        if (!runtimeOk) {
             return "✕ " + result.optString("error", "CI Runtime execution failed.");
         }
         return result.optString("output", "");
@@ -1024,12 +1025,13 @@ public class MainActivity extends Activity {
     private void showNativeUi(String json) {
         try {
             JSONObject root = new JSONObject(json);
-            JSONArray elements = root.optJSONArray("elements");
-            if (elements == null || elements.length() == 0) {
+            if (!root.optBoolean("visible", false)) {
                 if (nativeUiDialog != null && nativeUiDialog.isShowing()) nativeUiDialog.dismiss();
                 nativeUiDialog = null;
                 return;
             }
+            JSONArray elements = root.optJSONArray("elements");
+            if (elements == null) elements = new JSONArray();
             LinearLayout content = new LinearLayout(this);
             content.setOrientation(LinearLayout.VERTICAL);
             content.setPadding(dp(18), dp(16), dp(18), dp(18));
