@@ -37,12 +37,12 @@ These 10,000 entries are parameterized source templates built only from syntax a
 
 ## Explicit AL native window gate
 
-A native application window is shown only when the AL program executes `change window "App Title";`. `UI.screen(...)`, `UI.game(...)` and view-building calls do not open it by themselves. The statement is parsed and type-checked by the native C++ AL compiler, lowered to the existing `.room v10` `UiCall` instruction, and handled by the Rust CI Runtime. The Android host displays the window only when the runtime returns `visible: true`.
+A native application window is shown only when the AL program executes `change window "AppTitle";`. `UI.screen(...)`, `UI.game(...)` and view-building calls do not open it by themselves. The statement is parsed and type-checked by the native C++ AL compiler, lowered to the existing `.room v10` `UiCall` instruction, and handled by the Rust CI Runtime. The Android host displays the window only when the runtime returns `visible: true`.
 
 ```al
 class Main {
     public static void main() {
-        change window "My App";
+        change window "MyApp";
         UI.screen("My App");
         UI.text("status", "Ready");
     }
