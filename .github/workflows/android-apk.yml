@@ -59,6 +59,56 @@ jobs:
       - name: Build debug APK with Rust CI Runtime
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
+      - name: Compile a sample AL program for the standalone Player
+        run: |
+          cmake -S . -B build/compiler -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/compiler --parallel
+          build/compiler/alvm compile examples/calculator.al -o build/calculator.room
+          test -s build/calculator.room
+
+      - name: Build standalone Android Player template
+        run: |
+          set -euo pipefail
+          PLAYER_PROJECT="$GITHUB_WORKSPACE/build/android-player-smoke"
+          mkdir -p "$PLAYER_PROJECT"
+          cp -R app/src/main/assets/android-export-template/. "$PLAYER_PROJECT/"
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("build/android-player-smoke")
+          replacements = {
+              "{{APP_NAME}}": "AL Calculator",
+              "{{APP_NAME_XML}}": "AL Calculator",
+              "{{APP_ID}}": "com.alvm.generated.calculator",
+              "{{ABI}}": "arm64-v8a",
+          }
+          targets = [
+              root / "settings.gradle",
+              root / "app/build.gradle",
+              root / "app/src/main/res/values/strings.xml",
+              root / "README.md",
+          ]
+          for path in targets:
+              text = path.read_text(encoding="utf-8")
+              for marker, value in replacements.items():
+                  text = text.replace(marker, value)
+              path.write_text(text, encoding="utf-8")
+          PY
+          mkdir -p "$PLAYER_PROJECT/app/src/main/assets"
+          mkdir -p "$PLAYER_PROJECT/app/src/main/jniLibs/arm64-v8a"
+          cp build/calculator.room "$PLAYER_PROJECT/app/src/main/assets/main.room"
+          unzip -p app/build/outputs/apk/debug/app-debug.apk lib/arm64-v8a/libalvm.so \
+            > "$PLAYER_PROJECT/app/src/main/jniLibs/arm64-v8a/libalvm.so"
+          test -s "$PLAYER_PROJECT/app/src/main/jniLibs/arm64-v8a/libalvm.so"
+          gradle --no-daemon --stacktrace -p "$PLAYER_PROJECT" :app:assembleDebug
+
+      - name: Upload standalone Player smoke-test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVM-Standalone-Player-Smoke-Test
+          path: build/android-player-smoke/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
