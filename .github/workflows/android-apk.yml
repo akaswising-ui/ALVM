@@ -149,6 +149,11 @@ jobs:
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
+      - name: Install Rust Android targets for ALVM native runtime
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
