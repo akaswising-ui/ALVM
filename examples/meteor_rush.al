@@ -14,8 +14,10 @@ class Main {
         UI.line("laneLeft", 4, 0, 4, 480, 4282606062);
         UI.line("laneRight", 316, 0, 316, 480, 4282606062);
 
-        UI.text("score", "SCORE: 0");
-        UI.text("best", "BEST: 0");
+        UI.text("scoreLabel", "SCORE");
+        UI.text("score", "0");
+        UI.text("bestLabel", "BEST");
+        UI.text("best", "0");
         UI.text("status", "Avoid the orange meteors!");
         UI.text("hint", "Tap left or right to steer your ship.");
 
@@ -94,13 +96,13 @@ class Main {
         if (y > 510) {
             int score = UI.getInt("scoreValue", 0) + 1;
             UI.setInt("scoreValue", score);
-            UI.setText("score", "SCORE: " + score);
+            UI.setText("score", score);
 
             int best = UI.getInt("bestValue", 0);
             if (score > best) {
                 best = score;
                 UI.setInt("bestValue", best);
-                UI.setText("best", "BEST: " + best);
+                UI.setText("best", best);
             }
 
             if (score % 3 == 0 && speed < 8) {
@@ -125,7 +127,7 @@ class Main {
             int best = UI.getInt("bestValue", 0);
             if (score > best) {
                 UI.setInt("bestValue", score);
-                UI.setText("best", "BEST: " + score);
+                UI.setText("best", score);
             }
 
             UI.setInt("gameOver", 1);
