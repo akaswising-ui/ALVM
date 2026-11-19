@@ -85,6 +85,16 @@ printf '%s\n' "$TAP_WIN" | grep -q '"id":"status","kind":"text","text":"YOU WIN!
 TAP_RESET="$("$RUST_RUNNER" run "$WORK/tap-the-target.room" --event onTap target --event restartGame reset)"
 printf '%s\n' "$TAP_RESET" | grep -q '"id":"score","kind":"text","text":"0"'
 
+"$ALVM_BIN" compile "$ROOT/examples/meteor_rush.al" -o "$WORK/meteor-rush.room"
+METEOR_INITIAL="$("$RUST_RUNNER" run "$WORK/meteor-rush.room")"
+printf '%s\n' "$METEOR_INITIAL" | grep -q '"ok":true'
+printf '%s\n' "$METEOR_INITIAL" | grep -q '"title":"METEOR RUSH"'
+printf '%s\n' "$METEOR_INITIAL" | grep -q '"frameRate":20'
+METEOR_TOUCH="$("$RUST_RUNNER" run "$WORK/meteor-rush.room" --event onTouch '@touch|250|200' --event update frame)"
+printf '%s\n' "$METEOR_TOUCH" | grep -q '"ok":true'
+printf '%s\n' "$METEOR_TOUCH" | grep -q '"id":"ship"'
+printf '%s\n' "$METEOR_TOUCH" | grep -q '"x":250'
+
 printf 'packaged asset\n' > "$WORK/asset.txt"
 "$ALPACK_BIN" create "$WORK/Floating.AL" FloatingPoint 1.0.0 "$WORK/floating-point.room" "$WORK/asset.txt"
 PACKAGE_RESULT="$("$ALPACK_BIN" verify "$WORK/Floating.AL")"

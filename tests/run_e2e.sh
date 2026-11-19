@@ -276,4 +276,16 @@ if [[ "$TAP_RESET" != *'"id":"score","text":"0"'* || "$TAP_RESET" != *'"id":"sta
   exit 1
 fi
 
+"$BIN" compile "$ROOT/examples/meteor_rush.al" -o "$TMP/meteor-rush.room"
+METEOR_INITIAL="$("$BIN" ui "$TMP/meteor-rush.room")"
+if [[ "$METEOR_INITIAL" != *'"title":"METEOR RUSH"'* || "$METEOR_INITIAL" != *'"frameRate":20'* || "$METEOR_INITIAL" != *'"id":"playZone"'* ]]; then
+  printf 'Meteor Rush initial screen failed:\n%s\n' "$METEOR_INITIAL" >&2
+  exit 1
+fi
+METEOR_TOUCH="$("$BIN" ui-event "$TMP/meteor-rush.room" onTouch '@touch|250|200' update frame)"
+if [[ "$METEOR_TOUCH" != *'"id":"ship"'* || "$METEOR_TOUCH" != *'"x":250'* ]]; then
+  printf 'Meteor Rush touch steering failed:\n%s\n' "$METEOR_TOUCH" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, AL.Math/AL.String, functions, arrays, objects, inheritance, constructors, overloading, foreach, switch and loop control"
