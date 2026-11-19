@@ -30,32 +30,48 @@ public final class Game2DView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (event.getAction() != MotionEvent.ACTION_UP || touchHandler == null || elements == null) {
+        final int action = event.getActionMasked();
+
+        // Game2DView is hosted inside a ScrollView. Without this, the parent
+        // steals vertical drags before the game receives the release event.
+        if (action == MotionEvent.ACTION_DOWN) {
+            getParent().requestDisallowInterceptTouchEvent(true);
             return true;
         }
-        final float scale = Math.min(getWidth() / 320f, getHeight() / 480f);
-        if (scale <= 0f) return true;
-        final float offsetX = (getWidth() - 320f * scale) / 2f;
-        final float offsetY = (getHeight() - 480f * scale) / 2f;
-        final int x = Math.round((event.getX() - offsetX) / scale);
-        final int y = Math.round((event.getY() - offsetY) / scale);
-        for (int index = elements.length() - 1; index >= 0; index--) {
-            JSONObject item = elements.optJSONObject(index);
-            if (item == null || !"touchArea".equals(item.optString("kind", ""))) continue;
-            int left = item.optInt("x", 0);
-            int top = item.optInt("y", 0);
-            int right = left + item.optInt("w", 0);
-            int bottom = top + item.optInt("h", 0);
-            if (x >= left && x < right && y >= top && y < bottom) {
-                String callback = item.optString("callback", "");
-                String id = item.optString("id", "");
-                if (!callback.isEmpty() && !id.isEmpty()) {
-                    touchHandler.onTouch(callback, id, x, y);
-                }
-                return true;
-            }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            getParent().requestDisallowInterceptTouchEvent(false);
+            return true;
         }
-        return true;
+        if (action != MotionEvent.ACTION_UP) return true;
+
+        try {
+            if (touchHandler == null || elements == null) return true;
+            final float scale = Math.min(getWidth() / 320f, getHeight() / 480f);
+            if (scale <= 0f) return true;
+            final float offsetX = (getWidth() - 320f * scale) / 2f;
+            final float offsetY = (getHeight() - 480f * scale) / 2f;
+            final int x = Math.round((event.getX() - offsetX) / scale);
+            final int y = Math.round((event.getY() - offsetY) / scale);
+            for (int index = elements.length() - 1; index >= 0; index--) {
+                JSONObject item = elements.optJSONObject(index);
+                if (item == null || !"touchArea".equals(item.optString("kind", ""))) continue;
+                int left = item.optInt("x", 0);
+                int top = item.optInt("y", 0);
+                int right = left + item.optInt("w", 0);
+                int bottom = top + item.optInt("h", 0);
+                if (x >= left && x < right && y >= top && y < bottom) {
+                    String callback = item.optString("callback", "");
+                    String id = item.optString("id", "");
+                    if (!callback.isEmpty() && !id.isEmpty()) {
+                        touchHandler.onTouch(callback, id, x, y);
+                    }
+                    break;
+                }
+            }
+            return true;
+        } finally {
+            getParent().requestDisallowInterceptTouchEvent(false);
+        }
     }
 
     @Override
