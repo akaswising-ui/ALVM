@@ -72,6 +72,19 @@ TREASURE_RESET="$("$RUST_RUNNER" run "$WORK/treasure-grid.room" --event pickTile
 printf '%s\n' "$TREASURE_RESET" | grep -q '"id":"score","kind":"text","text":"0"'
 printf '%s\n' "$TREASURE_RESET" | grep -q '"id":"tile2","kind":"button","text":"2"'
 
+"$ALVM_BIN" compile "$ROOT/examples/tap_the_target.al" -o "$WORK/tap-the-target.room"
+TAP_INITIAL="$("$RUST_RUNNER" run "$WORK/tap-the-target.room")"
+printf '%s\n' "$TAP_INITIAL" | grep -q '"ok":true'
+printf '%s\n' "$TAP_INITIAL" | grep -q '"title":"TAP THE TARGET"'
+TAP_WIN="$("$RUST_RUNNER" run "$WORK/tap-the-target.room" \
+  --event onTap target --event onTap target --event onTap target --event onTap target --event onTap target \
+  --event onTap target --event onTap target --event onTap target --event onTap target --event onTap target)"
+printf '%s\n' "$TAP_WIN" | grep -q '"ok":true'
+printf '%s\n' "$TAP_WIN" | grep -q '"id":"score","kind":"text","text":"10"'
+printf '%s\n' "$TAP_WIN" | grep -q '"id":"status","kind":"text","text":"YOU WIN!"'
+TAP_RESET="$("$RUST_RUNNER" run "$WORK/tap-the-target.room" --event onTap target --event restartGame reset)"
+printf '%s\n' "$TAP_RESET" | grep -q '"id":"score","kind":"text","text":"0"'
+
 printf 'packaged asset\n' > "$WORK/asset.txt"
 "$ALPACK_BIN" create "$WORK/Floating.AL" FloatingPoint 1.0.0 "$WORK/floating-point.room" "$WORK/asset.txt"
 PACKAGE_RESULT="$("$ALPACK_BIN" verify "$WORK/Floating.AL")"

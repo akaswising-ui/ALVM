@@ -259,4 +259,21 @@ if "$BIN" compile "$ROOT/tests/mixed_numeric_type_error.al" -o "$TMP/mixed-numer
 fi
 test ! -e "$TMP/mixed-numeric.room"
 
+"$BIN" compile "$ROOT/examples/tap_the_target.al" -o "$TMP/tap-the-target.room"
+TAP_INITIAL="$("$BIN" ui "$TMP/tap-the-target.room")"
+if [[ "$TAP_INITIAL" != *'"title":"TAP THE TARGET"'* || "$TAP_INITIAL" != *'"visible":true'* || "$TAP_INITIAL" != *'"id":"target"'* ]]; then
+  printf 'Tap the Target initial Game Window failed:\n%s\n' "$TAP_INITIAL" >&2
+  exit 1
+fi
+TAP_EVENTS="$("$BIN" ui-event "$TMP/tap-the-target.room" onTap target onTap target onTap target onTap target onTap target onTap target onTap target onTap target onTap target onTap target)"
+if [[ "$TAP_EVENTS" != *'"id":"score","text":"10"'* || "$TAP_EVENTS" != *'"id":"status","text":"YOU WIN!"'* ]]; then
+  printf 'Tap the Target win condition failed:\n%s\n' "$TAP_EVENTS" >&2
+  exit 1
+fi
+TAP_RESET="$("$BIN" ui-event "$TMP/tap-the-target.room" onTap target restartGame reset)"
+if [[ "$TAP_RESET" != *'"id":"score","text":"0"'* || "$TAP_RESET" != *'"id":"status","text":"Game Started!"'* ]]; then
+  printf 'Tap the Target restart failed:\n%s\n' "$TAP_RESET" >&2
+  exit 1
+fi
+
 echo "PASS: ALVM compiler, AL.Math/AL.String, functions, arrays, objects, inheritance, constructors, overloading, foreach, switch and loop control"

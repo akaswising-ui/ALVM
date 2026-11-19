@@ -11,6 +11,9 @@ import {
 type AndroidBridgeApi = {
   getAppVersion?: () => string;
   getCiRuntimeVersion?: () => string;
+  runSource?: (source: string, name: string) => string;
+  compileSource?: (source: string, name: string) => string;
+  executeRoom?: (source: string, name: string) => string;
   openWorkspace?: () => void;
   importFile?: () => void;
   showCiRuntimeManager?: () => void;
@@ -445,6 +448,17 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const lineCount = useMemo(() => source.split('\n').length, [source]);
   const log = (lines: string[], nextStatus = 'READY') => { setOutput(lines); setStatus(nextStatus); };
+  const showNativeResult = (result: string, successStatus: string, errorStatus: string) => {
+    const message = result || '(no output)';
+    setGameScene(null);
+    setActiveControl(null);
+    log(message.split('\n'), message.startsWith('✕') ? errorStatus : successStatus);
+  };
+  const usesNativeUi = /\bchange\s+window\b|\bUI\s*\./.test(source);
+  const explainNativeUiRequirement = () => log([
+    '✕ This program uses native AL UI/Game Window APIs.',
+    'Run it in the installed ALVM Studio Android APK. The browser preview compiler does not implement these native APIs.'
+  ], 'UNSUPPORTED');
 
   const compile = () => {
     try {
@@ -476,11 +490,27 @@ export default function App() {
     return compile();
   };
   const run = () => {
+    if (window.Android?.runSource) {
+      showNativeResult(window.Android.runSource(source, filename), 'SUCCESS', 'ERROR');
+      return;
+    }
+    if (usesNativeUi) {
+      explainNativeUiRequirement();
+      return;
+    }
     const program = currentProgram();
     if (!program) return;
     executePreviewProgram(program);
   };
   const compileRoom = () => {
+    if (window.Android?.compileSource) {
+      showNativeResult(window.Android.compileSource(source, filename), 'COMPILED', 'COMPILE ERROR');
+      return;
+    }
+    if (usesNativeUi) {
+      explainNativeUiRequirement();
+      return;
+    }
     const program = compile();
     if (!program) return;
     log([
@@ -519,6 +549,14 @@ export default function App() {
     } catch (error) { log(['✕ ' + (error as Error).message], 'ERROR'); }
   };
   const executeRoom = () => {
+    if (window.Android?.executeRoom) {
+      showNativeResult(window.Android.executeRoom(source, filename), 'SUCCESS', 'RUNTIME ERROR');
+      return;
+    }
+    if (usesNativeUi) {
+      explainNativeUiRequirement();
+      return;
+    }
     const program = currentProgram();
     if (!program) return;
     executePreviewProgram(program);
@@ -589,7 +627,7 @@ export default function App() {
             <b><Activity size={15} /> VM STATUS</b>
             <p><span>Architecture</span><strong>Verified bytecode</strong></p>
             <p><span>Source</span><strong>.al</strong></p>
-            <p><span>Compiled</span><strong>.room v9</strong></p>
+            <p><span>Compiled</span><strong>.room v10</strong></p>
             <p><span>App</span><strong>{appVersion}</strong></p>
             <p><span>Engine</span><strong>CI Runtime {runtimeVersion}</strong></p>
           </div>
