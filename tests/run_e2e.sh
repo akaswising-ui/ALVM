@@ -282,7 +282,7 @@ if [[ "$METEOR_INITIAL" != *'"title":"METEOR RUSH"'* || "$METEOR_INITIAL" != *'"
   printf 'Meteor Rush initial screen failed:\n%s\n' "$METEOR_INITIAL" >&2
   exit 1
 fi
-METEOR_TOUCH="$("$BIN" ui-event "$TMP/meteor-rush.room" onTouch '@touch|250|200' update frame)"
+METEOR_TOUCH="$("$BIN" ui-event "$TMP/meteor-rush.room" onTouch '@touch|playZone|250|200' update frame)"
 if [[ "$METEOR_TOUCH" != *'"id":"ship"'* || "$METEOR_TOUCH" != *'"x":250'* ]]; then
   printf 'Meteor Rush touch steering failed:\n%s\n' "$METEOR_TOUCH" >&2
   exit 1

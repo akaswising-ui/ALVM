@@ -61,7 +61,7 @@ class Main {
             UI.setInt("playerX", 160);
             UI.setInt("gameOver", 0);
 
-            UI.setText("score", "SCORE: 0");
+            UI.setText("score", 0);
             UI.setText("status", "GO! Dodge the meteors!");
             drawShip(160);
             drawMeteor(140, -30);

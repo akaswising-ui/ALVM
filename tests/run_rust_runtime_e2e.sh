@@ -90,7 +90,7 @@ METEOR_INITIAL="$("$RUST_RUNNER" run "$WORK/meteor-rush.room")"
 printf '%s\n' "$METEOR_INITIAL" | grep -q '"ok":true'
 printf '%s\n' "$METEOR_INITIAL" | grep -q '"title":"METEOR RUSH"'
 printf '%s\n' "$METEOR_INITIAL" | grep -q '"frameRate":20'
-METEOR_TOUCH="$("$RUST_RUNNER" run "$WORK/meteor-rush.room" --event onTouch '@touch|250|200' --event update frame)"
+METEOR_TOUCH="$("$RUST_RUNNER" run "$WORK/meteor-rush.room" --event onTouch '@touch|playZone|250|200' --event update frame)"
 printf '%s\n' "$METEOR_TOUCH" | grep -q '"ok":true'
 printf '%s\n' "$METEOR_TOUCH" | grep -q '"id":"ship"'
 printf '%s\n' "$METEOR_TOUCH" | grep -q '"x":250'
