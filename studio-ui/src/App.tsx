@@ -116,7 +116,7 @@ class Compiler {
     if (!this.match(type)) throw new Error('Line ' + this.peek().line + ': ' + message);
     return this.tokens[this.pos - 1];
   }
-  private emit(op: string, arg?: Value | number): number {
+  private emit(op: string, arg?: Value | number | { name: string; argc: number }): number {
     this.code.push(arg === undefined ? { op } : { op, arg });
     return this.code.length - 1;
   }
