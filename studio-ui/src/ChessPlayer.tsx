@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Chess } from 'chess.js';
+import { Chess, type Square } from 'chess.js';
 
 const symbols: Record<string, string> = {
   wk: '♔', wq: '♕', wr: '♖', wb: '♗', wn: '♘', wp: '♙',
@@ -12,7 +12,7 @@ export default function ChessPlayer() {
   const [message, setMessage] = useState('');
   const chess = useMemo(() => new Chess(fen), [fen]);
   const targets = selected
-    ? chess.moves({ square: selected as never, verbose: true }).map(move => move.to)
+    ? chess.moves({ square: selected as Square, verbose: true }).map(move => move.to)
     : [];
   const board = chess.board();
   const status = chess.isCheckmate()
@@ -25,11 +25,11 @@ export default function ChessPlayer() {
 
   const selectSquare = (square: string) => {
     if (chess.isGameOver()) return;
-    const piece = chess.get(square as never);
+    const piece = chess.get(square as Square);
     if (selected && targets.includes(square)) {
       try {
         const next = new Chess(fen);
-        next.move({ from: selected as never, to: square as never, promotion: 'q' });
+        next.move({ from: selected as Square, to: square as Square, promotion: 'q' });
         setFen(next.fen());
         setSelected(null);
         setMessage('');
