@@ -11,7 +11,7 @@ export default function ChessPlayer() {
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const chess = useMemo(() => new Chess(fen), [fen]);
-  const targets = selected
+  const targets: string[] = selected
     ? chess.moves({ square: selected as Square, verbose: true }).map(move => move.to)
     : [];
   const board = chess.board();
