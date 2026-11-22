@@ -1324,6 +1324,8 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             ints: state.ints.clone(),
             frame_callback: state.frame_callback.clone(),
             frame_rate: state.frame_rate,
+            velocity_y: state.velocity_y.clone(),
+            physics_y: state.physics_y.clone(),
             visible: state.visible,
         }))
     })();
