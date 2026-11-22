@@ -1388,7 +1388,8 @@ public class MainActivity extends Activity {
                 JSONObject item = elements.optJSONObject(index);
                 if (item != null) {
                     String kind = item.optString("kind", "");
-                    if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind) || "drawText".equals(kind)) {
+                    if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
+                            || "drawText".equals(kind) || "sprite".equals(kind)) {
                         hasGameCanvas = true;
                         break;
                     }
@@ -1418,7 +1419,8 @@ public class MainActivity extends Activity {
                 String kind = element.optString("kind", "");
                 String id = element.optString("id", "");
                 String text = element.optString("text", "");
-                if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind) || "drawText".equals(kind)) {
+                if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
+                        || "drawText".equals(kind) || "sprite".equals(kind)) {
                     continue;
                 } else if ("text".equals(kind)) {
                     TextView label = new TextView(this);
