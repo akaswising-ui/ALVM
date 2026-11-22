@@ -53,7 +53,17 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 - UI/game: AL-native window and view toolkit, buttons, text fields, images, full multitouch/gesture system, sprite/assets renderer, rigid-body physics solver and audio. The existing bundled Chess/Game panels are Studio previews and are not native AL APIs.
 - Packaging: a defined `.AL` application container and compiler-driven packaging of AL projects into installable Android APKs. The current Android APK is the ALVM Studio IDE itself, not a user-created AL application.
 
-## Recently implemented: compound assignment and increment/decrement\n\n- Added `+=`, `-=`, `*=`, `/=` for simple variables.\n- Added prefix and postfix `++` / `--` as statement forms.\n- The compiler lowers these constructs to existing AL arithmetic/load/store instructions; `.room` v9 and the Rust runtime ABI remain unchanged.\n- Array-element and object-field compound updates are explicitly rejected until their single-evaluation lowering is implemented.\n\n## Implementation order
+## Recently implemented: compound assignment and increment/decrement\n\n- Added `+=`, `-=`, `*=`, `/=` for simple variables.\n- Added prefix and postfix `++` / `--` as statement forms.\n- The compiler lowers these constructs to existing AL arithmetic/load/store instructions; `.room` v9 and the Rust runtime ABI remain unchanged.\n- Array-element and object-field compound updates are explicitly rejected until their single-evaluation lowering is implemented.\n\n## Recently implemented: native sprites and vertical gravity step
+
+- Added `UI.sprite(id, assetPath, x, y, width, height)` to the C++ compiler/type checker, C++ desktop VM and Rust CI Runtime using the existing `.room v10` `UiCall` instruction.
+- Sprite paths must be safe relative paths. Android `Game2DView` and the standalone Player draw bundled APK assets through Canvas; missing images display a visible placeholder instead of crashing.
+- Added `UI.setVelocityY(id, velocity)` and `UI.physicsStep(id, gravity, deltaSeconds)` to both execution paths. The integrator retains per-object vertical position and velocity between frame callbacks and rejects non-finite/out-of-range values.
+- `UI.collides` now treats a sprite as a rectangle for AABB overlap tests.
+- The physics addition is vertical gravity integration only. It does not implement horizontal velocity, full rigid-body dynamics, collision response, friction or restitution.
+- The standalone Android APK builder accepts an optional `--assets-dir` and safely packages a bounded directory beneath the APK `assets/` folder. GitHub Actions exposes the same optional `assets_dir` input.
+- C++ and Rust end-to-end tests cover the same sprite payload and expected one-step gravity position; APK-builder tests cover safe asset copying.
+
+## Implementation order
 
 1. **Array and type system:** sized primitive arrays (Stage 14), then object arrays and multidimensional arrays with verifier coverage.
 2. **OOP dispatch:** override signatures, virtual method table metadata, runtime dispatch and inheritance/polymorphism tests.

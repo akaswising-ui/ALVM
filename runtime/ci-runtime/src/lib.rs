@@ -502,11 +502,13 @@ struct UiState {
     ints: HashMap<String, i64>,
     frame_callback: String,
     frame_rate: u32,
+    velocity_y: HashMap<String, f64>,
+    physics_y: HashMap<String, f64>,
 }
 
 impl UiState {
     fn new() -> Self {
-        Self { title: "AL Application".into(), visible: false, elements: Vec::new(), ints: HashMap::new(), frame_callback: String::new(), frame_rate: 0 }
+        Self { title: "AL Application".into(), visible: false, elements: Vec::new(), ints: HashMap::new(), frame_callback: String::new(), frame_rate: 0, velocity_y: HashMap::new(), physics_y: HashMap::new() }
     }
 
     fn find(&self, id: &str) -> Option<usize> {
@@ -633,11 +635,21 @@ fn upsert_ui(state: &mut UiState, element: UiElement) {
     }
 }
 
+fn valid_ui_asset_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && path.split('/').all(|part| {
+            !part.is_empty() && part != "." && part != ".."
+                && part.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+        })
+}
+
 
 fn ui_elements_collide(left: &UiElement, right: &UiElement) -> bool {
     fn bounds(item: &UiElement) -> Option<(i64, i64, i64, i64)> {
         match item.kind.as_str() {
-            "rect" => Some((item.x, item.y, item.x.saturating_add(item.w), item.y.saturating_add(item.h))),
+            "rect" | "sprite" => Some((item.x, item.y, item.x.saturating_add(item.w), item.y.saturating_add(item.h))),
             "circle" => Some((
                 item.x.saturating_sub(item.w),
                 item.y.saturating_sub(item.w),
@@ -745,6 +757,8 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         state.title = expect_string(args, 0)?;
         if name == "game" {
             state.elements.clear();
+            state.velocity_y.clear();
+            state.physics_y.clear();
         }
     } else if name == "text" {
         let element_id = expect_string(args, 0)?;
@@ -767,6 +781,65 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
             callback: String::new(), x, y, w: size, h: 0, color,
         };
         upsert_ui(state, element);
+    } else if name == "sprite" {
+        let element_id = expect_string(args, 0)?;
+        let asset_path = expect_string(args, 1)?;
+        let x = expect_int_arg(args, 2)?;
+        let y = expect_int_arg(args, 3)?;
+        let w = expect_int_arg(args, 4)?;
+        let h = expect_int_arg(args, 5)?;
+        if !valid_ui_asset_path(&asset_path) {
+            return error("UI.sprite asset path must be a safe relative path such as sprites/player.png");
+        }
+        if w <= 0 || h <= 0 || w > 3200 || h > 3200 {
+            return error("UI.sprite width and height must be between 1 and 3200");
+        }
+        upsert_ui(state, UiElement {
+            kind: "sprite".into(), element_id, text: asset_path,
+            callback: String::new(), x, y, w, h, color: 0xFFFFFFFF,
+        });
+    } else if name == "setVelocityY" {
+        let id = expect_string(args, 0)?;
+        let velocity = match args.get(1) { Some(RuntimeValue::Double(value)) => *value, _ => return error("UI.setVelocityY velocity must be double") };
+        let index = state.find(&id).ok_or_else(|| RuntimeError("UI.setVelocityY requires an existing drawable element".into()))?;
+        if !matches!(state.elements[index].kind.as_str(), "rect" | "circle" | "sprite") {
+            return error("UI.setVelocityY requires an existing rect, circle or sprite");
+        }
+        if !velocity.is_finite() || velocity.abs() > 100000.0 {
+            return error("UI.setVelocityY velocity is outside the supported range");
+        }
+        state.velocity_y.insert(id.clone(), velocity);
+        state.physics_y.insert(id, state.elements[index].y as f64);
+    } else if name == "physicsStep" {
+        let id = expect_string(args, 0)?;
+        let gravity = match args.get(1) { Some(RuntimeValue::Double(value)) => *value, _ => return error("UI.physicsStep gravity must be double") };
+        let dt = match args.get(2) { Some(RuntimeValue::Double(value)) => *value, _ => return error("UI.physicsStep deltaSeconds must be double") };
+        let index = state.find(&id).ok_or_else(|| RuntimeError("UI.physicsStep requires an existing drawable element".into()))?;
+        if !matches!(state.elements[index].kind.as_str(), "rect" | "circle" | "sprite") {
+            return error("UI.physicsStep requires an existing rect, circle or sprite");
+        }
+        if !gravity.is_finite() || gravity.abs() > 10000.0 {
+            return error("UI.physicsStep gravity is outside the supported range");
+        }
+        if !dt.is_finite() || !(0.0..=0.1).contains(&dt) {
+            return error("UI.physicsStep deltaSeconds must be between 0 and 0.1");
+        }
+        let current_y = state.elements[index].y as f64;
+        let mut position = state.physics_y.get(&id).copied().unwrap_or(current_y);
+        let velocity = {
+            let velocity = state.velocity_y.entry(id.clone()).or_insert(0.0);
+            *velocity += gravity * dt;
+            *velocity
+        };
+        if !velocity.is_finite() || velocity.abs() > 1_000_000_000.0 {
+            return error("UI.physicsStep velocity overflow");
+        }
+        position += velocity * dt;
+        if !position.is_finite() || position < i64::MIN as f64 || position >= -(i64::MIN as f64) {
+            return error("UI.physicsStep position overflow");
+        }
+        state.physics_y.insert(id, position);
+        state.elements[index].y = position.round() as i64;
     } else if name == "button" {
         let element_id = expect_string(args, 0)?;
         let label = expect_string(args, 1)?;
@@ -810,6 +883,8 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
     } else if name == "remove" {
         let element_id = expect_string(args, 0)?;
         state.elements.retain(|item| item.element_id != element_id);
+        state.velocity_y.remove(&element_id);
+        state.physics_y.remove(&element_id);
     } else if name == "setText" {
         let element_id = expect_string(args, 0)?;
         let value = args.get(1).map(show_value).unwrap_or_default();
@@ -855,6 +930,8 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
     } else if name == "clear" {
         state.elements.clear();
         state.ints.clear();
+        state.velocity_y.clear();
+        state.physics_y.clear();
         state.frame_callback.clear();
         state.frame_rate = 0;
     } else {
@@ -1247,6 +1324,8 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             ints: state.ints.clone(),
             frame_callback: state.frame_callback.clone(),
             frame_rate: state.frame_rate,
+            velocity_y: state.velocity_y.clone(),
+            physics_y: state.physics_y.clone(),
             visible: state.visible,
         }))
     })();
@@ -2275,6 +2354,42 @@ mod tests {
             x: 25, y: 10, w: 20, h: 20, color: 0,
         };
         assert!(ui_elements_collide(&circle, &rect));
+    }
+
+    #[test]
+    fn ui_sprite_and_vertical_gravity_step_execute_in_runtime() {
+        let mut state = UiState::new();
+        let mut stack = Vec::new();
+        let sprite = Instruction { op: UI_CALL, arg: 6, text: "sprite".into() };
+        ui_call(&sprite, &[
+            RuntimeValue::String("hero".into()),
+            RuntimeValue::String("sprites/hero.png".into()),
+            RuntimeValue::Int(10), RuntimeValue::Int(20),
+            RuntimeValue::Int(32), RuntimeValue::Int(32),
+        ], &mut stack, &mut state).unwrap();
+
+        let velocity = Instruction { op: UI_CALL, arg: 2, text: "setVelocityY".into() };
+        ui_call(&velocity, &[
+            RuntimeValue::String("hero".into()), RuntimeValue::Double(0.0),
+        ], &mut stack, &mut state).unwrap();
+
+        let step = Instruction { op: UI_CALL, arg: 3, text: "physicsStep".into() };
+        ui_call(&step, &[
+            RuntimeValue::String("hero".into()),
+            RuntimeValue::Double(100.0), RuntimeValue::Double(0.1),
+        ], &mut stack, &mut state).unwrap();
+
+        assert_eq!(state.elements[0].kind, "sprite");
+        assert_eq!(state.elements[0].text, "sprites/hero.png");
+        assert_eq!(state.elements[0].y, 21);
+    }
+
+    #[test]
+    fn sprite_asset_paths_reject_absolute_and_traversal_segments() {
+        assert!(valid_ui_asset_path("sprites/player.png"));
+        for invalid in ["/sdcard/player.png", "../secret.png", "sprites/../secret.png", "sprites\\\\secret.png", "sprites//player.png"] {
+            assert!(!valid_ui_asset_path(invalid), "{invalid}");
+        }
     }
 
     #[test]

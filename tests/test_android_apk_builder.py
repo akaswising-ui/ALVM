@@ -56,6 +56,26 @@ class AndroidApkBuilderTests(unittest.TestCase):
             BUILDER.require_elf_arch(bytes(valid), "armeabi-v7a")
 
 
+    def test_copies_safe_sprite_assets_into_player_assets_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            output = root / "apk-assets"
+            (source / "sprites").mkdir(parents=True)
+            (source / "sprites" / "player.png").write_bytes(b"png-data")
+            copied = BUILDER.copy_application_assets(str(source), output)
+            self.assertEqual(copied, 1)
+            self.assertEqual((output / "sprites" / "player.png").read_bytes(), b"png-data")
+
+    def test_rejects_unsafe_asset_path_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "bad name.png").write_bytes(b"asset")
+            with self.assertRaises(BUILDER.BuildError):
+                BUILDER.copy_application_assets(str(source), root / "output")
+
     def test_checks_standalone_player_apk_contents(self) -> None:
         elf = bytearray(20)
         elf[:4] = b"\x7fELF"

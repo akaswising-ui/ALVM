@@ -1,6 +1,8 @@
 package com.alvmplayer;
 
 import android.app.Activity;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -23,6 +25,8 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Standalone Android host for one compiled AL .room program.
@@ -179,7 +183,8 @@ public final class PlayerActivity extends Activity {
             if (item == null) continue;
             String kind = item.optString("kind", "");
             if ("rect".equals(kind) || "circle".equals(kind)
-                    || "line".equals(kind) || "touchArea".equals(kind)) {
+                    || "line".equals(kind) || "drawText".equals(kind)
+                    || "sprite".equals(kind) || "touchArea".equals(kind)) {
                 hasScene = true;
                 break;
             }
@@ -288,11 +293,42 @@ public final class PlayerActivity extends Activity {
     private final class SceneView extends View {
         private final JSONArray elements;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Map<String, Bitmap> spriteCache = new HashMap<>();
 
         SceneView(JSONArray elements) {
             super(PlayerActivity.this);
             this.elements = elements;
             setBackgroundColor(Color.rgb(8, 12, 22));
+        }
+
+        private boolean isSafeAssetPath(String assetPath) {
+            if (assetPath == null || assetPath.isEmpty() || assetPath.length() > 240
+                    || assetPath.startsWith("/") || assetPath.indexOf((char) 92) >= 0) return false;
+            String[] parts = assetPath.split("/", -1);
+            for (String part : parts) {
+                if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return false;
+                for (int i = 0; i < part.length(); i++) {
+                    char ch = part.charAt(i);
+                    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+                            || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.')) return false;
+                }
+            }
+            return true;
+        }
+
+        private Bitmap loadSprite(String assetPath) {
+            if (!isSafeAssetPath(assetPath)) return null;
+            if (spriteCache.containsKey(assetPath)) return spriteCache.get(assetPath);
+            Bitmap bitmap = null;
+            try (InputStream input = PlayerActivity.this.getAssets().open(assetPath)) {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                bitmap = BitmapFactory.decodeStream(input, null, options);
+            } catch (Exception ignored) {
+                // Missing optional sprites are drawn as a visible placeholder.
+            }
+            spriteCache.put(assetPath, bitmap);
+            return bitmap;
         }
 
         @Override
@@ -318,7 +354,25 @@ public final class PlayerActivity extends Activity {
                 int h = item.optInt("h", 0);
                 paint.setColor((int) item.optLong("color", 0xFFFFFFFFL));
                 paint.setStrokeWidth(3f);
-                if ("rect".equals(kind)) {
+                if ("sprite".equals(kind)) {
+                    Bitmap bitmap = loadSprite(item.optString("text", ""));
+                    if (bitmap != null && w > 0 && h > 0) {
+                        paint.setAlpha(255);
+                        paint.setFilterBitmap(true);
+                        canvas.drawBitmap(bitmap, null, new android.graphics.Rect(x, y, x + w, y + h), paint);
+                    } else {
+                        paint.setColor(Color.rgb(190, 65, 105));
+                        canvas.drawRect(x, y, x + Math.max(1, w), y + Math.max(1, h), paint);
+                        paint.setColor(Color.WHITE);
+                        paint.setStyle(Paint.Style.STROKE);
+                        canvas.drawLine(x, y, x + Math.max(1, w), y + Math.max(1, h), paint);
+                        canvas.drawLine(x + Math.max(1, w), y, x, y + Math.max(1, h), paint);
+                        paint.setStyle(Paint.Style.FILL);
+                    }
+                } else if ("drawText".equals(kind)) {
+                    paint.setTextSize(Math.max(6f, Math.min(96f, w)));
+                    canvas.drawText(item.optString("text", ""), x, y, paint);
+                } else if ("rect".equals(kind)) {
                     canvas.drawRect(x, y, x + w, y + h, paint);
                 } else if ("circle".equals(kind)) {
                     canvas.drawCircle(x, y, w, paint);
