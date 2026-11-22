@@ -1,6 +1,6 @@
 class Main {
     public static void main() {
-        change window "AL Canvas Text";
+        change window "ALCanvasText";
         UI.game("ALVM Canvas Text");
         UI.rect("background", 0, 0, 320, 480, 4278190335);
         UI.circle("red-ball", 62, 130, 22, 4294910771);
