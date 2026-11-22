@@ -301,10 +301,23 @@ public final class PlayerActivity extends Activity {
             setBackgroundColor(Color.rgb(8, 12, 22));
         }
 
-        private Bitmap loadSprite(String assetPath) {
+        private boolean isSafeAssetPath(String assetPath) {
             if (assetPath == null || assetPath.isEmpty() || assetPath.length() > 240
-                    || assetPath.startsWith("/") || assetPath.contains("\\")
-                    || assetPath.contains("..")) return null;
+                    || assetPath.startsWith("/") || assetPath.contains("\\\\")) return false;
+            String[] parts = assetPath.split("/", -1);
+            for (String part : parts) {
+                if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return false;
+                for (int i = 0; i < part.length(); i++) {
+                    char ch = part.charAt(i);
+                    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+                            || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.')) return false;
+                }
+            }
+            return true;
+        }
+
+        private Bitmap loadSprite(String assetPath) {
+            if (!isSafeAssetPath(assetPath)) return null;
             if (spriteCache.containsKey(assetPath)) return spriteCache.get(assetPath);
             Bitmap bitmap = null;
             try (InputStream input = PlayerActivity.this.getAssets().open(assetPath)) {
