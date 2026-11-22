@@ -29,7 +29,7 @@ Android uses a Java host/JNI bridge and the same C++ compiler and Rust runtime. 
 - Variables, scopes, conditions, while/do-while/for/foreach loops, switch, break, continue and return.
 - Functions, recursion, overloading, classes, fields, objects, constructors, inheritance, instance methods and explicit base-constructor calls.
 - Simple-variable compound assignments += -= *= /= and prefix/postfix ++ --.
-- Native UI calls, 2D shapes, logical-coordinate touch areas, a 1–60 FPS Android frame callback and basic AABB collision checks.
+- Native UI calls, 2D shapes, positioned canvas text, `UI.sprite` asset rendering, logical-coordinate touch areas, a 1–60 FPS Android frame callback, AABB overlap checks and vertical gravity integration through `UI.setVelocityY` / `UI.physicsStep`.
 
 ## AL Code Options catalogue
 
@@ -131,4 +131,4 @@ ALPK v1 has one entry module. External libraries, dependencies and multiple-modu
 
 ## Still incomplete
 
-Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, remaining standard libraries (collections, files, network, database and audio), multi-module package linking, external dependencies, advanced native input devices, rigid-body physics, audio, and complete graphics/sprite APIs remain planned or partial. Direct on-device APK assembly and release signing are not included; ALVM exports a standalone Android Gradle project ZIP that must be built externally. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
+Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, remaining standard libraries (collections, files, network, database and audio), multi-module package linking, external dependencies, advanced native input devices, full rigid-body physics and collision response, audio, full 3D rendering, and a complete graphics/asset lifecycle remain planned or partial. Direct on-device APK assembly and release signing are not included; ALVM exports a standalone Android Gradle project ZIP that must be built externally. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
