@@ -1,11 +1,17 @@
 package com.alvmstudio;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.view.View;
 import android.view.MotionEvent;
+
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -19,6 +25,7 @@ public final class Game2DView extends View {
     private final JSONArray elements;
     private final TouchHandler touchHandler;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Map<String, Bitmap> spriteCache = new HashMap<>();
 
     public Game2DView(Context context, JSONArray elements, TouchHandler touchHandler) {
         super(context);
@@ -74,6 +81,23 @@ public final class Game2DView extends View {
         }
     }
 
+    private Bitmap loadSprite(String assetPath) {
+        if (assetPath == null || assetPath.isEmpty() || assetPath.length() > 240
+                || assetPath.startsWith("/") || assetPath.contains("\\")
+                || assetPath.contains("..")) return null;
+        if (spriteCache.containsKey(assetPath)) return spriteCache.get(assetPath);
+        Bitmap bitmap = null;
+        try (InputStream input = getContext().getAssets().open(assetPath)) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            bitmap = BitmapFactory.decodeStream(input, null, options);
+        } catch (Exception ignored) {
+            // Missing optional sprites must not crash an AL application.
+        }
+        spriteCache.put(assetPath, bitmap);
+        return bitmap;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -91,11 +115,29 @@ public final class Game2DView extends View {
                 JSONObject item = elements.optJSONObject(i);
                 if (item == null) continue;
                 String kind = item.optString("kind", "");
-                if (!kind.equals("rect") && !kind.equals("circle") && !kind.equals("line") && !kind.equals("drawText")) continue;
                 int x = item.optInt("x", 0);
                 int y = item.optInt("y", 0);
                 int w = item.optInt("w", 0);
                 int h = item.optInt("h", 0);
+                if ("sprite".equals(kind)) {
+                    Bitmap bitmap = loadSprite(item.optString("text", ""));
+                    if (bitmap != null && w > 0 && h > 0) {
+                        paint.setAlpha(255);
+                        paint.setFilterBitmap(true);
+                        canvas.drawBitmap(bitmap, null, new android.graphics.Rect(x, y, x + w, y + h), paint);
+                    } else {
+                        paint.setStyle(Paint.Style.FILL);
+                        paint.setColor(Color.rgb(190, 65, 105));
+                        canvas.drawRect(x, y, x + Math.max(1, w), y + Math.max(1, h), paint);
+                        paint.setColor(Color.WHITE);
+                        paint.setStyle(Paint.Style.STROKE);
+                        canvas.drawLine(x, y, x + Math.max(1, w), y + Math.max(1, h), paint);
+                        canvas.drawLine(x + Math.max(1, w), y, x, y + Math.max(1, h), paint);
+                        paint.setStyle(Paint.Style.FILL);
+                    }
+                    continue;
+                }
+                if (!kind.equals("rect") && !kind.equals("circle") && !kind.equals("line") && !kind.equals("drawText")) continue;
                 int color = (int) item.optLong("color", 0xFFFFFFFFL);
                 paint.setColor(color);
                 paint.setStrokeWidth(3f);
