@@ -824,10 +824,17 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         if !dt.is_finite() || !(0.0..=0.1).contains(&dt) {
             return error("UI.physicsStep deltaSeconds must be between 0 and 0.1");
         }
-        let mut position = *state.physics_y.get(&id).unwrap_or(&(state.elements[index].y as f64));
-        let velocity = state.velocity_y.entry(id.clone()).or_insert(0.0);
-        *velocity += gravity * dt;
-        position += *velocity * dt;
+        let current_y = state.elements[index].y as f64;
+        let mut position = state.physics_y.get(&id).copied().unwrap_or(current_y);
+        let velocity = {
+            let velocity = state.velocity_y.entry(id.clone()).or_insert(0.0);
+            *velocity += gravity * dt;
+            *velocity
+        };
+        if !velocity.is_finite() || velocity.abs() > 1_000_000_000.0 {
+            return error("UI.physicsStep velocity overflow");
+        }
+        position += velocity * dt;
         if !position.is_finite() || position < i64::MIN as f64 || position >= -(i64::MIN as f64) {
             return error("UI.physicsStep position overflow");
         }
