@@ -55,6 +55,19 @@ static bool validWindowName(const std::string& name) {
   for(size_t i=1;i<name.size();++i){unsigned char ch=(unsigned char)name[i];if(!alpha(ch)&&!digit(ch)&&ch!='_')return false;}
   return true;
 }
+static bool validUiAssetPath(const std::string& path) {
+  if(path.empty()||path.front()=='/'||path.find('\\')!=std::string::npos)return false;
+  size_t start=0;
+  while(start<path.size()){
+    size_t end=path.find('/',start);
+    std::string part=path.substr(start,end==std::string::npos?std::string::npos:end-start);
+    if(part.empty()||part=="."||part=="..")return false;
+    for(unsigned char ch:part)if(!((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch=='_'||ch=='-'||ch=='.'))return false;
+    if(end==std::string::npos)break;
+    start=end+1;
+  }
+  return true;
+}
 
 enum class Type : int { Int=0, String=1, Bool=2, IntArray=3, StringArray=4, BoolArray=5, Void=6, Unknown=7, Float=8, Double=9, FloatArray=10, DoubleArray=11, UserBase=100 };
 static std::vector<std::string> userTypeNames;
@@ -249,6 +262,9 @@ class SemanticAnalyzer {
           if(e.text=="screen"||e.text=="game"){require(1);stringAt(0);e.inferred=Type::Void;}
           else if(e.text=="text"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Void;}
           else if(e.text=="textAt"){require(6);stringAt(0);stringAt(1);for(size_t n=2;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.textAt x, y, size and color must be int");e.inferred=Type::Void;}
+          else if(e.text=="sprite"){require(6);stringAt(0);stringAt(1);for(size_t n=2;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.sprite x, y, width and height must be int");e.inferred=Type::Void;}
+          else if(e.text=="setVelocityY"){require(2);stringAt(0);if(actual[1]!=Type::Double)throw Error("UI.setVelocityY velocity must be double");e.inferred=Type::Void;}
+          else if(e.text=="physicsStep"){require(3);stringAt(0);if(actual[1]!=Type::Double||actual[2]!=Type::Double)throw Error("UI.physicsStep gravity and deltaSeconds must be double");e.inferred=Type::Void;}
           else if(e.text=="button"){
             require(3);stringAt(0);stringAt(1);stringAt(2);
             if(e.elements[2]->kind!=Expr::String)throw Error("UI.button callback must be a string literal naming an AL function");
@@ -610,6 +626,8 @@ static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overfl
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 struct UiElement { std::string kind,id,text,callback; int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF; };
+static std::map<std::string,double> activeUiVelocityY;
+static std::map<std::string,double> activeUiPhysicsY;
 static std::string activeUiTitle="AL Application";
 static bool activeUiVisible=false;
 static std::vector<UiElement> activeUiElements;
@@ -631,7 +649,7 @@ static std::string uiJson(){
 }
 static bool uiElementsCollide(const UiElement& a,const UiElement& b){
   auto bounds=[](const UiElement& e,std::array<double,4>& out)->bool{
-    if(e.kind=="rect"){out={(double)e.x,(double)e.y,(double)(e.x+e.w),(double)(e.y+e.h)};return true;}
+    if(e.kind=="rect"||e.kind=="sprite"){out={(double)e.x,(double)e.y,(double)(e.x+e.w),(double)(e.y+e.h)};return true;}
     if(e.kind=="circle"){double radius=(double)e.w;out={(double)e.x-radius,(double)e.y-radius,(double)e.x+radius,(double)e.y+radius};return true;}
     return false;
   };
@@ -645,7 +663,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
   std::vector<Value> stack;
   auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
   size_t entryIndex=0;
-  if(entryName=="main"){activeUiTitle="AL Application";activeUiVisible=false;activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
+  if(entryName=="main"){activeUiTitle="AL Application";activeUiVisible=false;activeUiElements.clear();activeUiInts.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeFrameCallback.clear();activeFrameRate=0;}
   else {
     bool found=false;for(size_t index=1;index<functions.size();++index){const auto& candidate=functions[index];if((candidate.name==entryName||candidate.name.rfind(entryName+"$",0)==0)&&candidate.ownerClassId<0&&candidate.parameterCount==1&&candidate.returnType==Type::Void){if(found)throw Error("Ambiguous UI event handler: "+entryName);entryIndex=index;found=true;}}
     if(!found)throw Error("Unknown UI event handler: "+entryName);
@@ -738,14 +756,37 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         else {
         auto asString=[&](size_t n)->std::string{if(n>=args.size()||!std::holds_alternative<std::string>(args[n]))throw Error("UI API expected string argument");return std::get<std::string>(args[n]);};
         auto asInt=[&](size_t n)->int64_t{if(n>=args.size())throw Error("UI API missing integer argument");return integer(args[n]);};
+        auto asDouble=[&](size_t n)->double{if(n>=args.size()||!std::holds_alternative<double>(args[n]))throw Error("UI API expected double argument");return std::get<double>(args[n]);};
         auto findElement=[&](const std::string& id)->UiElement*{for(auto& e:activeUiElements)if(e.id==id)return &e;return nullptr;};
         if(i.text=="openWindow"){std::string title=asString(0);if(!validWindowName(title))throw Error("invalid window name in .room bytecode");activeUiTitle=std::move(title);activeUiVisible=true;}
         else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game")activeUiElements.clear();}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
         else if(i.text=="textAt"){UiElement label;label.kind="drawText";label.id=asString(0);label.text=asString(1);label.x=asInt(2);label.y=asInt(3);label.w=asInt(4);label.color=asInt(5);if(label.w<6||label.w>96)throw Error("UI.textAt size must be between 6 and 96");if(auto* old=findElement(label.id))*old=label;else activeUiElements.push_back(label);}
+        else if(i.text=="sprite"){
+          UiElement image;image.kind="sprite";image.id=asString(0);image.text=asString(1);image.x=asInt(2);image.y=asInt(3);image.w=asInt(4);image.h=asInt(5);
+          if(!validUiAssetPath(image.text))throw Error("UI.sprite asset path must be a safe relative path such as sprites/player.png");
+          if(image.w<=0||image.h<=0||image.w>3200||image.h>3200)throw Error("UI.sprite width and height must be between 1 and 3200");
+          if(auto* old=findElement(image.id))*old=image;else activeUiElements.push_back(image);
+        }
+        else if(i.text=="setVelocityY"){
+          std::string id=asString(0);double velocity=asDouble(1);UiElement* element=findElement(id);
+          if(!element||(element->kind!="rect"&&element->kind!="circle"&&element->kind!="sprite"))throw Error("UI.setVelocityY requires an existing rect, circle or sprite");
+          if(!std::isfinite(velocity)||std::fabs(velocity)>100000.0)throw Error("UI.setVelocityY velocity is outside the supported range");
+          activeUiVelocityY[id]=velocity;activeUiPhysicsY[id]=(double)element->y;
+        }
+        else if(i.text=="physicsStep"){
+          std::string id=asString(0);double gravity=asDouble(1),dt=asDouble(2);UiElement* element=findElement(id);
+          if(!element||(element->kind!="rect"&&element->kind!="circle"&&element->kind!="sprite"))throw Error("UI.physicsStep requires an existing rect, circle or sprite");
+          if(!std::isfinite(gravity)||std::fabs(gravity)>10000.0)throw Error("UI.physicsStep gravity is outside the supported range");
+          if(!std::isfinite(dt)||dt<0.0||dt>0.1)throw Error("UI.physicsStep deltaSeconds must be between 0 and 0.1");
+          auto position=activeUiPhysicsY.find(id);if(position==activeUiPhysicsY.end())position=activeUiPhysicsY.emplace(id,(double)element->y).first;
+          double& velocity=activeUiVelocityY[id];velocity+=gravity*dt;position->second+=velocity*dt;
+          if(!std::isfinite(position->second)||position->second<(double)std::numeric_limits<int64_t>::min()||position->second>(double)std::numeric_limits<int64_t>::max())throw Error("UI.physicsStep position overflow");
+          element->y=(int64_t)std::llround(position->second);
+        }
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
         else if(i.text=="rect"||i.text=="circle"||i.text=="line"){std::string id=asString(0);UiElement shape;shape.kind=i.text;shape.id=id;if(i.text=="rect"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);if(shape.w<0||shape.h<0)throw Error("UI.rect width and height cannot be negative");}else if(i.text=="circle"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.color=asInt(4);if(shape.w<0)throw Error("UI.circle radius cannot be negative");}else{shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);}if(auto* e=findElement(id))*e=shape;else activeUiElements.push_back(shape);}
-        else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());}
+        else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());activeUiVelocityY.erase(id);activeUiPhysicsY.erase(id);}
         else if(i.text=="setText"){std::string id=asString(0),value=show(args[1]);if(auto* e=findElement(id))e->text=value;else throw Error("UI.setText unknown element: "+id);}
         else if(i.text=="setInt")activeUiInts[asString(0)]=asInt(1);
         else if(i.text=="getInt"){auto it=activeUiInts.find(asString(0));stack.emplace_back(it==activeUiInts.end()?asInt(1):it->second);}
@@ -763,7 +804,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
           UiElement* left=findElement(asString(0));UiElement* right=findElement(asString(1));
           stack.emplace_back(left&&right&&uiElementsCollide(*left,*right));
         }
-        else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeFrameCallback.clear();activeFrameRate=0;}
+        else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeFrameCallback.clear();activeFrameRate=0;}
         else throw Error("Unknown UI opcode: "+i.text);
         }
         break;
