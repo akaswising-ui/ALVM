@@ -248,6 +248,7 @@ class SemanticAnalyzer {
           auto stringAt=[&](size_t n){if(actual[n]!=Type::String)throw Error("UI."+e.text+" argument "+std::to_string(n+1)+" must be string");};
           if(e.text=="screen"||e.text=="game"){require(1);stringAt(0);e.inferred=Type::Void;}
           else if(e.text=="text"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Void;}
+          else if(e.text=="textAt"){require(6);stringAt(0);stringAt(1);for(size_t n=2;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.textAt x, y, size and color must be int");e.inferred=Type::Void;}
           else if(e.text=="button"){
             require(3);stringAt(0);stringAt(1);stringAt(2);
             if(e.elements[2]->kind!=Expr::String)throw Error("UI.button callback must be a string literal naming an AL function");
@@ -741,6 +742,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         if(i.text=="openWindow"){std::string title=asString(0);if(!validWindowName(title))throw Error("invalid window name in .room bytecode");activeUiTitle=std::move(title);activeUiVisible=true;}
         else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game")activeUiElements.clear();}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
+        else if(i.text=="textAt"){UiElement label;label.kind="drawText";label.id=asString(0);label.text=asString(1);label.x=asInt(2);label.y=asInt(3);label.w=asInt(4);label.color=asInt(5);if(label.w<6||label.w>96)throw Error("UI.textAt size must be between 6 and 96");if(auto* old=findElement(label.id))*old=label;else activeUiElements.push_back(label);}
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
         else if(i.text=="rect"||i.text=="circle"||i.text=="line"){std::string id=asString(0);UiElement shape;shape.kind=i.text;shape.id=id;if(i.text=="rect"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);if(shape.w<0||shape.h<0)throw Error("UI.rect width and height cannot be negative");}else if(i.text=="circle"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.color=asInt(4);if(shape.w<0)throw Error("UI.circle radius cannot be negative");}else{shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);}if(auto* e=findElement(id))*e=shape;else activeUiElements.push_back(shape);}
         else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());}

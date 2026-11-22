@@ -91,7 +91,7 @@ public final class Game2DView extends View {
                 JSONObject item = elements.optJSONObject(i);
                 if (item == null) continue;
                 String kind = item.optString("kind", "");
-                if (!kind.equals("rect") && !kind.equals("circle") && !kind.equals("line")) continue;
+                if (!kind.equals("rect") && !kind.equals("circle") && !kind.equals("line") && !kind.equals("drawText")) continue;
                 int x = item.optInt("x", 0);
                 int y = item.optInt("y", 0);
                 int w = item.optInt("w", 0);
@@ -103,10 +103,15 @@ public final class Game2DView extends View {
                     canvas.drawRect(x, y, x + w, y + h, paint);
                 } else if (kind.equals("circle")) {
                     canvas.drawCircle(x, y, w, paint);
-                } else {
+                } else if (kind.equals("line")) {
                     paint.setStyle(Paint.Style.STROKE);
                     canvas.drawLine(x, y, w, h, paint);
                     paint.setStyle(Paint.Style.FILL);
+                } else if (kind.equals("drawText")) {
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setTextSize(Math.max(6f, Math.min(96f, item.optInt("w", 18))));
+                    paint.setTypeface(android.graphics.Typeface.DEFAULT);
+                    canvas.drawText(item.optString("text", ""), x, y, paint);
                 }
             }
         }

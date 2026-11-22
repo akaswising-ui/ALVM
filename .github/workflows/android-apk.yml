@@ -99,14 +99,6 @@ jobs:
             --abi "$AL_ABI" \
             --output dist/ALVM-standalone-player.apk
 
-      - name: Upload ALVM Studio Lite APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ALVM-Studio-Lite-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Upload generated Android Player APK
         uses: actions/upload-artifact@v4
         with:

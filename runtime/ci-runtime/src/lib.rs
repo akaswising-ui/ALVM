@@ -754,6 +754,19 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
             callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
         };
         upsert_ui(state, element);
+    } else if name == "textAt" {
+        let element_id = expect_string(args, 0)?;
+        let text = expect_string(args, 1)?;
+        let x = expect_int_arg(args, 2)?;
+        let y = expect_int_arg(args, 3)?;
+        let size = expect_int_arg(args, 4)?;
+        let color = expect_int_arg(args, 5)? as u32;
+        if !(6..=96).contains(&size) { return error("UI.textAt size must be between 6 and 96"); }
+        let element = UiElement {
+            kind: "drawText".into(), element_id: element_id.clone(), text,
+            callback: String::new(), x, y, w: size, h: 0, color,
+        };
+        upsert_ui(state, element);
     } else if name == "button" {
         let element_id = expect_string(args, 0)?;
         let label = expect_string(args, 1)?;

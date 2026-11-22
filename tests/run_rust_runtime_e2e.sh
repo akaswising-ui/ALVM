@@ -102,4 +102,22 @@ printf '%s\n' "$PACKAGE_RESULT" | grep -q '"ok":true'
 printf '%s\n' "$PACKAGE_RESULT" | grep -q '"moduleCount":1'
 printf '%s\n' "$PACKAGE_RESULT" | grep -q '"assetCount":1'
 
-echo "Rust CI Runtime game-loop/touch/collision and .AL package end-to-end tests passed."
+"$ALVM_BIN" compile "$ROOT/examples/canvas_text.al" -o "$WORK/canvas-text.room"
+CANVAS_TEXT="$("$RUST_RUNNER" run "$WORK/canvas-text.room")"
+python3 - "$CANVAS_TEXT" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result.get("ok") is True, result
+items = result.get("ui", {}).get("elements", [])
+label = next((item for item in items if item.get("id") == "title"), None)
+assert label is not None, result
+assert label.get("kind") == "drawText", label
+assert label.get("text") == "ALVM Canvas Text", label
+assert (label.get("x"), label.get("y"), label.get("w"), label.get("color")) == (
+    16, 42, 22, 4294967295
+), label
+PY
+
+echo "Rust CI Runtime game-loop/touch/collision, positioned canvas text and .AL package end-to-end tests passed."
