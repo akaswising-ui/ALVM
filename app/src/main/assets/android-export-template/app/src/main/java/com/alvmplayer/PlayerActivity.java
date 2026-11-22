@@ -303,7 +303,7 @@ public final class PlayerActivity extends Activity {
 
         private boolean isSafeAssetPath(String assetPath) {
             if (assetPath == null || assetPath.isEmpty() || assetPath.length() > 240
-                    || assetPath.startsWith("/") || assetPath.contains("\\\\")) return false;
+                    || assetPath.startsWith("/") || assetPath.indexOf((char) 92) >= 0) return false;
             String[] parts = assetPath.split("/", -1);
             for (String part : parts) {
                 if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return false;
