@@ -3,6 +3,10 @@ room Main {
         change window "ALQuizBattle";
         UI.screen("AL Quiz Battle");
 
+        UI.setInt("questionNumber", 0);
+        UI.setInt("scoreValue", 0);
+        UI.setInt("answered", 0);
+
         UI.text("heading", "QUIZ BATTLE");
         UI.text("score", "0");
         UI.text("question", "Q1: Which planet is called the Red Planet?");
@@ -40,8 +44,8 @@ room Main {
                 UI.setText("options", "A. Atlantic    B. Indian    C. Pacific");
             }
             if (q == 2) {
-                UI.setText("question", "Q3: What is 7 multiplied by 8?");
-                UI.setText("options", "A. 56    B. 48    C. 64");
+                UI.setText("question", "Q3: What is 3 multiplied by 4?");
+                UI.setText("options", "A. 12    B. 48    C. 64");
             }
             if (q == 3) {
                 UI.setText("question", "Q4: Which gas do plants absorb?");
