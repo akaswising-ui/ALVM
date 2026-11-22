@@ -109,7 +109,7 @@ public final class Game2DView extends View {
                     paint.setStyle(Paint.Style.FILL);
                 } else if (kind.equals("drawText")) {
                     paint.setStyle(Paint.Style.FILL);
-                    paint.setTextSize(Math.max(6f, Math.min(96f, item.optInt("size", 18))));
+                    paint.setTextSize(Math.max(6f, Math.min(96f, item.optInt("w", 18))));
                     paint.setTypeface(android.graphics.Typeface.DEFAULT);
                     canvas.drawText(item.optString("text", ""), x, y, paint);
                 }
