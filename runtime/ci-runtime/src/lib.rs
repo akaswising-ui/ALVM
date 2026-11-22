@@ -492,6 +492,7 @@ struct UiElement {
     w: i64,
     h: i64,
     color: u32,
+    size: i64,
 }
 
 #[derive(Default)]
@@ -751,7 +752,20 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         let value = expect_string(args, 1)?;
         let element = UiElement {
             kind: "text".into(), element_id: element_id.clone(), text: value,
-            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
+            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF, size: 25,
+        };
+        upsert_ui(state, element);
+    } else if name == "textAt" {
+        let element_id = expect_string(args, 0)?;
+        let text = expect_string(args, 1)?;
+        let x = expect_int_arg(args, 2)?;
+        let y = expect_int_arg(args, 3)?;
+        let size = expect_int_arg(args, 4)?;
+        let color = expect_int_arg(args, 5)? as u32;
+        if !(6..=96).contains(&size) { return error("UI.textAt size must be between 6 and 96"); }
+        let element = UiElement {
+            kind: "drawText".into(), element_id: element_id.clone(), text,
+            callback: String::new(), x, y, w: 0, h: 0, color, size,
         };
         upsert_ui(state, element);
     } else if name == "button" {
@@ -760,14 +774,14 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         let callback = expect_string(args, 2)?;
         let element = UiElement {
             kind: "button".into(), element_id: element_id.clone(), text: label,
-            callback, x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
+            callback, x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF, size: 18,
         };
         upsert_ui(state, element);
     } else if matches!(name, "rect" | "circle" | "line") {
         let element_id = expect_string(args, 0)?;
         let mut shape = UiElement {
             kind: name.into(), element_id: element_id.clone(), text: String::new(),
-            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
+            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF, size: 0,
         };
         if name == "rect" {
             shape.x = expect_int_arg(args, 1)?;
@@ -819,7 +833,7 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         if w <= 0 || h <= 0 { return error("UI.touchArea width and height must be positive"); }
         upsert_ui(state, UiElement {
             kind: "touchArea".into(), element_id: id, text: String::new(), callback,
-            x, y, w, h, color: 0,
+            x, y, w, h, color: 0, size: 0,
         });
     } else if name == "frameLoop" {
         let callback = expect_string(args, 0)?;
@@ -2245,7 +2259,7 @@ mod tests {
     fn ui_collision_detects_overlapping_rectangles() {
         let rect = |id: &str, x: i64, y: i64, w: i64, h: i64| UiElement {
             kind: "rect".into(), element_id: id.into(), text: String::new(), callback: String::new(),
-            x, y, w, h, color: 0,
+            x, y, w, h, color: 0, size: 0,
         };
         assert!(ui_elements_collide(&rect("a", 0, 0, 30, 30), &rect("b", 20, 20, 30, 30)));
         assert!(!ui_elements_collide(&rect("a", 0, 0, 10, 10), &rect("b", 10, 0, 10, 10)));
@@ -2255,11 +2269,11 @@ mod tests {
     fn ui_collision_detects_circle_rectangle_overlap() {
         let circle = UiElement {
             kind: "circle".into(), element_id: "ball".into(), text: String::new(), callback: String::new(),
-            x: 20, y: 20, w: 10, h: 0, color: 0,
+            x: 20, y: 20, w: 10, h: 0, color: 0, size: 0,
         };
         let rect = UiElement {
             kind: "rect".into(), element_id: "wall".into(), text: String::new(), callback: String::new(),
-            x: 25, y: 10, w: 20, h: 20, color: 0,
+            x: 25, y: 10, w: 20, h: 20, color: 0, size: 0,
         };
         assert!(ui_elements_collide(&circle, &rect));
     }
