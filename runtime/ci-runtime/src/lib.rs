@@ -2348,6 +2348,42 @@ mod tests {
     }
 
     #[test]
+    fn ui_sprite_and_vertical_gravity_step_execute_in_runtime() {
+        let mut state = UiState::new();
+        let mut stack = Vec::new();
+        let sprite = Instruction { op: UI_CALL, arg: 6, text: "sprite".into() };
+        ui_call(&sprite, &[
+            RuntimeValue::String("hero".into()),
+            RuntimeValue::String("sprites/hero.png".into()),
+            RuntimeValue::Int(10), RuntimeValue::Int(20),
+            RuntimeValue::Int(32), RuntimeValue::Int(32),
+        ], &mut stack, &mut state).unwrap();
+
+        let velocity = Instruction { op: UI_CALL, arg: 2, text: "setVelocityY".into() };
+        ui_call(&velocity, &[
+            RuntimeValue::String("hero".into()), RuntimeValue::Double(0.0),
+        ], &mut stack, &mut state).unwrap();
+
+        let step = Instruction { op: UI_CALL, arg: 3, text: "physicsStep".into() };
+        ui_call(&step, &[
+            RuntimeValue::String("hero".into()),
+            RuntimeValue::Double(100.0), RuntimeValue::Double(0.1),
+        ], &mut stack, &mut state).unwrap();
+
+        assert_eq!(state.elements[0].kind, "sprite");
+        assert_eq!(state.elements[0].text, "sprites/hero.png");
+        assert_eq!(state.elements[0].y, 21);
+    }
+
+    #[test]
+    fn sprite_asset_paths_reject_absolute_and_traversal_segments() {
+        assert!(valid_ui_asset_path("sprites/player.png"));
+        for invalid in ["/sdcard/player.png", "../secret.png", "sprites/../secret.png", "sprites\\\\secret.png", "sprites//player.png"] {
+            assert!(!valid_ui_asset_path(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
     fn plugin_symbol_names_are_c_terminated() {
         for symbol in [
             PLUGIN_API_VERSION_SYMBOL,
