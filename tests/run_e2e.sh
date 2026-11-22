@@ -120,7 +120,7 @@ if [[ "$CONTROL_COMPLETE_ACTUAL" != "$CONTROL_COMPLETE_EXPECTED" ]]; then
   exit 1
 fi
 
-for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base change_window_type_error change_window_invalid_name text_at_type_error; do
+for fixture in array_allocation_type_error type_error array_type_error function_type_error missing_return object_field_type_error object_method_type_error incompatible_downcast unknown_base_class constructor_wrong_count constructor_wrong_type base_constructor_args duplicate_constructor break_outside continue_outside switch_type_error duplicate_default foreach_type_error foreach_non_array overload_no_match overload_duplicate_signature method_overload_no_match method_overload_duplicate constructor_overload_no_match constructor_overload_duplicate super_wrong_type super_not_first super_without_base change_window_type_error change_window_invalid_name text_at_type_error physics_type_error; do
   if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
     echo "FAIL: $fixture was accepted" >&2
     exit 1
@@ -292,6 +292,13 @@ fi
 CANVAS_TEXT="$("$BIN" ui "$TMP/canvas-text.room")"
 if [[ "$CANVAS_TEXT" != *'"kind":"drawText","id":"title","text":"ALVM Canvas Text"'* || "$CANVAS_TEXT" != *'"x":16,"y":42'* || "$CANVAS_TEXT" != *'"color":4294967295'* || "$CANVAS_TEXT" != *'"w":22'* ]]; then
   printf 'AL UI.textAt canvas rendering payload failed:\n%s\n' "$CANVAS_TEXT" >&2
+  exit 1
+fi
+
+"$BIN" compile "$ROOT/examples/sprite_physics.al" -o "$TMP/sprite-physics.room"
+SPRITE_PHYSICS_UI="$("$BIN" ui "$TMP/sprite-physics.room")"
+if [[ "$SPRITE_PHYSICS_UI" != *'"kind":"sprite","id":"hero","text":"sprites/hero.png"'* || "$SPRITE_PHYSICS_UI" != *'"x":10,"y":21,"w":32,"h":32'* ]]; then
+  printf 'AL sprite/gravity runtime payload failed:\\n%s\\n' "$SPRITE_PHYSICS_UI" >&2
   exit 1
 fi
 
