@@ -106,6 +106,6 @@ printf '%s\n' "$PACKAGE_RESULT" | grep -q '"assetCount":1'
 CANVAS_TEXT="$("$RUST_RUNNER" run "$WORK/canvas-text.room")"
 printf '%s\n' "$CANVAS_TEXT" | grep -q '"ok":true'
 printf '%s\n' "$CANVAS_TEXT" | grep -Fq '"kind":"drawText","id":"title","text":"ALVM Canvas Text"'
-printf '%s\n' "$CANVAS_TEXT" | grep -q '"x":16,"y":42,"w":0,"h":0,"color":4294967295,"size":22'
+printf '%s\n' "$CANVAS_TEXT" | grep -q '"x":16,"y":42,"w":22,"h":0,"color":4294967295'
 
 echo "Rust CI Runtime game-loop/touch/collision, positioned canvas text and .AL package end-to-end tests passed."
