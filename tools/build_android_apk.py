@@ -118,6 +118,38 @@ def verify_room(path: Path) -> None:
         raise BuildError("Expected .room v10 bytecode, compiler created v" + str(version) + ".")
 
 
+def copy_application_assets(source_value: str, destination: Path) -> int:
+    """Copy a bounded, symlink-free asset directory into the generated APK assets."""
+    source = Path(source_value).expanduser().resolve()
+    if not source.is_dir():
+        raise BuildError("--assets-dir must point to an existing directory: " + str(source))
+    copied_bytes = 0
+    copied_files = 0
+    for item in sorted(source.rglob("*")):
+        if item.is_symlink():
+            raise BuildError("Symlinks are not allowed in --assets-dir: " + str(item))
+        if not item.is_file():
+            continue
+        relative = item.relative_to(source)
+        parts = relative.parts
+        if not parts or any(part in ("", ".", "..") for part in parts):
+            raise BuildError("Unsafe asset path: " + str(relative))
+        if len(relative.as_posix()) > 240:
+            raise BuildError("Asset path is too long: " + str(relative))
+        if any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in parts):
+            raise BuildError("Asset path contains unsupported characters: " + str(relative))
+        if relative.as_posix() == "main.room":
+            raise BuildError("The asset directory cannot replace the generated main.room.")
+        copied_bytes += item.stat().st_size
+        copied_files += 1
+        if copied_bytes > 64 * 1024 * 1024 or copied_files > 2048:
+            raise BuildError("--assets-dir exceeds the 64 MiB / 2048 file export limit.")
+        target = destination.joinpath(*parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+    return copied_files
+
+
 def require_elf_arch(data: bytes, abi: str) -> None:
     if len(data) < 20 or data[:4] != b"\x7fELF":
         raise BuildError("Extracted libalvm.so is not a valid ELF shared library.")
@@ -260,6 +292,9 @@ def build(args: argparse.Namespace) -> Path:
     assets_dir = project_dir / "app" / "src" / "main" / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(room_file, assets_dir / "main.room")
+    if args.assets_dir:
+        copied = copy_application_assets(args.assets_dir, assets_dir)
+        print("Packaged application assets: " + str(copied))
     source_dir = project_dir / "AL_Source"
     source_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, source_dir / (safe_output_name(source.name)))
@@ -303,6 +338,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--application-id", default=None, help="Android package ID")
     parser.add_argument("--abi", choices=SUPPORTED_ABIS, default="arm64-v8a")
     parser.add_argument("--source-root", default=None, help="Restrict the source file to this directory")
+    parser.add_argument("--assets-dir", default=None, help="Optional directory copied into the generated APK assets/")
     parser.add_argument("--output", default=None, help="APK output path (default: dist/<app-name>.apk)")
     parser.add_argument("--work-dir", default="build/android-apk", help="Temporary build directory")
     parser.add_argument("--gradle", default=os.environ.get("GRADLE", "gradle"),
