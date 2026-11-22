@@ -4,6 +4,8 @@ AL is an independent programming language with its own grammar, lexer, parser, s
 
 The consolidated status, dependencies and acceptance criteria for all remaining subsystems are tracked in [docs/MASTER_IMPLEMENTATION_PLAN.md](docs/MASTER_IMPLEMENTATION_PLAN.md). This is the master feature list; its status table distinguishes implemented, partial and planned work.
 
+The next planned stable release after the current 0.9.6 development line is **1.0.0**. Its requested modules, current implementation status and acceptance gates are tracked in [docs/V1.0.0_RELEASE_SCOPE.md](docs/V1.0.0_RELEASE_SCOPE.md). The scope document does not mark planned work as implemented.
+
 ## Language identity
 
 - **Keyword spellings/vocabulary:** AL uses its own grammar with familiar English spellings influenced by Python.
