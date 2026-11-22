@@ -290,7 +290,7 @@ fi
 
 "$BIN" compile "$ROOT/examples/canvas_text.al" -o "$TMP/canvas-text.room"
 CANVAS_TEXT="$("$BIN" ui "$TMP/canvas-text.room")"
-if [[ "$CANVAS_TEXT" != *'"kind":"drawText","id":"title","text":"ALVM Canvas Text"'* || "$CANVAS_TEXT" != *'"x":16,"y":42'* || "$CANVAS_TEXT" != *'"color":4294967295'* || "$CANVAS_TEXT" != *'"size":22'* ]]; then
+if [[ "$CANVAS_TEXT" != *'"kind":"drawText","id":"title","text":"ALVM Canvas Text"'* || "$CANVAS_TEXT" != *'"x":16,"y":42'* || "$CANVAS_TEXT" != *'"color":4294967295'* || "$CANVAS_TEXT" != *'"w":22'* ]]; then
   printf 'AL UI.textAt canvas rendering payload failed:\n%s\n' "$CANVAS_TEXT" >&2
   exit 1
 fi
