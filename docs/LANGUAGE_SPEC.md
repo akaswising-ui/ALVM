@@ -218,6 +218,19 @@ UI.remove("player");
 - The C++ ALVM executes drawing calls and serializes scene objects; Android renders them using a native Canvas-backed View.
 - This stage provides a static 2D scene renderer. A timed game loop, sprite/image loading, touch callbacks, physics, and collision APIs are not implemented yet.
 
+### Positioned canvas text
+
+`UI.textAt(string id, string value, int x, int y, int size, int argb)` draws text at the supplied 320×480 logical-canvas coordinates. The `y` value is the text baseline, `size` must be between 6 and 96 logical pixels, and `argb` is a 32-bit ARGB color stored in an AL integer. Reusing an ID updates the existing text object. It is rendered in the same native Canvas layer as `UI.rect`, `UI.circle` and `UI.line`.
+
+```al
+change window "CanvasText";
+UI.game("Canvas text");
+UI.rect("background", 0, 0, 320, 480, 4278190335);
+UI.textAt("title", "Hello from AL", 16, 44, 22, 4294967295);
+```
+
+The C++ compiler/VM and Rust CI Runtime implement identical `.room v10` `UiCall` behavior. Text is painted natively by Android's Canvas-backed Game2DView, not by a browser preview.
+
 ## Compound assignment and increment/decrement
 
 The compiler accepts the following statement forms for simple variables:
