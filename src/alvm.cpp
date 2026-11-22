@@ -780,8 +780,11 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
           if(!std::isfinite(gravity)||std::fabs(gravity)>10000.0)throw Error("UI.physicsStep gravity is outside the supported range");
           if(!std::isfinite(dt)||dt<0.0||dt>0.1)throw Error("UI.physicsStep deltaSeconds must be between 0 and 0.1");
           auto position=activeUiPhysicsY.find(id);if(position==activeUiPhysicsY.end())position=activeUiPhysicsY.emplace(id,(double)element->y).first;
-          double& velocity=activeUiVelocityY[id];velocity+=gravity*dt;position->second+=velocity*dt;
-          if(!std::isfinite(position->second)||position->second<(double)std::numeric_limits<int64_t>::min()||position->second>(double)std::numeric_limits<int64_t>::max())throw Error("UI.physicsStep position overflow");
+          double& velocity=activeUiVelocityY[id];velocity+=gravity*dt;
+          if(!std::isfinite(velocity)||std::fabs(velocity)>1000000000.0)throw Error("UI.physicsStep velocity overflow");
+          position->second+=velocity*dt;
+          const double int64Limit=9223372036854775808.0;
+          if(!std::isfinite(position->second)||position->second < -int64Limit || position->second >= int64Limit)throw Error("UI.physicsStep position overflow");
           element->y=(int64_t)std::llround(position->second);
         }
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
