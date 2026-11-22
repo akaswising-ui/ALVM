@@ -120,4 +120,20 @@ assert (label.get("x"), label.get("y"), label.get("w"), label.get("color")) == (
 ), label
 PY
 
-echo "Rust CI Runtime game-loop/touch/collision, positioned canvas text and .AL package end-to-end tests passed."
+"$ALVM_BIN" compile "$ROOT/examples/sprite_physics.al" -o "$WORK/sprite-physics.room"
+SPRITE_PHYSICS="$("$RUST_RUNNER" run "$WORK/sprite-physics.room")"
+python3 - "$SPRITE_PHYSICS" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result.get("ok") is True, result
+items = result.get("ui", {}).get("elements", [])
+hero = next((item for item in items if item.get("id") == "hero"), None)
+assert hero is not None, result
+assert hero.get("kind") == "sprite", hero
+assert hero.get("text") == "sprites/hero.png", hero
+assert (hero.get("x"), hero.get("y"), hero.get("w"), hero.get("h")) == (10, 21, 32, 32), hero
+PY
+
+echo "Rust CI Runtime game-loop/touch/collision, sprite, gravity physics, positioned canvas text and .AL package end-to-end tests passed."
