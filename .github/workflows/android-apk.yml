@@ -29,6 +29,11 @@ on:
         options:
           - arm64-v8a
           - armeabi-v7a
+      assets_dir:
+        description: "Optional repository directory containing sprite/image assets (copied under APK assets/)"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   build-apk:
@@ -38,6 +43,7 @@ jobs:
       AL_APP_NAME: ${{ github.event.inputs.app_name || 'AL Calculator' }}
       AL_APPLICATION_ID: ${{ github.event.inputs.application_id || 'com.alvm.generated.calculator' }}
       AL_ABI: ${{ github.event.inputs.abi || 'arm64-v8a' }}
+      AL_ASSETS_DIR: ${{ github.event.inputs.assets_dir || '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -92,11 +98,16 @@ jobs:
 
       - name: Compile AL source and generate standalone Android APK
         run: |
+          ASSET_ARGS=()
+          if [[ -n "$AL_ASSETS_DIR" ]]; then
+            ASSET_ARGS+=(--assets-dir "$AL_ASSETS_DIR")
+          fi
           python3 tools/build_android_apk.py "$AL_SOURCE_FILE" \
             --source-root "$GITHUB_WORKSPACE" \
             --name "$AL_APP_NAME" \
             --application-id "$AL_APPLICATION_ID" \
             --abi "$AL_ABI" \
+            "${ASSET_ARGS[@]}" \
             --output dist/ALVM-standalone-player.apk
 
       - name: Upload generated Android Player APK
