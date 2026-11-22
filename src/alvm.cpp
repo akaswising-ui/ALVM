@@ -609,7 +609,7 @@ static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;th
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
-struct UiElement { std::string kind,id,text,callback; int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF,size=16; };
+struct UiElement { std::string kind,id,text,callback; int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF; };
 static std::string activeUiTitle="AL Application";
 static bool activeUiVisible=false;
 static std::vector<UiElement> activeUiElements;
@@ -626,7 +626,7 @@ static std::string jsonEscape(const std::string& value){
 static std::string uiJson(){
   std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"visible\":"+(activeUiVisible?"true":"false")+",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate)+",\"elements\":[";
   for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
-    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+",\"size\":"+std::to_string(e.size)+"}";
+    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+"}";
   }return out+"]}";
 }
 static bool uiElementsCollide(const UiElement& a,const UiElement& b){
@@ -742,7 +742,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         if(i.text=="openWindow"){std::string title=asString(0);if(!validWindowName(title))throw Error("invalid window name in .room bytecode");activeUiTitle=std::move(title);activeUiVisible=true;}
         else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game")activeUiElements.clear();}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
-        else if(i.text=="textAt"){UiElement label;label.kind="drawText";label.id=asString(0);label.text=asString(1);label.x=asInt(2);label.y=asInt(3);label.size=asInt(4);label.color=asInt(5);if(label.size<6||label.size>96)throw Error("UI.textAt size must be between 6 and 96");if(auto* old=findElement(label.id))*old=label;else activeUiElements.push_back(label);}
+        else if(i.text=="textAt"){UiElement label;label.kind="drawText";label.id=asString(0);label.text=asString(1);label.x=asInt(2);label.y=asInt(3);label.w=asInt(4);label.color=asInt(5);if(label.w<6||label.w>96)throw Error("UI.textAt size must be between 6 and 96");if(auto* old=findElement(label.id))*old=label;else activeUiElements.push_back(label);}
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
         else if(i.text=="rect"||i.text=="circle"||i.text=="line"){std::string id=asString(0);UiElement shape;shape.kind=i.text;shape.id=id;if(i.text=="rect"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);if(shape.w<0||shape.h<0)throw Error("UI.rect width and height cannot be negative");}else if(i.text=="circle"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.color=asInt(4);if(shape.w<0)throw Error("UI.circle radius cannot be negative");}else{shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);}if(auto* e=findElement(id))*e=shape;else activeUiElements.push_back(shape);}
         else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());}
