@@ -317,7 +317,7 @@ test ! -e "$TMP/import-traversal.room"
 
 "$BIN" compile "$ROOT/examples/game_engine_foundation.al" -o "$TMP/game-engine.room"
 ENGINE_UI="$("$BIN" ui "$TMP/game-engine.room")"
-for required in '"kind":"node"' '"parent":"world"' '"frameCount":8' '"animationFps":12' '"kind":"cube3D"' '"camera3D"' '"frameRate":30'; do
+for required in '"kind":"node"' '"parent":"world"' '"frameCount":8' '"animationFps":12' '"kind":"cube3D"' '"rotationY":25.000000' '"scale3D":1.250000' '"camera3D"' '"frameRate":30'; do
   if [[ "$ENGINE_UI" != *"$required"* ]]; then
     printf 'Game engine UI missing %s:\\n%s\\n' "$required" "$ENGINE_UI" >&2
     exit 1
