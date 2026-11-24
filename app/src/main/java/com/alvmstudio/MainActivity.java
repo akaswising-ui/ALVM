@@ -418,7 +418,7 @@ public class MainActivity extends Activity {
                 ? "{\"title\":\"AL Application\",\"visible\":false,\"elements\":[]}"
                 : ui.toString();
         if (renderNativeUi && runtimeOk) publishNativeUi();
-        else if (!runtimeOk) hideNativeProgramUi();
+        else if (!runtimeOk || (ui != null && !ui.optBoolean("visible", false))) hideNativeProgramUi();
         if (!runtimeOk) {
             return "✕ " + result.optString("error", "CI Runtime execution failed.");
         }
@@ -1425,7 +1425,7 @@ public class MainActivity extends Activity {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            if (!lastRuntimeUiJson.isEmpty() && activeGame2DView != null) activeGame2DView.updateRuntimeUi(lastRuntimeUiJson);
+                            refreshNativeUiAfterInput();
                         } catch (Exception error) {
                             showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
@@ -1439,7 +1439,7 @@ public class MainActivity extends Activity {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            if (!lastRuntimeUiJson.isEmpty() && activeGame2DView != null) activeGame2DView.updateRuntimeUi(lastRuntimeUiJson);
+                            refreshNativeUiAfterInput();
                         } catch (Exception error) {
                             showOutputInWeb("AL keyboard event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
@@ -1450,6 +1450,8 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(480));
                 gameParams.bottomMargin = dp(12);
                 content.addView(gameView, gameParams);
+            } else {
+                activeGame2DView = null;
             }
 
             for (int index = 0; index < elements.length(); index++) {
@@ -1545,6 +1547,18 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private void refreshNativeUiAfterInput() {
+        if (lastRuntimeUiJson == null || lastRuntimeUiJson.trim().isEmpty()) return;
+        try {
+            JSONObject ui = new JSONObject(lastRuntimeUiJson);
+            JSONArray elements = ui.optJSONArray("elements");
+            if (activeGame2DView != null) activeGame2DView.updateRuntimeUi(lastRuntimeUiJson);
+            if (elements != null) updateNativeUiText(elements);
+        } catch (Exception ignored) {
+            // Invalid UI payloads are surfaced by the runtime result, not allowed to crash input dispatch.
+        }
+    }
 
     private String nativeUiShape(JSONArray elements) {
         StringBuilder shape = new StringBuilder();
