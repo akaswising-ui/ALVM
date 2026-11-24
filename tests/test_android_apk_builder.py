@@ -79,6 +79,31 @@ class AndroidApkBuilderTests(unittest.TestCase):
             self.assertEqual(copied, 1)
             self.assertEqual((output / "sprites" / "player.png").read_bytes(), b"png-data")
 
+    def test_decodes_bundled_base64_png_assets(self) -> None:
+        import base64
+
+        png_bytes = b"\\x89PNG\\r\\n\\x1a\\nasset"
+        encoded = base64.b64encode(png_bytes)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            (source / "sprites").mkdir(parents=True)
+            (source / "sprites" / "runner.png.b64").write_bytes(encoded)
+            output = root / "apk-assets"
+            copied = BUILDER.copy_application_assets(str(source), output)
+            self.assertEqual(copied, 1)
+            self.assertEqual((output / "sprites" / "runner.png").read_bytes(), png_bytes)
+            self.assertFalse((output / "sprites" / "runner.png.b64").exists())
+
+    def test_rejects_invalid_base64_png_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "broken.png.b64").write_text("not base64!", encoding="ascii")
+            with self.assertRaises(BUILDER.BuildError):
+                BUILDER.copy_application_assets(str(source), root / "output")
+
     def test_rejects_unsafe_asset_path_characters(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
