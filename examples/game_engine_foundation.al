@@ -22,6 +22,7 @@ room GameEngineFoundation {
         UI.camera3D(0, 0, -300, 0, 0, 240);
         UI.cube3D("cubeA", -35, 0, 0, 70, 4294901760);
         UI.material3D("cubeA", 0.85);
+        UI.transform3D("cubeA", -35, 0, 0, 0, 25, 0, 1.25);
         UI.cube3D("cubeB", 0, 0, 0, 70, 4278255360);
         AL.print(UI.collides3D("cubeA", "cubeB"));
     }
