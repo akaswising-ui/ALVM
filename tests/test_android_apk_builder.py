@@ -82,7 +82,7 @@ class AndroidApkBuilderTests(unittest.TestCase):
     def test_decodes_bundled_base64_png_assets(self) -> None:
         import base64
 
-        png_bytes = b"\\x89PNG\\r\\n\\x1a\\nasset"
+        png_bytes = b"\x89PNG\r\n\x1a\nasset"
         encoded = base64.b64encode(png_bytes)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
