@@ -56,7 +56,7 @@ class AndroidApkBuilderTests(unittest.TestCase):
             BUILDER.require_elf_arch(bytes(valid), "armeabi-v7a")
 
         emulator = bytearray(20)
-        emulator[:4] = b"\\x7fELF"
+        emulator[:4] = b"\x7fELF"
         emulator[18:20] = struct.pack("<H", 62)
         BUILDER.require_elf_arch(bytes(emulator), "x86_64")
         with self.assertRaises(BUILDER.BuildError):
