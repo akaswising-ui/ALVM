@@ -157,6 +157,8 @@ assert by_id["hero"]["parent"] == "world", by_id.get("hero")
 assert (by_id["hero"]["columns"], by_id["hero"]["rows"], by_id["hero"]["frameCount"]) == (4, 2, 8), by_id["hero"]
 assert by_id["hero"]["animationFps"] == 12, by_id["hero"]
 assert by_id["cubeA"]["kind"] == "cube3D", by_id.get("cubeA")
+assert by_id["cubeA"]["rotationY"] == 25.0, by_id["cubeA"]
+assert by_id["cubeA"]["scale3D"] == 1.25, by_id["cubeA"]
 assert ui["camera3D"]["focal"] == 240, ui
 assert ui["frameRate"] == 30, ui
 assert result.get("output") == "true", result
