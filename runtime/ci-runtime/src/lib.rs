@@ -498,6 +498,10 @@ struct UiElement {
     rotation: f64,
     scale_x: f64,
     scale_y: f64,
+    rotation_x: f64,
+    rotation_y: f64,
+    rotation_z: f64,
+    scale_3d: f64,
     columns: i64,
     rows: i64,
     frame: i64,
@@ -510,6 +514,7 @@ impl Default for UiElement {
     fn default() -> Self {
         Self { kind:String::new(), element_id:String::new(), text:String::new(), callback:String::new(), parent:String::new(),
             x:0,y:0,w:0,h:0,color:0xFFFFFFFF,z:0,rotation:0.0,scale_x:1.0,scale_y:1.0,
+            rotation_x:0.0,rotation_y:0.0,rotation_z:0.0,scale_3d:1.0,
             columns:1,rows:1,frame:0,frame_count:1,animation_fps:0,animation_loop:true,light:1.0 }
     }
 }
@@ -944,6 +949,16 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         if !sx.is_finite()||!sy.is_finite()||!rotation.is_finite()||!(0.05..=20.0).contains(&sx)||!(0.05..=20.0).contains(&sy)||rotation.abs()>36000.0{return error("UI.transform values are outside the supported range");}
         let index=state.find(&id).ok_or_else(||RuntimeError("UI.transform unknown scene item".into()))?;
         let item=&mut state.elements[index];item.x=x;item.y=y;item.scale_x=sx;item.scale_y=sy;item.rotation=rotation;
+    } else if name == "transform3D" {
+        let id=expect_string(args,0)?;
+        let x=expect_int_arg(args,1)?;let y=expect_int_arg(args,2)?;let z=expect_int_arg(args,3)?;
+        let rx=expect_int_arg(args,4)?;let ry=expect_int_arg(args,5)?;let rz=expect_int_arg(args,6)?;
+        let scale=match args.get(7){Some(RuntimeValue::Double(value))=>*value,_=>return error("UI.transform3D scale must be double")};
+        if !scale.is_finite()||!(0.05..=20.0).contains(&scale){return error("UI.transform3D scale must be between 0.05 and 20");}
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.transform3D target cube does not exist".into()))?;
+        let cube=&mut state.elements[index];
+        if cube.kind!="cube3D"{return error("UI.transform3D requires an existing cube3D");}
+        cube.x=x;cube.y=y;cube.z=z;cube.rotation_x=rx as f64;cube.rotation_y=ry as f64;cube.rotation_z=rz as f64;cube.scale_3d=scale;
     } else if name == "keyArea" {
         let id=expect_string(args,0)?;let key=expect_string(args,1)?;let callback=expect_string(args,2)?;
         let valid=matches!(key.as_str(),"ANY"|"LEFT"|"RIGHT"|"UP"|"DOWN"|"SPACE"|"ENTER"|"ESCAPE")||(key.len()==1&&key.as_bytes()[0].is_ascii_uppercase());
