@@ -55,6 +55,18 @@ class AndroidApkBuilderTests(unittest.TestCase):
         with self.assertRaises(BUILDER.BuildError):
             BUILDER.require_elf_arch(bytes(valid), "armeabi-v7a")
 
+        emulator = bytearray(20)
+        emulator[:4] = b"\\x7fELF"
+        emulator[18:20] = struct.pack("<H", 62)
+        BUILDER.require_elf_arch(bytes(emulator), "x86_64")
+        with self.assertRaises(BUILDER.BuildError):
+            BUILDER.require_elf_arch(bytes(valid), "x86_64")
+
+
+
+    def test_emulator_abi_is_supported(self) -> None:
+        self.assertIn("x86_64", BUILDER.SUPPORTED_ABIS)
+        self.assertEqual(BUILDER.ELF_MACHINE["x86_64"], 62)
 
     def test_copies_safe_sprite_assets_into_player_assets_folder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
