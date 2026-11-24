@@ -331,7 +331,8 @@ if [[ "$ENGINE_KEYS" != *'"text":"LEFT"'* ]]; then
   exit 1
 fi
 
-if "$BIN" run <("$BIN" compile "$ROOT/tests/scene_graph_cycle.al" -o "$TMP/scene-cycle.room" >/dev/null; cat "$TMP/scene-cycle.room") >/dev/null 2>&1; then
+"$BIN" compile "$ROOT/tests/scene_graph_cycle.al" -o "$TMP/scene-cycle.room"
+if "$BIN" run "$TMP/scene-cycle.room" >/dev/null 2>&1; then
   echo "FAIL: a cyclic scene graph was accepted" >&2
   exit 1
 fi
