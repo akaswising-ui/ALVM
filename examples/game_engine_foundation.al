@@ -25,6 +25,7 @@ room GameEngineFoundation {
         UI.transform3D("cubeA", -35, 0, 0, 0, 25, 0, 1.25);
         UI.cube3D("cubeB", 0, 0, 0, 70, 4278255360);
         AL.print(UI.collides3D("cubeA", "cubeB"));
+        UI.frameLoop("update", 30);
     }
 
     public static void onKey(string key) {
