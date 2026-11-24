@@ -588,4 +588,5 @@ public final class PlayerActivity extends Activity {
             super.onAttachedToWindow();
             requestFocus();
         }
-    }}
+    }
+}
