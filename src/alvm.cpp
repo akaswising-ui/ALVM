@@ -715,15 +715,19 @@ static void physicsWorldStep2D(double dt,double gravityX,double gravityY,double 
     for(size_t j=i+1;j<activeUiElements.size();++j){
       UiElement& b=activeUiElements[j];auto mb=activeUiBodyMass.find(b.id);
       if(mb==activeUiBodyMass.end()||!physicsDrawable(b))continue;
-      const double ahx=a.w*0.5,ahy=(a.kind=="circle"?a.w:a.h)*0.5;
-      const double bhx=b.w*0.5,bhy=(b.kind=="circle"?b.w:b.h)*0.5;
-      double overlapX=ahx+bhx-std::fabs((double)a.x-(double)b.x);
-      double overlapY=ahy+bhy-std::fabs((double)a.y-(double)b.y);
+      const double ax=(double)a.x+(a.kind=="circle"?0.0:a.w*0.5);
+      const double ay=(double)a.y+(a.kind=="circle"?0.0:a.h*0.5);
+      const double bx=(double)b.x+(b.kind=="circle"?0.0:b.w*0.5);
+      const double by=(double)b.y+(b.kind=="circle"?0.0:b.h*0.5);
+      const double ahx=(a.kind=="circle"?a.w:a.w*0.5),ahy=(a.kind=="circle"?a.w:a.h*0.5);
+      const double bhx=(b.kind=="circle"?b.w:b.w*0.5),bhy=(b.kind=="circle"?b.w:b.h*0.5);
+      double overlapX=ahx+bhx-std::fabs(ax-bx);
+      double overlapY=ahy+bhy-std::fabs(ay-by);
       if(overlapX<=0.0||overlapY<=0.0)continue;
       const double invA=ma->second>0.0?1.0/ma->second:0.0,invB=mb->second>0.0?1.0/mb->second:0.0;
       const double inverseSum=invA+invB;if(inverseSum<=0.0)continue;
       const bool useX=overlapX<overlapY;
-      const double sign=useX?((a.x<b.x)?1.0:-1.0):((a.y<b.y)?1.0:-1.0);
+      const double sign=useX?((ax<bx)?1.0:-1.0):((ay<by)?1.0:-1.0);
       const double penetration=(useX?overlapX:overlapY)+0.001;
       if(useX){activeUiBodyPositionX[a.id]-=sign*penetration*invA/inverseSum;activeUiBodyPositionX[b.id]+=sign*penetration*invB/inverseSum;}
       else{activeUiBodyPositionY[a.id]-=sign*penetration*invA/inverseSum;activeUiBodyPositionY[b.id]+=sign*penetration*invB/inverseSum;}
@@ -1025,6 +1029,7 @@ static std::string expandImportsText(const std::string& source,const std::filesy
   std::regex importPattern(R"ALIMPORT(^[ \t]*import[ \t]+"([^"]+)"[ \t]*;[ \t]*(?://.*)?$)ALIMPORT");
   std::istringstream input(source);std::ostringstream output;std::string line;
   while(std::getline(input,line)){
+    if(!line.empty()&&line.back()=='\\r')line.pop_back();
     std::smatch match;
     if(!std::regex_match(line,match,importPattern)){output<<line<<'\n';continue;}
     std::filesystem::path requested(match[1].str());
