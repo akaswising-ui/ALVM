@@ -9,17 +9,17 @@ on:
       source_file:
         description: "Repository path to the AL source (.al)"
         required: true
-        default: "examples/sprite_physics.al"
+        default: "examples/neon_runner.al"
         type: string
       app_name:
         description: "Name shown below the Android app icon"
         required: true
-        default: "AL Sprite Physics Demo"
+        default: "AL Neon Runner Demo"
         type: string
       application_id:
         description: "Android package ID"
         required: true
-        default: "com.alvm.generated.spritephysics"
+        default: "com.alvm.generated.neonrunner"
         type: string
       abi:
         description: "CPU architecture for the generated APK"
@@ -40,9 +40,9 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     env:
-      AL_SOURCE_FILE: ${{ github.event.inputs.source_file || 'examples/sprite_physics.al' }}
-      AL_APP_NAME: ${{ github.event.inputs.app_name || 'AL Sprite Physics Demo' }}
-      AL_APPLICATION_ID: ${{ github.event.inputs.application_id || 'com.alvm.generated.spritephysics' }}
+      AL_SOURCE_FILE: ${{ github.event.inputs.source_file || 'examples/neon_runner.al' }}
+      AL_APP_NAME: ${{ github.event.inputs.app_name || 'AL Neon Runner Demo' }}
+      AL_APPLICATION_ID: ${{ github.event.inputs.application_id || 'com.alvm.generated.neonrunner' }}
       AL_ABI: ${{ github.event.inputs.abi || 'arm64-v8a' }}
       AL_ASSETS_DIR: ${{ github.event.inputs.assets_dir || 'examples/assets' }}
     steps:
