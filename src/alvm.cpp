@@ -1061,7 +1061,7 @@ static std::string expandImportsText(const std::string& source,const std::filesy
   }
   return output.str();
 }
-static std::string loadSourceWithImports(const std::filesystem::path& sourcePath){
+std::string loadSourceWithImports(const std::filesystem::path& sourcePath){
   std::error_code ec;auto source=std::filesystem::canonical(sourcePath,ec);
   if(ec||!std::filesystem::is_regular_file(source))throw Error("Cannot open AL source file");
   auto root=source.parent_path();std::ifstream file(source,std::ios::binary);if(!file)throw Error("Cannot open AL source file");
