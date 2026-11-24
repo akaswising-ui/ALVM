@@ -337,4 +337,12 @@ if "$BIN" run "$TMP/scene-cycle.room" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "PASS: AL compiler, compile-time module imports, scene graph, sprite animation, physics, keyboard callbacks and 3D foundation"
+for fixture in sprite_sheet_type_error physics_world_type_error transform3d_type_error key_area_callback_type_error; do
+  if "$BIN" compile "$ROOT/tests/$fixture.al" -o "$TMP/$fixture.room" 2>/dev/null; then
+    echo "FAIL: $fixture was accepted" >&2
+    exit 1
+  fi
+  test ! -e "$TMP/$fixture.room"
+done
+
+echo "PASS: AL compiler, compile-time module imports, scene graph, sprite animation, physics, keyboard callbacks, 3D foundation and negative type-check fixtures"
