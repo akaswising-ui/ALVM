@@ -20,6 +20,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 
@@ -28,6 +29,9 @@ TEMPLATE = ROOT / "app" / "src" / "main" / "assets" / "android-export-template"
 STUDIO_APK = ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
 MAX_ROOM_BYTES = 64 * 1024 * 1024
+MAX_ASSET_BYTES = 64 * 1024 * 1024
+MAX_ASSET_FILES = 2048
+ASSET_IO_CHUNK_BYTES = 1024 * 1024
 SUPPORTED_ABIS = ("arm64-v8a", "armeabi-v7a", "x86_64")
 ELF_MACHINE = {"arm64-v8a": 183, "armeabi-v7a": 40, "x86_64": 62}
 
@@ -120,8 +124,64 @@ def verify_room(path: Path) -> None:
         raise BuildError("Expected .room v10 bytecode, compiler created v" + str(version) + ".")
 
 
+def _copy_asset_payload(
+    source: Path, target: Path, remaining_bytes: int, decode_png_base64: bool
+) -> int:
+    """Stream one asset to a temporary file and atomically publish it within the size budget."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    copied = 0
+    png_prefix = bytearray()
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=target.parent, prefix=target.name + ".", suffix=".tmp", delete=False
+        ) as output:
+            temporary_path = Path(output.name)
+            with source.open("rb") as input_stream:
+                if decode_png_base64:
+                    while True:
+                        encoded = input_stream.read(ASSET_IO_CHUNK_BYTES)
+                        if not encoded:
+                            break
+                        try:
+                            payload = base64.b64decode(encoded, validate=True)
+                        except (binascii.Error, ValueError) as error:
+                            raise BuildError("Invalid base64 PNG asset: " + str(source)) from error
+                        if b"=" in encoded and input_stream.read(1):
+                            raise BuildError("Invalid base64 PNG asset: trailing data after padding.")
+                        if copied + len(payload) > remaining_bytes:
+                            raise BuildError("Decoded assets exceed the 64 MiB export limit.")
+                        if len(png_prefix) < 8:
+                            png_prefix.extend(payload[: 8 - len(png_prefix)])
+                        output.write(payload)
+                        copied += len(payload)
+                        if b"=" in encoded:
+                            break
+                    if bytes(png_prefix) != b"\x89PNG\r\n\x1a\n":
+                        raise BuildError("Decoded asset is not a PNG file: " + str(source))
+                else:
+                    while True:
+                        payload = input_stream.read(ASSET_IO_CHUNK_BYTES)
+                        if not payload:
+                            break
+                        if copied + len(payload) > remaining_bytes:
+                            raise BuildError("Application assets exceed the 64 MiB export limit.")
+                        output.write(payload)
+                        copied += len(payload)
+
+        if copied == 0:
+            raise BuildError("Application asset is empty: " + str(source))
+        os.replace(temporary_path, target)
+        temporary_path = None
+        return copied
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def copy_application_assets(source_value: str, destination: Path) -> int:
-    """Copy bounded assets; decode checked *.png.b64 source assets to real PNG files."""
+    """Copy assets safely with bounded streaming and checked *.png.b64 decoding."""
     source = Path(source_value).expanduser().resolve()
     if not source.is_dir():
         raise BuildError("--assets-dir must point to an existing directory: " + str(source))
@@ -143,34 +203,22 @@ def copy_application_assets(source_value: str, destination: Path) -> int:
             raise BuildError("Asset path contains unsupported characters: " + str(relative))
         if relative.as_posix() == "main.room":
             raise BuildError("The asset directory cannot replace the generated main.room.")
+        if copied_files >= MAX_ASSET_FILES:
+            raise BuildError("Application assets exceed the 2048 file export limit.")
 
-        if relative.as_posix().endswith(".png.b64"):
-            if item.stat().st_size > 90 * 1024 * 1024:
-                raise BuildError("Encoded PNG asset exceeds the 64 MiB decoded limit.")
-            try:
-                payload = base64.b64decode(item.read_bytes(), validate=True)
-            except (binascii.Error, ValueError) as error:
-                raise BuildError("Invalid base64 PNG asset: " + str(relative)) from error
-            if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
-                raise BuildError("Decoded asset is not a PNG file: " + str(relative))
-            target_relative = Path(relative.as_posix()[:-4])
-        else:
-            payload = item.read_bytes()
-            target_relative = relative
-
+        is_encoded_png = relative.as_posix().endswith(".png.b64")
+        target_relative = Path(relative.as_posix()[:-4]) if is_encoded_png else relative
         target_name = target_relative.as_posix()
         if target_name in written_paths:
             raise BuildError("Duplicate application asset target: " + target_name)
         written_paths.add(target_name)
-        copied_bytes += len(payload)
-        copied_files += 1
-        if copied_bytes > 64 * 1024 * 1024 or copied_files > 2048:
-            raise BuildError("--assets-dir exceeds the 64 MiB / 2048 file export limit.")
-        target = destination.joinpath(*target_relative.parts)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(payload)
-    return copied_files
 
+        remaining_bytes = MAX_ASSET_BYTES - copied_bytes
+        copied = _copy_asset_payload(item, destination.joinpath(*target_relative.parts),
+                                     remaining_bytes, is_encoded_png)
+        copied_bytes += copied
+        copied_files += 1
+    return copied_files
 
 def require_elf_arch(data: bytes, abi: str) -> None:
     if len(data) < 20 or data[:4] != b"\x7fELF":
