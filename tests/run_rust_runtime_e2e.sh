@@ -137,12 +137,12 @@ assert (hero.get("x"), hero.get("y"), hero.get("w"), hero.get("h")) == (10, 21, 
 PY
 
 "$ALVM_BIN" compile "$ROOT/examples/multi_module_link.al" -o "$WORK/multi-module.room"
-MODULE_LINK="$(\"$RUST_RUNNER\" run \"$WORK/multi-module.room\")"
-printf '%s\\n' "$MODULE_LINK" | grep -q '"ok":true'
-printf '%s\\n' "$MODULE_LINK" | grep -q '"output":"42"'
+MODULE_LINK="$("$RUST_RUNNER" run "$WORK/multi-module.room")"
+printf '%s\n' "$MODULE_LINK" | grep -q '"ok":true'
+printf '%s\n' "$MODULE_LINK" | grep -q '"output":"42"'
 
 "$ALVM_BIN" compile "$ROOT/examples/game_engine_foundation.al" -o "$WORK/game-engine.room"
-ENGINE_INITIAL="$(\"$RUST_RUNNER\" run \"$WORK/game-engine.room\")"
+ENGINE_INITIAL="$("$RUST_RUNNER" run "$WORK/game-engine.room")"
 python3 - "$ENGINE_INITIAL" <<'PY'
 import json
 import sys
@@ -163,7 +163,7 @@ assert ui["camera3D"]["focal"] == 240, ui
 assert ui["frameRate"] == 30, ui
 assert result.get("output") == "true", result
 PY
-ENGINE_KEY="$(\"$RUST_RUNNER\" run \"$WORK/game-engine.room\" --event onKey LEFT)"
+ENGINE_KEY="$("$RUST_RUNNER" run "$WORK/game-engine.room" --event onKey LEFT)"
 python3 - "$ENGINE_KEY" <<'PY'
 import json
 import sys
