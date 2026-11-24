@@ -702,10 +702,23 @@ fn ui_elements_collide(left: &UiElement, right: &UiElement) -> bool {
     lx1 < rx2 && lx2 > rx1 && ly1 < ry2 && ly2 > ry1
 }
 
+fn cube_aabb_extent_3d(cube:&UiElement)->[f64;3] {
+    let half=(cube.w.max(1) as f64)*0.5*cube.scale_3d;
+    let rx=cube.rotation_x.to_radians();let ry=cube.rotation_y.to_radians();let rz=cube.rotation_z.to_radians();
+    let (sx,cx)=rx.sin_cos();let (sy,cy)=ry.sin_cos();let (sz,cz)=rz.sin_cos();
+    let r00=cz*cy;let r01=cz*sy*sx-sz*cx;let r02=cz*sy*cx+sz*sx;
+    let r10=sz*cy;let r11=sz*sy*sx+cz*cx;let r12=sz*sy*cx-cz*sx;
+    let r20=-sy;let r21=cy*sx;let r22=cy*cx;
+    [half*(r00.abs()+r01.abs()+r02.abs()),
+     half*(r10.abs()+r11.abs()+r12.abs()),
+     half*(r20.abs()+r21.abs()+r22.abs())]
+}
 fn ui_elements_collide_3d(left:&UiElement,right:&UiElement)->bool {
     if left.kind!="cube3D"||right.kind!="cube3D"{return false;}
-    let lh=(left.w.max(1) as f64)*0.5;let rh=(right.w.max(1) as f64)*0.5;
-    (left.x as f64-right.x as f64).abs()<lh+rh&&(left.y as f64-right.y as f64).abs()<lh+rh&&(left.z as f64-right.z as f64).abs()<lh+rh
+    let a=cube_aabb_extent_3d(left);let b=cube_aabb_extent_3d(right);
+    (left.x as f64-right.x as f64).abs()<a[0]+b[0]
+        &&(left.y as f64-right.y as f64).abs()<a[1]+b[1]
+        &&(left.z as f64-right.z as f64).abs()<a[2]+b[2]
 }
 
 fn physics_world_step_2d(dt:f64,gx:f64,gy:f64,restitution:f64,state:&mut UiState)->RtResult<()> {
