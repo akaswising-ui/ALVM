@@ -136,4 +136,40 @@ assert hero.get("text") == "sprites/hero.png", hero
 assert (hero.get("x"), hero.get("y"), hero.get("w"), hero.get("h")) == (10, 21, 32, 32), hero
 PY
 
-echo "Rust CI Runtime game-loop/touch/collision, sprite, gravity physics, positioned canvas text and .AL package end-to-end tests passed."
+"$ALVM_BIN" compile "$ROOT/examples/multi_module_link.al" -o "$WORK/multi-module.room"
+MODULE_LINK="$(\"$RUST_RUNNER\" run \"$WORK/multi-module.room\")"
+printf '%s\\n' "$MODULE_LINK" | grep -q '"ok":true'
+printf '%s\\n' "$MODULE_LINK" | grep -q '"output":"42"'
+
+"$ALVM_BIN" compile "$ROOT/examples/game_engine_foundation.al" -o "$WORK/game-engine.room"
+ENGINE_INITIAL="$(\"$RUST_RUNNER\" run \"$WORK/game-engine.room\")"
+python3 - "$ENGINE_INITIAL" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result.get("ok") is True, result
+ui = result.get("ui", {})
+items = ui.get("elements", [])
+by_id = {item.get("id"): item for item in items}
+assert by_id["world"]["kind"] == "node", by_id.get("world")
+assert by_id["hero"]["parent"] == "world", by_id.get("hero")
+assert (by_id["hero"]["columns"], by_id["hero"]["rows"], by_id["hero"]["frameCount"]) == (4, 2, 8), by_id["hero"]
+assert by_id["hero"]["animationFps"] == 12, by_id["hero"]
+assert by_id["cubeA"]["kind"] == "cube3D", by_id.get("cubeA")
+assert ui["camera3D"]["focal"] == 240, ui
+assert ui["frameRate"] == 30, ui
+assert result.get("output") == "true", result
+PY
+ENGINE_KEY="$(\"$RUST_RUNNER\" run \"$WORK/game-engine.room\" --event onKey LEFT)"
+python3 - "$ENGINE_KEY" <<'PY'
+import json
+import sys
+result = json.loads(sys.argv[1])
+assert result.get("ok") is True, result
+items = result.get("ui", {}).get("elements", [])
+label = next((item for item in items if item.get("id") == "keyLabel"), None)
+assert label and label.get("text") == "LEFT", result
+PY
+
+echo "Rust CI Runtime multi-module compiler link, scene graph, sprite-sheet animation, rigid-body collisions, keyboard callback and 3D foundation tests passed."
