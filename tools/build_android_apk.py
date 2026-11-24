@@ -9,6 +9,8 @@ an absolute path is supplied.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import html
 import os
@@ -119,12 +121,13 @@ def verify_room(path: Path) -> None:
 
 
 def copy_application_assets(source_value: str, destination: Path) -> int:
-    """Copy a bounded, symlink-free asset directory into the generated APK assets."""
+    """Copy bounded assets; decode checked *.png.b64 source assets to real PNG files."""
     source = Path(source_value).expanduser().resolve()
     if not source.is_dir():
         raise BuildError("--assets-dir must point to an existing directory: " + str(source))
     copied_bytes = 0
     copied_files = 0
+    written_paths: set[str] = set()
     for item in sorted(source.rglob("*")):
         if item.is_symlink():
             raise BuildError("Symlinks are not allowed in --assets-dir: " + str(item))
@@ -140,13 +143,32 @@ def copy_application_assets(source_value: str, destination: Path) -> int:
             raise BuildError("Asset path contains unsupported characters: " + str(relative))
         if relative.as_posix() == "main.room":
             raise BuildError("The asset directory cannot replace the generated main.room.")
-        copied_bytes += item.stat().st_size
+
+        if relative.as_posix().endswith(".png.b64"):
+            if item.stat().st_size > 90 * 1024 * 1024:
+                raise BuildError("Encoded PNG asset exceeds the 64 MiB decoded limit.")
+            try:
+                payload = base64.b64decode(item.read_bytes(), validate=True)
+            except (binascii.Error, ValueError) as error:
+                raise BuildError("Invalid base64 PNG asset: " + str(relative)) from error
+            if not payload.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+                raise BuildError("Decoded asset is not a PNG file: " + str(relative))
+            target_relative = Path(relative.as_posix()[:-4])
+        else:
+            payload = item.read_bytes()
+            target_relative = relative
+
+        target_name = target_relative.as_posix()
+        if target_name in written_paths:
+            raise BuildError("Duplicate application asset target: " + target_name)
+        written_paths.add(target_name)
+        copied_bytes += len(payload)
         copied_files += 1
         if copied_bytes > 64 * 1024 * 1024 or copied_files > 2048:
             raise BuildError("--assets-dir exceeds the 64 MiB / 2048 file export limit.")
-        target = destination.joinpath(*parts)
+        target = destination.joinpath(*target_relative.parts)
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item, target)
+        target.write_bytes(payload)
     return copied_files
 
 
