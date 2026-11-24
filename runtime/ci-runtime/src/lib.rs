@@ -2724,12 +2724,18 @@ mod tests {
         ui_call(&Instruction{op:UI_CALL,arg:2,text:"material3D".into()},&[
             RuntimeValue::String("left".into()),RuntimeValue::Double(0.75),
         ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:8,text:"transform3D".into()},&[
+            RuntimeValue::String("left".into()),RuntimeValue::Int(-40),RuntimeValue::Int(2),RuntimeValue::Int(0),
+            RuntimeValue::Int(10),RuntimeValue::Int(25),RuntimeValue::Int(5),RuntimeValue::Double(1.25),
+        ],&mut stack,&mut state).unwrap();
         ui_call(&Instruction{op:UI_CALL,arg:2,text:"collides3D".into()},&[
             RuntimeValue::String("left".into()),RuntimeValue::String("right".into()),
         ],&mut stack,&mut state).unwrap();
         assert!(matches!(stack.pop(),Some(RuntimeValue::Bool(true))));
         assert_eq!(state.camera_3d.focal,240);
-        assert_eq!(state.elements[state.find("left").unwrap()].light,0.75);
+        let left=&state.elements[state.find("left").unwrap()];
+        assert_eq!(left.light,0.75);
+        assert_eq!((left.rotation_x,left.rotation_y,left.rotation_z,left.scale_3d),(10.0,25.0,5.0,1.25));
     }
 
 
