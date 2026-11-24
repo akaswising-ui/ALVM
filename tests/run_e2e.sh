@@ -345,4 +345,19 @@ for fixture in sprite_sheet_type_error physics_world_type_error transform3d_type
   test ! -e "$TMP/$fixture.room"
 done
 
+"$BIN" compile "$ROOT/examples/neon_runner.al" -o "$TMP/neon-runner.room"
+NEON_UI="$("$BIN" ui "$TMP/neon-runner.room")"
+for required in '"title":"NEON RUNNER"' '"kind":"node"' '"parent":"world"' '"frameCount":8' '"animationFps":10' '"kind":"cube3D"' '"camera3D"' '"frameRate":30'; do
+  if [[ "$NEON_UI" != *"$required"* ]]; then
+    printf 'Neon Runner missing %s:\\n%s\\n' "$required" "$NEON_UI" >&2
+    exit 1
+  fi
+done
+test "$("$BIN" run "$TMP/neon-runner.room")" = "true"
+NEON_EVENTS="$("$BIN" ui-event "$TMP/neon-runner.room" onKey SPACE update frame onTouch '@touch|jumpZone|120|160')"
+if [[ "$NEON_EVENTS" != *'"id":"status","text":"TOUCH JUMP!"'* || "$NEON_EVENTS" != *'"id":"frameLabel"'* ]]; then
+  printf 'Neon Runner keyboard/touch/game-loop events failed:\\n%s\\n' "$NEON_EVENTS" >&2
+  exit 1
+fi
+
 echo "PASS: AL compiler, compile-time module imports, scene graph, sprite animation, physics, keyboard callbacks, 3D foundation and negative type-check fixtures"
