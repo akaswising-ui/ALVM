@@ -1,3 +1,3 @@
-int addScore(int left, int right) {
+public static int addScore(int left, int right) {
     return left + right;
 }
