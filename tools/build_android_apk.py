@@ -151,7 +151,7 @@ def copy_application_assets(source_value: str, destination: Path) -> int:
                 payload = base64.b64decode(item.read_bytes(), validate=True)
             except (binascii.Error, ValueError) as error:
                 raise BuildError("Invalid base64 PNG asset: " + str(relative)) from error
-            if not payload.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
                 raise BuildError("Decoded asset is not a PNG file: " + str(relative))
             target_relative = Path(relative.as_posix()[:-4])
         else:
