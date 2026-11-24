@@ -728,13 +728,17 @@ fn physics_world_step_2d(dt:f64,gx:f64,gy:f64,restitution:f64,state:&mut UiState
             let ay=*state.body_position_y.get(&a.element_id).unwrap_or(&(a.y as f64));
             let bx=*state.body_position_x.get(&b.element_id).unwrap_or(&(b.x as f64));
             let by=*state.body_position_y.get(&b.element_id).unwrap_or(&(b.y as f64));
+            let center_ax=ax+if a.kind=="circle"{0.0}else{a.w as f64*0.5};
+            let center_ay=ay+if a.kind=="circle"{0.0}else{a.h as f64*0.5};
+            let center_bx=bx+if b.kind=="circle"{0.0}else{b.w as f64*0.5};
+            let center_by=by+if b.kind=="circle"{0.0}else{b.h as f64*0.5};
             let ahx=if a.kind=="circle"{a.w as f64}else{a.w as f64*0.5};
             let ahy=if a.kind=="circle"{a.w as f64}else{a.h as f64*0.5};
             let bhx=if b.kind=="circle"{b.w as f64}else{b.w as f64*0.5};
             let bhy=if b.kind=="circle"{b.w as f64}else{b.h as f64*0.5};
-            let ox=ahx+bhx-(ax-bx).abs();let oy=ahy+bhy-(ay-by).abs();if ox<=0.0||oy<=0.0{continue;}
+            let ox=ahx+bhx-(center_ax-center_bx).abs();let oy=ahy+bhy-(center_ay-center_by).abs();if ox<=0.0||oy<=0.0{continue;}
             let ia=if ma>0.0{1.0/ma}else{0.0};let ib=if mb>0.0{1.0/mb}else{0.0};let total=ia+ib;if total<=0.0{continue;}
-            let use_x=ox<oy;let sign=if use_x{if ax<bx{1.0}else{-1.0}}else if ay<by{1.0}else{-1.0};
+            let use_x=ox<oy;let sign=if use_x{if center_ax<center_bx{1.0}else{-1.0}}else if center_ay<center_by{1.0}else{-1.0};
             let penetration=(if use_x{ox}else{oy})+0.001;
             if use_x{
                 state.body_position_x.insert(a.element_id.clone(),ax-sign*penetration*ia/total);
