@@ -2643,4 +2643,79 @@ mod tests {
         assert_eq!(compare_versions("1.10.0", "1.9.9"), std::cmp::Ordering::Greater);
         assert_eq!(compare_versions("2.0.0", "2.0.0"), std::cmp::Ordering::Equal);
     }
+
+    #[test]
+    fn scene_graph_rejects_cycles_and_records_parent_links() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        for id in ["root","child"] {
+            ui_call(&Instruction{op:UI_CALL,arg:1,text:"node".into()},&[RuntimeValue::String(id.into())],&mut stack,&mut state).unwrap();
+        }
+        ui_call(&Instruction{op:UI_CALL,arg:2,text:"attach".into()},&[RuntimeValue::String("child".into()),RuntimeValue::String("root".into())],&mut stack,&mut state).unwrap();
+        assert_eq!(state.elements[state.find("child").unwrap()].parent,"root");
+        let cycle=ui_call(&Instruction{op:UI_CALL,arg:2,text:"attach".into()},&[RuntimeValue::String("root".into()),RuntimeValue::String("child".into())],&mut stack,&mut state);
+        assert!(cycle.unwrap_err().0.contains("cycle"));
+    }
+
+    #[test]
+    fn sprite_sheet_animation_validates_grid_and_tracks_frame_metadata() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        ui_call(&Instruction{op:UI_CALL,arg:8,text:"spriteSheet".into()},&[
+            RuntimeValue::String("hero".into()),RuntimeValue::String("sprites/hero.png".into()),
+            RuntimeValue::Int(10),RuntimeValue::Int(20),RuntimeValue::Int(32),RuntimeValue::Int(32),
+            RuntimeValue::Int(4),RuntimeValue::Int(2),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:4,text:"animateSprite".into()},&[
+            RuntimeValue::String("hero".into()),RuntimeValue::Int(8),RuntimeValue::Int(12),RuntimeValue::Bool(true),
+        ],&mut stack,&mut state).unwrap();
+        let hero=&state.elements[state.find("hero").unwrap()];
+        assert_eq!((hero.columns,hero.rows,hero.frame_count,hero.animation_fps),(4,2,8,12));
+        assert!(hero.animation_loop);
+    }
+
+    #[test]
+    fn rigid_body_step_resolves_overlap_and_applies_restitution() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        for (id,x) in [("dynamic",20),("static",42)] {
+            ui_call(&Instruction{op:UI_CALL,arg:6,text:"rect".into()},&[
+                RuntimeValue::String(id.into()),RuntimeValue::Int(x),RuntimeValue::Int(100),
+                RuntimeValue::Int(30),RuntimeValue::Int(30),RuntimeValue::Int(0xFFFFFFFFu32 as i64),
+            ],&mut stack,&mut state).unwrap();
+        }
+        for (id,mass,vx) in [("dynamic",1.0,20.0),("static",0.0,0.0)] {
+            ui_call(&Instruction{op:UI_CALL,arg:4,text:"physicsBody".into()},&[
+                RuntimeValue::String(id.into()),RuntimeValue::Double(mass),RuntimeValue::Double(vx),RuntimeValue::Double(0.0),
+            ],&mut stack,&mut state).unwrap();
+        }
+        ui_call(&Instruction{op:UI_CALL,arg:4,text:"physicsWorldStep".into()},&[
+            RuntimeValue::Double(0.016),RuntimeValue::Double(0.0),RuntimeValue::Double(0.0),RuntimeValue::Double(0.25),
+        ],&mut stack,&mut state).unwrap();
+        let dynamic=&state.elements[state.find("dynamic").unwrap()];
+        assert!(dynamic.x<20,"overlapping dynamic body should be separated from the static body");
+    }
+
+    #[test]
+    fn cube3d_camera_material_and_collision_are_supported() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        ui_call(&Instruction{op:UI_CALL,arg:6,text:"camera3D".into()},&[
+            RuntimeValue::Int(0),RuntimeValue::Int(0),RuntimeValue::Int(-300),
+            RuntimeValue::Int(0),RuntimeValue::Int(0),RuntimeValue::Int(240),
+        ],&mut stack,&mut state).unwrap();
+        for (id,x) in [("left",-35),("right",0)] {
+            ui_call(&Instruction{op:UI_CALL,arg:6,text:"cube3D".into()},&[
+                RuntimeValue::String(id.into()),RuntimeValue::Int(x),RuntimeValue::Int(0),RuntimeValue::Int(0),
+                RuntimeValue::Int(70),RuntimeValue::Int(0xFFFFFFFFu32 as i64),
+            ],&mut stack,&mut state).unwrap();
+        }
+        ui_call(&Instruction{op:UI_CALL,arg:2,text:"material3D".into()},&[
+            RuntimeValue::String("left".into()),RuntimeValue::Double(0.75),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:2,text:"collides3D".into()},&[
+            RuntimeValue::String("left".into()),RuntimeValue::String("right".into()),
+        ],&mut stack,&mut state).unwrap();
+        assert!(matches!(stack.pop(),Some(RuntimeValue::Bool(true))));
+        assert_eq!(state.camera_3d.focal,240);
+        assert_eq!(state.elements[state.find("left").unwrap()].light,0.75);
+    }
+
+
 }
