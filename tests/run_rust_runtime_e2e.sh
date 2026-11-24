@@ -143,11 +143,23 @@ printf '%s\n' "$MODULE_LINK" | grep -q '"output":"42"'
 
 "$ALVM_BIN" compile "$ROOT/examples/game_engine_foundation.al" -o "$WORK/game-engine.room"
 ENGINE_INITIAL="$("$RUST_RUNNER" run "$WORK/game-engine.room")"
-python3 - "$ENGINE_INITIAL" <<'PY'
+ENGINE_CPP_OUTPUT="$("$ALVM_BIN" run "$WORK/game-engine.room")"
+ENGINE_CPP_UI="$("$ALVM_BIN" ui "$WORK/game-engine.room")"
+python3 - "$ENGINE_INITIAL" "$ENGINE_CPP_OUTPUT" "$ENGINE_CPP_UI" <<'PY'
 import json
 import sys
 
 result = json.loads(sys.argv[1])
+cpp_output = sys.argv[2]
+cpp_ui = json.loads(sys.argv[3])
+assert cpp_output == result.get("output"), {
+    "cpp_output": cpp_output,
+    "rust_output": result.get("output"),
+}
+assert cpp_ui == result.get("ui"), {
+    "cpp_ui": cpp_ui,
+    "rust_ui": result.get("ui"),
+}
 assert result.get("ok") is True, result
 ui = result.get("ui", {})
 items = ui.get("elements", [])
