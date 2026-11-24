@@ -109,6 +109,18 @@ def validate_application_id(value: str) -> str:
     return value
 
 
+def sha256_file(path: Path) -> str:
+    """Hash large build outputs without loading the entire APK into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def verify_room(path: Path) -> None:
     if not path.is_file():
         raise BuildError("AL compiler did not create main.room.")
@@ -387,7 +399,7 @@ def build(args: argparse.Namespace) -> Path:
         output_path = (ROOT / output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(built_apk, output_path)
-    digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    digest = sha256_file(output_path)
     print("")
     print("APK generated: " + str(output_path))
     print("Package ID: " + application_id)
