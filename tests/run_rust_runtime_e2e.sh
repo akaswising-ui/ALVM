@@ -186,4 +186,30 @@ label = next((item for item in items if item.get("id") == "keyLabel"), None)
 assert label and label.get("text") == "LEFT", result
 PY
 
+"$ALVM_BIN" compile "$ROOT/examples/neon_runner.al" -o "$WORK/neon-runner.room"
+NEON_INITIAL="$("$RUST_RUNNER" run "$WORK/neon-runner.room")"
+NEON_CPP_OUTPUT="$("$ALVM_BIN" run "$WORK/neon-runner.room")"
+NEON_CPP_UI="$("$ALVM_BIN" ui "$WORK/neon-runner.room")"
+NEON_EVENTS="$("$RUST_RUNNER" run "$WORK/neon-runner.room" --event onKey SPACE --event update frame --event onTouch '@touch|jumpZone|120|160')"
+NEON_CPP_EVENTS="$("$ALVM_BIN" ui-event "$WORK/neon-runner.room" onKey SPACE update frame onTouch '@touch|jumpZone|120|160')"
+python3 - "$NEON_INITIAL" "$NEON_CPP_OUTPUT" "$NEON_CPP_UI" "$NEON_EVENTS" "$NEON_CPP_EVENTS" <<'PY'
+import json
+import sys
+
+initial = json.loads(sys.argv[1])
+cpp_output = sys.argv[2]
+cpp_ui = json.loads(sys.argv[3])
+rust_events = json.loads(sys.argv[4])
+cpp_events = json.loads(sys.argv[5])
+assert initial.get("ok") is True, initial
+assert initial.get("output") == cpp_output, (initial.get("output"), cpp_output)
+assert initial.get("ui") == cpp_ui, "Initial C++/Rust engine UI mismatch"
+assert rust_events.get("ok") is True, rust_events
+assert rust_events.get("ui") == cpp_events, "C++/Rust event state mismatch"
+items = {item.get("id"): item for item in rust_events.get("ui", {}).get("elements", [])}
+assert items["status"]["text"] == "TOUCH JUMP!", items.get("status")
+assert items["frameLabel"]["text"] == "1", items.get("frameLabel")
+assert rust_events.get("output") == "true", rust_events
+PY
+
 echo "Rust CI Runtime multi-module compiler link, scene graph, sprite-sheet animation, rigid-body collisions, keyboard callback and 3D foundation tests passed."
