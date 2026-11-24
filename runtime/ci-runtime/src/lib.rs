@@ -2784,4 +2784,28 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn long_running_physics_step_stays_finite_and_bounded() {
+        let mut state=UiState::new();
+        let mut stack=Vec::new();
+        ui_call(&Instruction{op:UI_CALL,arg:6,text:"rect".into()},&[
+            RuntimeValue::String("falling".into()),RuntimeValue::Int(20),RuntimeValue::Int(0),
+            RuntimeValue::Int(16),RuntimeValue::Int(16),RuntimeValue::Int(0xFFFFFFFFu32 as i64),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:4,text:"physicsBody".into()},&[
+            RuntimeValue::String("falling".into()),RuntimeValue::Double(1.0),
+            RuntimeValue::Double(0.0),RuntimeValue::Double(0.0),
+        ],&mut stack,&mut state).unwrap();
+        for _ in 0..10_000 {
+            physics_world_step_2d(0.016,0.0,9.8,0.0,&mut state).unwrap();
+        }
+        let body=&state.elements[state.find("falling").unwrap()];
+        assert!(body.y>0);
+        assert!(body.y<1_000_000);
+        assert_eq!(state.body_mass.len(),1);
+        assert_eq!(state.body_velocity_y.len(),1);
+    }
+
+
 }
