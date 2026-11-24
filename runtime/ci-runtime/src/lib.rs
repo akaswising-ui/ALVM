@@ -2739,4 +2739,36 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn malformed_room_inputs_never_panic_the_reader_or_verifier() {
+        let mut seed = 0xA17C_9E35u32;
+        for length in 0..=512usize {
+            let mut bytes = Vec::with_capacity(length);
+            for _ in 0..length {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                bytes.push((seed & 0xFF) as u8);
+            }
+            if length >= 8 && length % 7 == 0 {
+                bytes[0..4].copy_from_slice(b"ALRM");
+                bytes[4..8].copy_from_slice(&ROOM_FORMAT_VERSION.to_le_bytes());
+            }
+
+            let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                read_room_bytes(&bytes)
+            }));
+            assert!(parsed.is_ok(), "reader panicked for input length {length}");
+
+            if let Ok(Ok(program)) = parsed {
+                let verified = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    verify(&program)
+                }));
+                assert!(verified.is_ok(), "verifier panicked for input length {length}");
+            }
+        }
+    }
+
+
 }
