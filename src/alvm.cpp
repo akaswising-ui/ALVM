@@ -304,6 +304,7 @@ class SemanticAnalyzer {
           else if(e.text=="attach"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Void;}
           else if(e.text=="detach"){require(1);stringAt(0);e.inferred=Type::Void;}
           else if(e.text=="transform"){require(6);stringAt(0);if(actual[1]!=Type::Int||actual[2]!=Type::Int||actual[3]!=Type::Double||actual[4]!=Type::Double||actual[5]!=Type::Double)throw Error("UI.transform expects id, int x/y and double scaleX/scaleY/rotation");e.inferred=Type::Void;}
+          else if(e.text=="transform3D"){require(8);stringAt(0);for(size_t n=1;n<7;++n)if(actual[n]!=Type::Int)throw Error("UI.transform3D expects integer position and Euler rotation values");if(actual[7]!=Type::Double)throw Error("UI.transform3D scale must be double");e.inferred=Type::Void;}
           else if(e.text=="spriteSheet"){require(8);stringAt(0);stringAt(1);for(size_t n=2;n<8;++n)if(actual[n]!=Type::Int)throw Error("UI.spriteSheet position, size, columns and rows must be int");e.inferred=Type::Void;}
           else if(e.text=="animateSprite"){require(4);stringAt(0);if(actual[1]!=Type::Int||actual[2]!=Type::Int||actual[3]!=Type::Bool)throw Error("UI.animateSprite expects id, int frameCount, int FPS and boolean loop");e.inferred=Type::Void;}
           else if(e.text=="setSpriteFrame"){require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.setSpriteFrame frame must be int");e.inferred=Type::Void;}
@@ -647,7 +648,7 @@ struct UiElement {
   int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF;
   int64_t z=0,columns=1,rows=1,frame=0,frameCount=1,animationFps=0;
   bool animationLoop=true;
-  double rotation=0.0,scaleX=1.0,scaleY=1.0,light=1.0;
+  double rotation=0.0,scaleX=1.0,scaleY=1.0,rotationX=0.0,rotationY=0.0,rotationZ=0.0,scale3D=1.0,light=1.0;
 };
 struct Camera3D { int64_t x=0,y=0,z=-300,yaw=0,pitch=0,focal=240; };
 static Camera3D activeUiCamera3D;
@@ -671,7 +672,7 @@ static std::string uiJson(){
   std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"visible\":"+(activeUiVisible?"true":"false")+",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate);
   out+=",\"camera3D\":{\"x\":"+std::to_string(activeUiCamera3D.x)+",\"y\":"+std::to_string(activeUiCamera3D.y)+",\"z\":"+std::to_string(activeUiCamera3D.z)+",\"yaw\":"+std::to_string(activeUiCamera3D.yaw)+",\"pitch\":"+std::to_string(activeUiCamera3D.pitch)+",\"focal\":"+std::to_string(activeUiCamera3D.focal)+"},\"elements\":[";
   for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
-    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"parent\":\""+jsonEscape(e.parent)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"z\":"+std::to_string(e.z)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+",\"rotation\":"+std::to_string(e.rotation)+",\"scaleX\":"+std::to_string(e.scaleX)+",\"scaleY\":"+std::to_string(e.scaleY)+",\"columns\":"+std::to_string(e.columns)+",\"rows\":"+std::to_string(e.rows)+",\"frame\":"+std::to_string(e.frame)+",\"frameCount\":"+std::to_string(e.frameCount)+",\"animationFps\":"+std::to_string(e.animationFps)+",\"animationLoop\":"+(e.animationLoop?"true":"false")+",\"light\":"+std::to_string(e.light)+"}";
+    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"parent\":\""+jsonEscape(e.parent)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"z\":"+std::to_string(e.z)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+",\"rotation\":"+std::to_string(e.rotation)+",\"scaleX\":"+std::to_string(e.scaleX)+",\"scaleY\":"+std::to_string(e.scaleY)+",\"rotationX\":"+std::to_string(e.rotationX)+",\"rotationY\":"+std::to_string(e.rotationY)+",\"rotationZ\":"+std::to_string(e.rotationZ)+",\"scale3D\":"+std::to_string(e.scale3D)+",\"columns\":"+std::to_string(e.columns)+",\"rows\":"+std::to_string(e.rows)+",\"frame\":"+std::to_string(e.frame)+",\"frameCount\":"+std::to_string(e.frameCount)+",\"animationFps\":"+std::to_string(e.animationFps)+",\"animationLoop\":"+(e.animationLoop?"true":"false")+",\"light\":"+std::to_string(e.light)+"}";
   }return out+"]}";
 }
 static bool uiElementsCollide(const UiElement& a,const UiElement& b){
@@ -715,10 +716,12 @@ static void physicsWorldStep2D(double dt,double gravityX,double gravityY,double 
     for(size_t j=i+1;j<activeUiElements.size();++j){
       UiElement& b=activeUiElements[j];auto mb=activeUiBodyMass.find(b.id);
       if(mb==activeUiBodyMass.end()||!physicsDrawable(b))continue;
-      const double ax=(double)a.x+(a.kind=="circle"?0.0:a.w*0.5);
-      const double ay=(double)a.y+(a.kind=="circle"?0.0:a.h*0.5);
-      const double bx=(double)b.x+(b.kind=="circle"?0.0:b.w*0.5);
-      const double by=(double)b.y+(b.kind=="circle"?0.0:b.h*0.5);
+      const double apx=activeUiBodyPositionX[a.id],apy=activeUiBodyPositionY[a.id];
+      const double bpx=activeUiBodyPositionX[b.id],bpy=activeUiBodyPositionY[b.id];
+      const double ax=apx+(a.kind=="circle"?0.0:a.w*0.5);
+      const double ay=apy+(a.kind=="circle"?0.0:a.h*0.5);
+      const double bx=bpx+(b.kind=="circle"?0.0:b.w*0.5);
+      const double by=bpy+(b.kind=="circle"?0.0:b.h*0.5);
       const double ahx=(a.kind=="circle"?a.w:a.w*0.5),ahy=(a.kind=="circle"?a.w:a.h*0.5);
       const double bhx=(b.kind=="circle"?b.w:b.w*0.5),bhy=(b.kind=="circle"?b.w:b.h*0.5);
       double overlapX=ahx+bhx-std::fabs(ax-bx);
@@ -904,6 +907,12 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
           double sx=asDouble(3),sy=asDouble(4),rotation=asDouble(5);
           if(!std::isfinite(sx)||!std::isfinite(sy)||!std::isfinite(rotation)||sx<0.05||sx>20.0||sy<0.05||sy>20.0||std::fabs(rotation)>36000.0)throw Error("UI.transform values are outside the supported range");
           item->x=asInt(1);item->y=asInt(2);item->scaleX=sx;item->scaleY=sy;item->rotation=rotation;
+        }
+        else if(i.text=="transform3D"){
+          std::string id=asString(0);UiElement* item=findElement(id);
+          if(!item||item->kind!="cube3D")throw Error("UI.transform3D requires an existing cube3D");
+          double scale=asDouble(7);if(!std::isfinite(scale)||scale<0.05||scale>20.0)throw Error("UI.transform3D scale must be between 0.05 and 20");
+          item->x=asInt(1);item->y=asInt(2);item->z=asInt(3);item->rotationX=asInt(4);item->rotationY=asInt(5);item->rotationZ=asInt(6);item->scale3D=scale;
         }
         else if(i.text=="keyArea"){
           UiElement key;key.kind="keyArea";key.id=asString(0);key.text=asString(1);key.callback=asString(2);
