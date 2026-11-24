@@ -111,8 +111,23 @@ jobs:
             "${ASSET_ARGS[@]}" \
             --output dist/ALVM-standalone-player.apk
 
+      - name: Check whether Player release signing is configured
+        id: player-signing
+        env:
+          KEYSTORE: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALVM_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALVM_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing skipped: developer signing secrets are not configured."
+          fi
+
       - name: Sign standalone Player APK with developer release key
-        if: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 != '' && secrets.ALVM_RELEASE_KEYSTORE_PASSWORD != '' && secrets.ALVM_RELEASE_KEY_ALIAS != '' && secrets.ALVM_RELEASE_KEY_PASSWORD != '' }}
+        if: steps.player-signing.outputs.enabled == 'true'
         env:
           ALVM_RELEASE_KEYSTORE_BASE64: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
           ALVM_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
@@ -225,8 +240,23 @@ jobs:
               exit 1
             fi
 
+      - name: Check whether Studio release signing is configured
+        id: studio-signing
+        env:
+          KEYSTORE: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALVM_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALVM_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing skipped: developer signing secrets are not configured."
+          fi
+
       - name: Sign ALVM Studio APK with developer release key
-        if: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 != '' && secrets.ALVM_RELEASE_KEYSTORE_PASSWORD != '' && secrets.ALVM_RELEASE_KEY_ALIAS != '' && secrets.ALVM_RELEASE_KEY_PASSWORD != '' }}
+        if: steps.studio-signing.outputs.enabled == 'true'
         env:
           ALVM_RELEASE_KEYSTORE_BASE64: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
           ALVM_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
