@@ -17,6 +17,15 @@ SPEC.loader.exec_module(BUILDER)
 
 
 class AndroidApkBuilderTests(unittest.TestCase):
+    def test_hashes_large_apk_files_without_changing_digest(self) -> None:
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "large.apk"
+            payload = (b"ALVM-APK-" * 200000)
+            apk.write_bytes(payload)
+            self.assertEqual(BUILDER.sha256_file(apk), hashlib.sha256(payload).hexdigest())
+
     def test_default_package_id_is_valid_and_deterministic(self) -> None:
         package_id = BUILDER.default_application_id("AL Calculator")
         self.assertEqual(package_id, "com.alvm.generated.al_calculator")
