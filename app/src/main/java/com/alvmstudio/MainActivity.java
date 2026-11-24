@@ -94,6 +94,10 @@ public class MainActivity extends Activity {
     private String pendingSource = "";
     private boolean compiled = false;
     private Dialog nativeUiDialog;
+    private LinearLayout nativeUiContent;
+    private TextView nativeUiHeading;
+    private Game2DView activeGame2DView;
+    private String nativeUiShape = "";
     private byte[] pendingAlPackage;
     private byte[] pendingAndroidProject;
     private final Handler gameLoopHandler = new Handler(Looper.getMainLooper());
@@ -1361,10 +1365,23 @@ public class MainActivity extends Activity {
             if (!root.optBoolean("visible", false)) {
                 if (nativeUiDialog != null && nativeUiDialog.isShowing()) nativeUiDialog.dismiss();
                 nativeUiDialog = null;
+                nativeUiContent = null;
+                nativeUiHeading = null;
+                activeGame2DView = null;
+                nativeUiShape = "";
                 return;
             }
             JSONArray elements = root.optJSONArray("elements");
             if (elements == null) elements = new JSONArray();
+            String nextShape = nativeUiShape(elements);
+            if (nativeUiDialog != null && nativeUiDialog.isShowing()
+                    && nextShape.equals(nativeUiShape) && nativeUiContent != null) {
+                if (nativeUiHeading != null) nativeUiHeading.setText(root.optString("title", "AL Application"));
+                if (activeGame2DView != null) activeGame2DView.updateRuntimeUi(root.toString());
+                updateNativeUiText(elements);
+                configureGameLoop(root);
+                return;
+            }
             LinearLayout content = new LinearLayout(this);
             content.setOrientation(LinearLayout.VERTICAL);
             content.setPadding(dp(18), dp(16), dp(18), dp(18));
@@ -1379,6 +1396,7 @@ public class MainActivity extends Activity {
             heading.setTextColor(Color.WHITE);
             heading.setTextSize(21);
             heading.setTypeface(null, android.graphics.Typeface.BOLD);
+            heading.setTag("__al_title");
             heading.setPadding(0, 0, 0, dp(14));
             content.addView(heading, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1397,7 +1415,6 @@ public class MainActivity extends Activity {
                 }
             }
             if (hasGameCanvas) {
-                final Game2DView[] gameViewRef = new Game2DView[1];
                 Game2DView gameView = new Game2DView(this, elements, root.optJSONObject("camera3D"),
                         new Game2DView.TouchHandler() {
                     @Override
@@ -1408,7 +1425,7 @@ public class MainActivity extends Activity {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            if (!lastRuntimeUiJson.isEmpty()) gameViewRef[0].updateRuntimeUi(lastRuntimeUiJson);
+                            if (!lastRuntimeUiJson.isEmpty() && activeGame2DView != null) activeGame2DView.updateRuntimeUi(lastRuntimeUiJson);
                         } catch (Exception error) {
                             showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
@@ -1422,13 +1439,13 @@ public class MainActivity extends Activity {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            if (!lastRuntimeUiJson.isEmpty()) gameViewRef[0].updateRuntimeUi(lastRuntimeUiJson);
+                            if (!lastRuntimeUiJson.isEmpty() && activeGame2DView != null) activeGame2DView.updateRuntimeUi(lastRuntimeUiJson);
                         } catch (Exception error) {
                             showOutputInWeb("AL keyboard event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
                     }
                 });
-                gameViewRef[0] = gameView;
+                activeGame2DView = gameView;
                 LinearLayout.LayoutParams gameParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(480));
                 gameParams.bottomMargin = dp(12);
@@ -1458,6 +1475,7 @@ public class MainActivity extends Activity {
                 } else if ("button".equals(kind)) {
                     String callback = element.optString("callback", "");
                     Button button = new Button(this);
+                    button.setTag(id);
                     button.setText(text);
                     button.setAllCaps(false);
                     button.setTextColor(Color.WHITE);
@@ -1501,8 +1519,17 @@ public class MainActivity extends Activity {
             scroll.addView(content);
             if (nativeUiDialog == null) nativeUiDialog = new Dialog(this);
             nativeUiDialog.setContentView(scroll);
+            nativeUiContent = content;
+            nativeUiHeading = heading;
+            nativeUiShape = nextShape;
             nativeUiDialog.setCancelable(true);
-            nativeUiDialog.setOnDismissListener(dialog -> stopGameLoop());
+            nativeUiDialog.setOnDismissListener(dialog -> {
+                stopGameLoop();
+                nativeUiContent = null;
+                nativeUiHeading = null;
+                activeGame2DView = null;
+                nativeUiShape = "";
+            });
             if (!nativeUiDialog.isShowing()) nativeUiDialog.show();
             if (nativeUiDialog.getWindow() != null) {
                 nativeUiDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
@@ -1518,6 +1545,32 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private String nativeUiShape(JSONArray elements) {
+        StringBuilder shape = new StringBuilder();
+        for (int i = 0; i < elements.length(); i++) {
+            JSONObject item = elements.optJSONObject(i);
+            if (item == null) continue;
+            shape.append(item.optString("kind", "")).append(':')
+                    .append(item.optString("id", "")).append(':')
+                    .append(item.optString("callback", "")).append(';');
+        }
+        return shape.toString();
+    }
+
+    private void updateNativeUiText(JSONArray elements) {
+        if (nativeUiContent == null) return;
+        for (int i = 0; i < elements.length(); i++) {
+            JSONObject item = elements.optJSONObject(i);
+            if (item == null) continue;
+            String kind = item.optString("kind", "");
+            if (!"text".equals(kind) && !"button".equals(kind)) continue;
+            View existing = nativeUiContent.findViewWithTag(item.optString("id", ""));
+            if (existing instanceof TextView) {
+                ((TextView) existing).setText(item.optString("text", ""));
+            }
+        }
+    }
 
     private void configureGameLoop(JSONObject root) {
         String callback = root.optString("frameCallback", "");
