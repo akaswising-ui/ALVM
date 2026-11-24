@@ -216,6 +216,12 @@ public final class Game2DView extends View {
         } catch (Exception ignored) {
             // A missing optional asset becomes a visible placeholder, not an app crash.
         }
+        if (!spriteCache.containsKey(assetPath) && spriteCache.size() >= 32) {
+            String oldest = spriteCache.keySet().iterator().next();
+            spriteCache.remove(oldest);
+            animationStarts.remove(oldest);
+            // Drop the cache reference and let Android reclaim the bitmap safely.
+        }
         spriteCache.put(assetPath, bitmap);
         return bitmap;
     }
