@@ -31,6 +31,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -41,6 +42,8 @@ import java.util.Map;
  * It executes verified .room bytecode using the shared Rust CI Runtime.
  */
 public final class PlayerActivity extends Activity {
+    private static final int ROOM_BYTECODE_VERSION = 10;
+    private static final long MAX_ROOM_BYTES = 64L * 1024L * 1024L;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private CiRuntimeHost runtime;
     private File roomFile;
@@ -78,8 +81,31 @@ public final class PlayerActivity extends Activity {
             int count;
             while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
         }
-        if (roomFile.length() < 8) {
-            throw new IllegalStateException("The embedded .room bytecode is empty or truncated.");
+        if (roomFile.length() < 8 || roomFile.length() > MAX_ROOM_BYTES) {
+            throw new IllegalStateException("The embedded .room bytecode has an invalid file size.");
+        }
+        byte[] header = new byte[8];
+        try (FileInputStream input = new FileInputStream(roomFile)) {
+            int offset = 0;
+            while (offset < header.length) {
+                int count = input.read(header, offset, header.length - offset);
+                if (count < 0) {
+                    throw new IllegalStateException("The embedded .room header is truncated.");
+                }
+                offset += count;
+            }
+        }
+        if (header[0] != 'A' || header[1] != 'L'
+                || header[2] != 'R' || header[3] != 'M') {
+            throw new IllegalStateException("Unsupported bytecode file: expected ALRM magic.");
+        }
+        int version = (header[4] & 0xff)
+                | ((header[5] & 0xff) << 8)
+                | ((header[6] & 0xff) << 16)
+                | ((header[7] & 0xff) << 24);
+        if (version != ROOM_BYTECODE_VERSION) {
+            throw new IllegalStateException("Unsupported .room version " + version
+                    + "; this Player requires version " + ROOM_BYTECODE_VERSION + ".");
         }
     }
 
