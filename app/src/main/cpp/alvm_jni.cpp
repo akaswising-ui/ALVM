@@ -2,6 +2,12 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <filesystem>
+
+namespace al {
+std::string loadSourceWithImports(const std::filesystem::path& sourcePath);
+}
+
 
 #define main alvm_cli_main
 #include "../../../../src/alvm.cpp"
