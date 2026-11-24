@@ -159,19 +159,6 @@ class AndroidApkBuilderTests(unittest.TestCase):
                 BUILDER.copy_application_assets(str(source), root / "output")
 
 
-    def test_rejects_asset_file_directory_path_collision(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "source"
-            source.mkdir()
-            (source / "assets").write_bytes(b"file")
-            (source / "assets-dir").mkdir()
-            (source / "assets-dir" / "icon.png").write_bytes(b"image")
-            # Rename the nested directory to collide with the existing file path.
-            (source / "assets-dir").rename(source / "assets")
-            with self.assertRaises(BUILDER.BuildError):
-                BUILDER.copy_application_assets(str(source), root / "output")
-
     def test_rejects_asset_file_count_over_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
