@@ -72,14 +72,17 @@ This roadmap distinguishes the native AL language engine from the Android IDE sh
 5. **Application UI framework (Stage 15 initial slice implemented):** AL `change window` explicitly gates native window visibility; `UI.screen`, `UI.text`, `UI.button`, integer UI state and AL event callbacks render through native Java Android Views only after that statement runs. Still to build: editable text fields, custom layout trees, image widgets, full event/lifecycle system. Keep ALVM Studio itself offline; any network permission must belong to a generated app that explicitly requests it.
 6. **Graphics/game/audio:** 2D renderer, touch/keyboard input, frame loop, collision helpers and audio playback, each backed by working native implementations and tests.
 7. **Database and networking:** local database first; networking as an optional, permission-gated capability rather than a background dependency of the IDE.
-8. **Application packaging:** ALPK v1 is implemented for one main .room module, a manifest and optional assets (CLI); the IDE can export the single-module package. Multi-module linking, external libraries/dependencies and building generated AL applications into APKs remain planned.
+8. **Application packaging:** ALPK v1 remains one main .room module with a manifest and optional assets. Local AL source imports now flatten into one compile unit, but independent multi-module ALPK linking and external dependency resolution remain planned. The APK CI workflow now includes an x86_64 emulator ABI, Studio emulator install/launch smoke test and optional release signing when developer secrets are provided; verify its run before treating it as working.
 
-## Recently implemented: native touch, frame loop and basic collision slice
+## Recently implemented: native game-engine foundation (partial)
 
-- `UI.touchArea` registers touch hit regions; Android `Game2DView` converts device touches into 320×480 logical coordinates and invokes the named AL callback. Callback code can read `touchX` and `touchY` through the existing integer UI state API.
-- `UI.frameLoop` schedules an AL update callback at 1–60 FPS through an Android main-thread Handler; the loop pauses with the Activity and stops when the game dialog closes or `UI.stopLoop()` is called.
-- `UI.collides` performs rectangle/rectangle and circle/rectangle axis-aligned bounding-box overlap tests in both C++ and Rust runtimes. This is collision detection support, not a physics solver.
-- C++ compiler/VM and Rust CI Runtime end-to-end tests cover callback registration, frame metadata, touch coordinate delivery, collision results and loop cancellation.
+- Scene graph: `UI.node`, `UI.attach`, `UI.detach` and `UI.transform` carry parent links and 2D transforms; cycles and over-deep parent chains are rejected.
+- Sprite-sheet animation: `UI.spriteSheet`, `UI.animateSprite` and `UI.setSpriteFrame` add bounded grids, 1–60 FPS frame timing and loop/non-loop behavior in Android Canvas renderers.
+- Physics: `UI.physicsBody` and `UI.physicsWorldStep` add gravity, mass, static/dynamic bodies, AABB separation and a normal impulse/restitution step. Friction, CCD, rotation-aware bodies and advanced constraints are not implemented.
+- Input and timing: touch areas, `UI.keyArea` (DPAD, space, enter, escape and A–Z) and the existing `UI.frameLoop` run top-level AL string callbacks. Android preserves the running canvas while callbacks refresh state.
+- 3D foundation: camera, cube primitives, Euler object transforms, uniform scale, simple face-light parameters and axis-aligned cube collision are supported by the Android Canvas perspective renderer. No GPU mesh/depth-buffer pipeline exists.
+- Source imports: bounded and canonical-path-checked `import "relative/module.al";` files are expanded and compiled into one .room entry module by the C++ CLI and Android JNI compiler.
+- C++/Rust unit and end-to-end fixtures and an AL engine sample have been added. They are not considered passing until CI executes successfully.
 
 ## Release rule
 
