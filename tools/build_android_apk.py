@@ -26,8 +26,8 @@ TEMPLATE = ROOT / "app" / "src" / "main" / "assets" / "android-export-template"
 STUDIO_APK = ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
 MAX_ROOM_BYTES = 64 * 1024 * 1024
-SUPPORTED_ABIS = ("arm64-v8a", "armeabi-v7a")
-ELF_MACHINE = {"arm64-v8a": 183, "armeabi-v7a": 40}
+SUPPORTED_ABIS = ("arm64-v8a", "armeabi-v7a", "x86_64")
+ELF_MACHINE = {"arm64-v8a": 183, "armeabi-v7a": 40, "x86_64": 62}
 
 
 class BuildError(RuntimeError):
