@@ -351,3 +351,66 @@ UI.stopLoop();
 - `UI.setVelocityY(id, velocity)` sets the vertical velocity in logical pixels per second for an existing rectangle, circle or sprite. The velocity must be a finite `double` within ±100000.
 - `UI.physicsStep(id, gravity, deltaSeconds)` advances that object's vertical motion using a semi-implicit Euler step. Both values must be finite `double` values; gravity is limited to ±10000 and deltaSeconds to 0–0.1 seconds. This is a vertical gravity integrator, not a full rigid-body physics solver; horizontal velocity, restitution, friction and collision response are not implemented.
 - The APIs are implemented in the C++ desktop VM and Rust CI Runtime, use existing `UiCall` bytecode and keep `.room v10` unchanged. Android Game2DView and the standalone Player render sprite assets from the APK's `assets/` directory.
+
+
+## Stage 22: native game-engine foundation (partial)
+
+These additional calls use the existing `UiCall` instruction and keep `.room v10` unchanged. The C++ compiler, C++ desktop VM and Rust CI Runtime share the same argument contract.
+
+```al
+class Main {
+    public static void main() {
+        change window "EngineDemo";
+        UI.game("AL Game");
+
+        UI.node("world");
+        UI.transform("world", 0, 0, 1.0, 1.0, 0.0);
+
+        UI.spriteSheet("hero", "sprites/hero.png", 16, 24, 32, 32, 4, 2);
+        UI.animateSprite("hero", 8, 12, true);
+        UI.attach("hero", "world");
+
+        UI.rect("player", 24, 90, 28, 28, 4294901760);
+        UI.physicsBody("player", 1.0, 0.0, 0.0);
+        UI.physicsWorldStep(0.016, 0.0, 180.0, 0.25);
+
+        UI.keyArea("left", "LEFT", "onKey");
+
+        UI.camera3D(0, 0, -300, 0, 0, 240);
+        UI.cube3D("cube", 0, 0, 0, 64, 4294967295);
+        UI.transform3D("cube", 0, 0, 0, 0, 20, 0, 1.0);
+        UI.material3D("cube", 0.8);
+    }
+}
+
+void onKey(string key) {
+    AL.print(key);
+}
+```
+
+- `UI.node(id)` creates a scene node. `UI.attach(childId, parentNodeId)` sets a parent after both items exist. Cycles and scene chains deeper than 64 are rejected. `UI.detach(id)` removes the parent link.
+- `UI.transform(id, x, y, scaleX, scaleY, rotationDegrees)` sets a 2D drawable or node transform. Scale must be between 0.05 and 20. Parent-node transforms are applied by the Android Canvas renderer.
+- `UI.spriteSheet(id, assetPath, x, y, width, height, columns, rows)` registers a sprite sheet. Grid dimensions are 1–64, with at most 1024 cells. The asset path follows the same relative-path safety rules as `UI.sprite`.
+- `UI.animateSprite(id, frameCount, fps, loop)` enables 1–60 FPS sprite animation. `UI.setSpriteFrame(id, frame)` selects a static grid frame.
+- `UI.keyArea(id, key, callback)` registers `ANY`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `SPACE`, `ENTER`, `ESCAPE`, or A–Z. Callback must be a top-level `void function(string event)`.
+- `UI.physicsBody(id, mass, velocityX, velocityY)` adds a body for a rectangle, circle or sprite. Mass zero is static. `UI.physicsWorldStep(deltaSeconds, gravityX, gravityY, restitution)` advances all registered bodies. Delta is 0–0.1 seconds, restitution 0–1 and gravity components are bounded to ±10000. Current collision resolution uses axis-aligned boxes and a simple normal impulse; friction, rotation-aware shapes, continuous collision detection and a full rigid-body solver are not implemented.
+- `UI.camera3D(x, y, z, yawDegrees, pitchDegrees, focalLength)` sets the camera. Yaw is limited to ±180°, pitch to ±89°, focal length to 32–2000.
+- `UI.cube3D(id, x, y, z, size, color)` adds a cube primitive. `UI.transform3D(id, x, y, z, rotationX, rotationY, rotationZ, scale)` sets its Euler rotation and uniform scale (0.05–20). `UI.material3D(id, lightIntensity)` sets the simple face-lighting multiplier (0–1). `UI.collides3D(leftId, rightId)` performs an axis-aligned cube overlap test.
+- Android and the generated Player currently draw 3D cubes through perspective-projected Android Canvas polygons. This is a 3D foundation, not a GPU mesh renderer: there is no arbitrary mesh import, depth buffer, texture material pipeline, shadowing or rotation-aware 3D collision.
+- `UI.frameLoop(callback, fps)` remains the deterministic callback/timing entry point. Use it to call `UI.physicsWorldStep`; the Android host pauses the loop with the Activity lifecycle.
+
+## Local source imports (partial module linking)
+
+The C++ command-line compiler and Android JNI compiler accept a top-level source directive such as:
+
+```al
+class Main {
+    import "modules/math_utils.al";
+
+    public static void main() {
+        AL.print(addScore(20, 22));
+    }
+}
+```
+
+Imports are expanded before parsing, bounded to 16 nested levels, 1 MiB per imported file and 4 MiB total source. Only relative `.al` paths inside the project source folder are accepted. Absolute paths, `.` / `..` traversal, symlink escapes, missing modules and cycles are rejected. Imported functions are compiled into the same `.room` entry module. This is not yet an independent multi-module `.AL` linker: ALPK v1 still contains `modules/main.room`, and pinned external dependency resolution is not implemented.
