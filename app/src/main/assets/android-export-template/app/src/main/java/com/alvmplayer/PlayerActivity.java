@@ -395,6 +395,12 @@ public final class PlayerActivity extends Activity {
             } catch (Exception ignored) {
                 // Missing optional sprites are drawn as a visible placeholder.
             }
+            if (!spriteCache.containsKey(assetPath) && spriteCache.size() >= 32) {
+                String oldest = spriteCache.keySet().iterator().next();
+                spriteCache.remove(oldest);
+                animationStarts.remove(oldest);
+                // Drop the cache reference; Android can reclaim the bitmap safely.
+            }
             spriteCache.put(assetPath, bitmap);
             return bitmap;
         }
