@@ -119,7 +119,7 @@ The Android Studio Package .AL button compiles the open source file with the nat
     runtime/ci-runtime/target/debug/alpack create build/FloatingPoint.AL FloatingPoint 1.0.0 build/main.room assets/icon.png
     runtime/ci-runtime/target/debug/alpack verify build/FloatingPoint.AL
 
-ALPK v1 has one entry module. External libraries, dependencies and multiple-module linking are not implemented. .AL packaging does not yet generate a standalone Android APK.
+ALPK v1 still contains one entry module. The C++ CLI and Android JNI compilers now support bounded, path-safe local `.al` imports by expanding imported source into the same `.room` compile unit; this is not independent bytecode-module linking. External dependency resolution and multi-module ALPK manifests remain unimplemented. The APK workflow is configured to build an x86_64 emulator ABI, install/launch ALVM Studio on an Android emulator, and optionally sign release APKs when developer-owned GitHub secrets are configured. A successful workflow run is still required before calling an APK build verified.
 
 ## Test commands
 
@@ -131,4 +131,18 @@ ALPK v1 has one entry module. External libraries, dependencies and multiple-modu
 
 ## Still incomplete
 
-Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, module imports, remaining standard libraries (collections, files, network, database and audio), multi-module package linking, external dependencies, advanced native input devices, full rigid-body physics and collision response, audio, full 3D rendering, and a complete graphics/asset lifecycle remain planned or partial. Direct on-device APK assembly and release signing are not included; ALVM exports a standalone Android Gradle project ZIP that must be built externally. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
+Interfaces, abstract classes, virtual overriding/dynamic dispatch, generics, enums, additional primitive types, maps/sets/lists, exception handling, collections/files/network/database/audio, independent multi-module ALPK linking, pinned external dependencies, advanced input devices, a full rigid-body solver, a GPU 3D renderer/depth pipeline, and a complete graphics/asset lifecycle remain planned or partial. CI emulator install/launch and optional developer-key signing have been added to the workflow but are not verified until the branch's run passes. Physical-device validation and developer-secret configuration remain external release gates. The Library Store may list a module before its runtime implementation exists; a catalog card is not proof of executable support.
+
+
+## Native game-engine APIs (partial)
+
+The C++ compiler/desktop VM, Rust CI Runtime and Android renderers now share the following `.room v10` UI API slice:
+
+- Scene nodes: `UI.node`, `UI.attach`, `UI.detach`, `UI.transform`.
+- Sprite sheets: `UI.spriteSheet`, `UI.animateSprite`, `UI.setSpriteFrame`.
+- Input: `UI.keyArea` for DPAD, space, enter, escape and A–Z; touch hit areas and the existing `UI.frameLoop` remain supported.
+- 2D physics: `UI.physicsBody` and `UI.physicsWorldStep` implement gravity, static/dynamic bodies, AABB separation and a simple restitution impulse.
+- 3D foundation: `UI.camera3D`, `UI.cube3D`, `UI.transform3D`, `UI.material3D`, `UI.collides3D`. Android renders projected cube faces on Canvas with simple face lighting.
+- Source linking: `import "relative/module.al";` expands a bounded, path-safe local source tree before compilation. A combined `.room` is emitted.
+
+See [LANGUAGE_SPEC.md](docs/LANGUAGE_SPEC.md) for signatures and numeric limits. This is a supportable engine foundation, not a finished general-purpose engine. The 2D solver currently uses axis-aligned bounding boxes without friction or continuous collision detection. The 3D path is Canvas projection, not a GPU mesh renderer or depth-buffer pipeline. Imported source is flattened into one entry module; ALPK v1 remains single-module and external dependency resolution is still pending.
