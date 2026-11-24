@@ -109,7 +109,7 @@ These baseline statements must be refreshed from code and test evidence before e
 - 3D transform/camera/projection/depth/material/lighting tests plus emulator and physical-device rendering smoke tests.
 - Performance and memory tests on a defined low-end Android baseline. Unsupported GPU features must fail cleanly.
 
-**Status:** 2D partial; 3D planned.
+**Status:** 2D engine foundation partially implemented in C++/Rust and Android Canvas; 3D cube/camera foundation partially implemented with Canvas perspective projection. Full rigid-body features, GPU 3D rendering and physical-device validation remain open.
 
 ---
 
@@ -138,7 +138,7 @@ These baseline statements must be refreshed from code and test evidence before e
 - Release APK signing is verified only when a real developer-provided key is configured.
 - App/runtime/.room compatibility matrix is tested across supported versions and ABIs.
 
-**Status:** ALPK v1 single-module and single-source debug APK path are partial; multi-module linking and verified installation/release signing remain incomplete.
+**Status:** Bounded local source imports are implemented as compile-time flattening into one .room, not independent bytecode modules. ALPK v1 remains single-module; external dependency resolution remains open. The x86_64 emulator build, Studio install/launch workflow and optional developer-key signing steps are configured but still require a successful CI run. Physical-device tests remain manual.
 
 ---
 
@@ -176,8 +176,21 @@ The six stages are one tracked release scope, but implementation order is constr
 - [ ] Stage 19: OOP completion, with C++/Rust parity.
 - [ ] Stage 20: memory/resource model and exceptions.
 - [ ] Stage 21: Collections, Files, System, Network, Database and Audio.
-- [ ] Stage 22: complete 2D game engine and 3D foundation.
-- [ ] Stage 23: multi-module ALPK, dependency linker, APK install testing and release signing.
+- [ ] Stage 22: complete the 2D engine and GPU-capable 3D foundation. Partial scene graph, sprites, physics/input and Canvas-projected cube support have been added; advanced physics and 3D pipeline remain open.
+- [ ] Stage 23: independent multi-module ALPK and external dependency linker remain open; local source-import flattening, x86_64 CI build, emulator smoke-test step and optional signing workflow have been added but require CI verification.
 - [ ] Stage 24: security, parity, memory/crash, emulator and physical-device test matrix.
 - [ ] All mandatory CI jobs pass on the release commit.
 - [ ] Documentation and feature status match the tested implementation.
+
+
+## Branch progress update: feature/stages-19-24-consolidated
+
+The following partial implementations have been added on the working branch:
+
+- C++ compiler, C++ VM and Rust CI Runtime expose the same new UiCall signatures for scene nodes, transforms, sprite sheets, key input, 2D physics, 3D cubes/camera/material parameters and 3D AABB queries. The existing .room v10 format is retained.
+- Android Studio and standalone Player Canvas renderers now consume scene hierarchy, sprite animation and projected 3D cube metadata. Keyboard callbacks are forwarded to AL entry points.
+- CLI and Android JNI compile paths expand bounded, relative local .al imports before parsing. Imported source is linked into one compile unit and one .room file.
+- C++/Rust unit and end-to-end fixtures, an AL game-engine sample, path traversal rejection and scene cycle rejection have been added.
+- APK CI configuration includes x86_64, Studio emulator installation/launch smoke test and optional release signing using repository secrets.
+
+Still not implemented: true ALPK v2 independent modules, exported module symbol tables, external dependency resolver/lockfile, full 3D GPU mesh/depth renderer, advanced rigid-body physics, physical ARM-device validation, and a complete fuzz/memory/crash/security matrix. No feature is marked complete until the CI run and required platform checks pass.
