@@ -302,4 +302,38 @@ if [[ "$SPRITE_PHYSICS_UI" != *'"kind":"sprite","id":"hero","text":"sprites/hero
   exit 1
 fi
 
-echo "PASS: ALVM compiler, AL.Math/AL.String, positioned canvas text, functions, arrays, objects, inheritance, constructors, overloading, foreach, switch and loop control"
+"$BIN" compile "$ROOT/examples/multi_module_link.al" -o "$TMP/multi-module.room"
+MODULE_OUTPUT="$("$BIN" run "$TMP/multi-module.room")"
+if [[ "$MODULE_OUTPUT" != "42" ]]; then
+  printf 'Multi-module AL import/link output expected 42, got:\\n%s\\n' "$MODULE_OUTPUT" >&2
+  exit 1
+fi
+
+if "$BIN" compile "$ROOT/tests/import_traversal.al" -o "$TMP/import-traversal.room" >/dev/null 2>&1; then
+  echo "FAIL: AL import path traversal was accepted" >&2
+  exit 1
+fi
+test ! -e "$TMP/import-traversal.room"
+
+"$BIN" compile "$ROOT/examples/game_engine_foundation.al" -o "$TMP/game-engine.room"
+ENGINE_UI="$("$BIN" ui "$TMP/game-engine.room")"
+for required in '"kind":"node"' '"parent":"world"' '"frameCount":8' '"animationFps":12' '"kind":"cube3D"' '"camera3D"' '"frameRate":30'; do
+  if [[ "$ENGINE_UI" != *"$required"* ]]; then
+    printf 'Game engine UI missing %s:\\n%s\\n' "$required" "$ENGINE_UI" >&2
+    exit 1
+  fi
+done
+ENGINE_RUN="$("$BIN" run "$TMP/game-engine.room")"
+test "$ENGINE_RUN" = "true"
+ENGINE_KEYS="$("$BIN" ui-event "$TMP/game-engine.room" onKey LEFT)"
+if [[ "$ENGINE_KEYS" != *'"text":"LEFT"'* ]]; then
+  printf 'Keyboard callback did not update AL UI:\\n%s\\n' "$ENGINE_KEYS" >&2
+  exit 1
+fi
+
+if "$BIN" run <("$BIN" compile "$ROOT/tests/scene_graph_cycle.al" -o "$TMP/scene-cycle.room" >/dev/null; cat "$TMP/scene-cycle.room") >/dev/null 2>&1; then
+  echo "FAIL: a cyclic scene graph was accepted" >&2
+  exit 1
+fi
+
+echo "PASS: AL compiler, compile-time module imports, scene graph, sprite animation, physics, keyboard callbacks and 3D foundation"
