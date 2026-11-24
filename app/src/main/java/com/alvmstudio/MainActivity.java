@@ -1389,7 +1389,8 @@ public class MainActivity extends Activity {
                 if (item != null) {
                     String kind = item.optString("kind", "");
                     if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
-                            || "drawText".equals(kind) || "sprite".equals(kind) || "cube3D".equals(kind)) {
+                            || "drawText".equals(kind) || "sprite".equals(kind) || "cube3D".equals(kind) || "touchArea".equals(kind)
+                        || "keyArea".equals(kind)) {
                         hasGameCanvas = true;
                         break;
                     }
