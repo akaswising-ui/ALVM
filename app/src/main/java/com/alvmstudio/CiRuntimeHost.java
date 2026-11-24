@@ -37,7 +37,7 @@ public final class CiRuntimeHost {
             return "unsupported";
         }
         for (String value : supported) {
-            if ("arm64-v8a".equals(value) || "armeabi-v7a".equals(value)) {
+            if ("arm64-v8a".equals(value) || "armeabi-v7a".equals(value) || "x86_64".equals(value)) {
                 return value;
             }
         }
