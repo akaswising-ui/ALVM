@@ -1038,7 +1038,7 @@ static std::string expandImportsText(const std::string& source,const std::filesy
   std::regex importPattern(R"ALIMPORT(^[ \t]*import[ \t]+"([^"]+)"[ \t]*;[ \t]*(?://.*)?$)ALIMPORT");
   std::istringstream input(source);std::ostringstream output;std::string line;
   while(std::getline(input,line)){
-    if(!line.empty()&&line.back()=='\\r')line.pop_back();
+    if(!line.empty()&&line.back()=='\r')line.pop_back();
     std::smatch match;
     if(!std::regex_match(line,match,importPattern)){output<<line<<'\n';continue;}
     std::filesystem::path requested(match[1].str());
