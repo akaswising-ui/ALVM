@@ -50,13 +50,13 @@ class Main {
 
     public static void onKey(string key) {
         if (key == "SPACE" || key == "UP") {
-            UI.setVelocityY("runner", -175.0);
+            UI.physicsBody("runner", 1.0, 0.0, -175.0);
             UI.setText("status", "JUMP!");
         }
     }
 
     public static void onTouch(string event) {
-        UI.setVelocityY("runner", -175.0);
+        UI.physicsBody("runner", 1.0, 0.0, -175.0);
         UI.setText("status", "TOUCH JUMP!");
     }
 
