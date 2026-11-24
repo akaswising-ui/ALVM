@@ -201,6 +201,10 @@ class AndroidApkBuilderTests(unittest.TestCase):
         self.assertIn('"applicationLanguage": "AL"', metadata)
         self.assertIn('"sourceExtension": ".al"', metadata)
         self.assertIn('"bytecodeVersion": 10', metadata)
+        self.assertIn("private static final int ROOM_BYTECODE_VERSION = 10;", player)
+        self.assertIn("expected ALRM magic", player)
+        self.assertIn("Unsupported .room version", player)
+        self.assertIn("MAX_ROOM_BYTES", player)
 
 
 if __name__ == "__main__":
