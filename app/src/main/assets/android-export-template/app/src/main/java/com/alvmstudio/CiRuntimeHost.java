@@ -33,7 +33,7 @@ public final class CiRuntimeHost {
         String[] supported = Build.SUPPORTED_ABIS;
         if (supported == null || supported.length == 0) return "unsupported";
         for (String value : supported) {
-            if ("arm64-v8a".equals(value) || "armeabi-v7a".equals(value)) return value;
+            if ("arm64-v8a".equals(value) || "armeabi-v7a".equals(value) || "x86_64".equals(value)) return value;
         }
         return supported[0];
     }

@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 
@@ -16,6 +17,15 @@ SPEC.loader.exec_module(BUILDER)
 
 
 class AndroidApkBuilderTests(unittest.TestCase):
+    def test_hashes_large_apk_files_without_changing_digest(self) -> None:
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "large.apk"
+            payload = (b"ALVM-APK-" * 200000)
+            apk.write_bytes(payload)
+            self.assertEqual(BUILDER.sha256_file(apk), hashlib.sha256(payload).hexdigest())
+
     def test_default_package_id_is_valid_and_deterministic(self) -> None:
         package_id = BUILDER.default_application_id("AL Calculator")
         self.assertEqual(package_id, "com.alvm.generated.al_calculator")
@@ -55,6 +65,18 @@ class AndroidApkBuilderTests(unittest.TestCase):
         with self.assertRaises(BUILDER.BuildError):
             BUILDER.require_elf_arch(bytes(valid), "armeabi-v7a")
 
+        emulator = bytearray(20)
+        emulator[:4] = b"\x7fELF"
+        emulator[18:20] = struct.pack("<H", 62)
+        BUILDER.require_elf_arch(bytes(emulator), "x86_64")
+        with self.assertRaises(BUILDER.BuildError):
+            BUILDER.require_elf_arch(bytes(valid), "x86_64")
+
+
+
+    def test_emulator_abi_is_supported(self) -> None:
+        self.assertIn("x86_64", BUILDER.SUPPORTED_ABIS)
+        self.assertEqual(BUILDER.ELF_MACHINE["x86_64"], 62)
 
     def test_copies_safe_sprite_assets_into_player_assets_folder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -66,6 +88,87 @@ class AndroidApkBuilderTests(unittest.TestCase):
             copied = BUILDER.copy_application_assets(str(source), output)
             self.assertEqual(copied, 1)
             self.assertEqual((output / "sprites" / "player.png").read_bytes(), b"png-data")
+
+    def test_decodes_bundled_base64_png_assets(self) -> None:
+        import base64
+
+        png_bytes = b"\x89PNG\r\n\x1a\nasset"
+        encoded = base64.b64encode(png_bytes)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            (source / "sprites").mkdir(parents=True)
+            (source / "sprites" / "runner.png.b64").write_bytes(encoded)
+            output = root / "apk-assets"
+            copied = BUILDER.copy_application_assets(str(source), output)
+            self.assertEqual(copied, 1)
+            self.assertEqual((output / "sprites" / "runner.png").read_bytes(), png_bytes)
+            self.assertFalse((output / "sprites" / "runner.png.b64").exists())
+
+    def test_rejects_invalid_base64_png_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "broken.png.b64").write_text("not base64!", encoding="ascii")
+            with self.assertRaises(BUILDER.BuildError):
+                BUILDER.copy_application_assets(str(source), root / "output")
+
+
+    def test_base64_png_is_decoded_across_stream_chunks(self) -> None:
+        import base64
+
+        png_bytes = b"\x89PNG\r\n\x1a\n" + (b"pixel" * 20)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "runner.png.b64").write_bytes(base64.b64encode(png_bytes))
+            output = root / "output"
+            with patch.object(BUILDER, "ASSET_IO_CHUNK_BYTES", 4):
+                copied = BUILDER.copy_application_assets(str(source), output)
+            self.assertEqual(copied, 1)
+            self.assertEqual((output / "runner.png").read_bytes(), png_bytes)
+
+
+    def test_rejects_asset_size_over_limit_without_publishing_partial_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "large.bin").write_bytes(b"123456789")
+            output = root / "output"
+            with patch.object(BUILDER, "MAX_ASSET_BYTES", 8):
+                with self.assertRaises(BUILDER.BuildError):
+                    BUILDER.copy_application_assets(str(source), output)
+            self.assertFalse((output / "large.bin").exists())
+
+
+    def test_rejects_duplicate_png_and_encoded_png_targets(self) -> None:
+        import base64
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "runner.png").write_bytes(b"original")
+            (source / "runner.png.b64").write_bytes(
+                base64.b64encode(b"\x89PNG\r\n\x1a\nimage")
+            )
+            with self.assertRaises(BUILDER.BuildError):
+                BUILDER.copy_application_assets(str(source), root / "output")
+
+
+    def test_rejects_asset_file_count_over_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "one.bin").write_bytes(b"1")
+            (source / "two.bin").write_bytes(b"2")
+            with patch.object(BUILDER, "MAX_ASSET_FILES", 1):
+                with self.assertRaises(BUILDER.BuildError):
+                    BUILDER.copy_application_assets(str(source), root / "output")
 
     def test_rejects_unsafe_asset_path_characters(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -107,6 +210,10 @@ class AndroidApkBuilderTests(unittest.TestCase):
         self.assertIn('"applicationLanguage": "AL"', metadata)
         self.assertIn('"sourceExtension": ".al"', metadata)
         self.assertIn('"bytecodeVersion": 10', metadata)
+        self.assertIn("private static final int ROOM_BYTECODE_VERSION = 10;", player)
+        self.assertIn("expected ALRM magic", player)
+        self.assertIn("Unsupported .room version", player)
+        self.assertIn("MAX_ROOM_BYTES", player)
 
 
 if __name__ == "__main__":

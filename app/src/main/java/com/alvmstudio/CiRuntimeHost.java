@@ -9,7 +9,7 @@ import org.json.JSONObject;
 import java.io.File;
 
 public final class CiRuntimeHost {
-    private static final String BUNDLED_VERSION = "2.0.0";
+    private static final String BUNDLED_VERSION = "2.1.0";
 
     static {
         System.loadLibrary("alvm");
@@ -37,7 +37,7 @@ public final class CiRuntimeHost {
             return "unsupported";
         }
         for (String value : supported) {
-            if ("arm64-v8a".equals(value) || "armeabi-v7a".equals(value)) {
+            if ("arm64-v8a".equals(value) || "armeabi-v7a".equals(value) || "x86_64".equals(value)) {
                 return value;
             }
         }

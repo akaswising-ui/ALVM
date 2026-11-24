@@ -9,17 +9,17 @@ on:
       source_file:
         description: "Repository path to the AL source (.al)"
         required: true
-        default: "examples/sprite_physics.al"
+        default: "examples/neon_runner.al"
         type: string
       app_name:
         description: "Name shown below the Android app icon"
         required: true
-        default: "AL Sprite Physics Demo"
+        default: "AL Neon Runner Demo"
         type: string
       application_id:
         description: "Android package ID"
         required: true
-        default: "com.alvm.generated.spritephysics"
+        default: "com.alvm.generated.neonrunner"
         type: string
       abi:
         description: "CPU architecture for the generated APK"
@@ -29,6 +29,7 @@ on:
         options:
           - arm64-v8a
           - armeabi-v7a
+          - x86_64
       assets_dir:
         description: "Optional repository directory containing sprite/image assets (copied under APK assets/)"
         required: false
@@ -39,9 +40,9 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     env:
-      AL_SOURCE_FILE: ${{ github.event.inputs.source_file || 'examples/sprite_physics.al' }}
-      AL_APP_NAME: ${{ github.event.inputs.app_name || 'AL Sprite Physics Demo' }}
-      AL_APPLICATION_ID: ${{ github.event.inputs.application_id || 'com.alvm.generated.spritephysics' }}
+      AL_SOURCE_FILE: ${{ github.event.inputs.source_file || 'examples/neon_runner.al' }}
+      AL_APP_NAME: ${{ github.event.inputs.app_name || 'AL Neon Runner Demo' }}
+      AL_APPLICATION_ID: ${{ github.event.inputs.application_id || 'com.alvm.generated.neonrunner' }}
       AL_ABI: ${{ github.event.inputs.abi || 'arm64-v8a' }}
       AL_ASSETS_DIR: ${{ github.event.inputs.assets_dir || 'examples/assets' }}
     steps:
@@ -87,7 +88,7 @@ jobs:
 
       - name: Install Rust Android targets and test the CI Runtime
         run: |
-          rustup target add aarch64-linux-android armv7-linux-androideabi
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo fmt --manifest-path runtime/ci-runtime/Cargo.toml --all
           cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
 
@@ -110,11 +111,44 @@ jobs:
             "${ASSET_ARGS[@]}" \
             --output dist/ALVM-standalone-player.apk
 
+      - name: Check whether Player release signing is configured
+        id: player-signing
+        env:
+          KEYSTORE: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALVM_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALVM_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing skipped: developer signing secrets are not configured."
+          fi
+
+      - name: Sign standalone Player APK with developer release key
+        if: steps.player-signing.outputs.enabled == 'true'
+        env:
+          ALVM_RELEASE_KEYSTORE_BASE64: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
+          ALVM_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
+          ALVM_RELEASE_KEY_ALIAS: ${{ secrets.ALVM_RELEASE_KEY_ALIAS }}
+          ALVM_RELEASE_KEY_PASSWORD: ${{ secrets.ALVM_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ALVM_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/alvm-release.jks"
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          "$BUILD_TOOLS/zipalign" -f -v 4 dist/ALVM-standalone-player.apk "$RUNNER_TEMP/player-aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/alvm-release.jks" --ks-key-alias "$ALVM_RELEASE_KEY_ALIAS" \
+            --ks-pass env:ALVM_RELEASE_KEYSTORE_PASSWORD --key-pass env:ALVM_RELEASE_KEY_PASSWORD \
+            --out dist/ALVM-standalone-player-release.apk "$RUNNER_TEMP/player-aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs dist/ALVM-standalone-player-release.apk
+          rm -f "$RUNNER_TEMP/alvm-release.jks" "$RUNNER_TEMP/player-aligned.apk"
+
       - name: Upload generated Android Player APK
         uses: actions/upload-artifact@v4
         with:
           name: ALVM-Generated-Android-APK
-          path: dist/ALVM-standalone-player.apk
+          path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -147,14 +181,14 @@ jobs:
         with:
           packages: platform-tools
 
-      - name: Install Android SDK, NDK and CMake
+      - name: Install Android SDK, NDK, CMake and emulator image
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1" "emulator" "system-images;android-35;google_apis;x86_64"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Install Rust Android targets for ALVM native runtime
         run: |
-          rustup target add aarch64-linux-android armv7-linux-androideabi
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo test --manifest-path runtime/ci-runtime/Cargo.toml --all-targets
 
       - name: Set up Gradle
@@ -184,10 +218,68 @@ jobs:
           print(f"Verified ALVM Studio APK: {apk} ({apk.stat().st_size} bytes)")
           PY
 
+      - name: Install ALVM Studio on Android emulator and launch
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            set -euo pipefail
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop com.alvmstudio || true
+            adb shell am start -n com.alvmstudio/.MainActivity
+            for attempt in $(seq 1 20); do
+              if adb shell pidof com.alvmstudio >/dev/null 2>&1; then break; fi
+              sleep 2
+            done
+            adb shell pidof com.alvmstudio
+            adb logcat -d -s AndroidRuntime:E | tee "$RUNNER_TEMP/alvm-emulator-errors.log"
+            if grep -q "FATAL EXCEPTION" "$RUNNER_TEMP/alvm-emulator-errors.log"; then
+              exit 1
+            fi
+
+      - name: Check whether Studio release signing is configured
+        id: studio-signing
+        env:
+          KEYSTORE: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALVM_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALVM_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing skipped: developer signing secrets are not configured."
+          fi
+
+      - name: Sign ALVM Studio APK with developer release key
+        if: steps.studio-signing.outputs.enabled == 'true'
+        env:
+          ALVM_RELEASE_KEYSTORE_BASE64: ${{ secrets.ALVM_RELEASE_KEYSTORE_BASE64 }}
+          ALVM_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ALVM_RELEASE_KEYSTORE_PASSWORD }}
+          ALVM_RELEASE_KEY_ALIAS: ${{ secrets.ALVM_RELEASE_KEY_ALIAS }}
+          ALVM_RELEASE_KEY_PASSWORD: ${{ secrets.ALVM_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          printf '%s' "$ALVM_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/alvm-release.jks"
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          "$BUILD_TOOLS/zipalign" -f -v 4 app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/studio-aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/alvm-release.jks" --ks-key-alias "$ALVM_RELEASE_KEY_ALIAS" \
+            --ks-pass env:ALVM_RELEASE_KEYSTORE_PASSWORD --key-pass env:ALVM_RELEASE_KEY_PASSWORD \
+            --out dist/ALVM-Studio-release.apk "$RUNNER_TEMP/studio-aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs dist/ALVM-Studio-release.apk
+          rm -f "$RUNNER_TEMP/alvm-release.jks" "$RUNNER_TEMP/studio-aligned.apk"
+
       - name: Upload ALVM Studio Latest APK
         uses: actions/upload-artifact@v4
         with:
           name: ALVM-Studio-Latest-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            dist/ALVM-Studio-release.apk
+          if-no-files-found: warn
           retention-days: 14

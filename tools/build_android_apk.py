@@ -9,6 +9,8 @@ an absolute path is supplied.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import html
 import os
@@ -18,6 +20,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 
@@ -26,8 +29,11 @@ TEMPLATE = ROOT / "app" / "src" / "main" / "assets" / "android-export-template"
 STUDIO_APK = ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
 MAX_ROOM_BYTES = 64 * 1024 * 1024
-SUPPORTED_ABIS = ("arm64-v8a", "armeabi-v7a")
-ELF_MACHINE = {"arm64-v8a": 183, "armeabi-v7a": 40}
+MAX_ASSET_BYTES = 64 * 1024 * 1024
+MAX_ASSET_FILES = 2048
+ASSET_IO_CHUNK_BYTES = 1024 * 1024
+SUPPORTED_ABIS = ("arm64-v8a", "armeabi-v7a", "x86_64")
+ELF_MACHINE = {"arm64-v8a": 183, "armeabi-v7a": 40, "x86_64": 62}
 
 
 class BuildError(RuntimeError):
@@ -103,6 +109,18 @@ def validate_application_id(value: str) -> str:
     return value
 
 
+def sha256_file(path: Path) -> str:
+    """Hash large build outputs without loading the entire APK into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def verify_room(path: Path) -> None:
     if not path.is_file():
         raise BuildError("AL compiler did not create main.room.")
@@ -118,13 +136,70 @@ def verify_room(path: Path) -> None:
         raise BuildError("Expected .room v10 bytecode, compiler created v" + str(version) + ".")
 
 
+def _copy_asset_payload(
+    source: Path, target: Path, remaining_bytes: int, decode_png_base64: bool
+) -> int:
+    """Stream one asset to a temporary file and atomically publish it within the size budget."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    copied = 0
+    png_prefix = bytearray()
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=target.parent, prefix=target.name + ".", suffix=".tmp", delete=False
+        ) as output:
+            temporary_path = Path(output.name)
+            with source.open("rb") as input_stream:
+                if decode_png_base64:
+                    while True:
+                        encoded = input_stream.read(ASSET_IO_CHUNK_BYTES)
+                        if not encoded:
+                            break
+                        try:
+                            payload = base64.b64decode(encoded, validate=True)
+                        except (binascii.Error, ValueError) as error:
+                            raise BuildError("Invalid base64 PNG asset: " + str(source)) from error
+                        if b"=" in encoded and input_stream.read(1):
+                            raise BuildError("Invalid base64 PNG asset: trailing data after padding.")
+                        if copied + len(payload) > remaining_bytes:
+                            raise BuildError("Decoded assets exceed the 64 MiB export limit.")
+                        if len(png_prefix) < 8:
+                            png_prefix.extend(payload[: 8 - len(png_prefix)])
+                        output.write(payload)
+                        copied += len(payload)
+                        if b"=" in encoded:
+                            break
+                    if bytes(png_prefix) != b"\x89PNG\r\n\x1a\n":
+                        raise BuildError("Decoded asset is not a PNG file: " + str(source))
+                else:
+                    while True:
+                        payload = input_stream.read(ASSET_IO_CHUNK_BYTES)
+                        if not payload:
+                            break
+                        if copied + len(payload) > remaining_bytes:
+                            raise BuildError("Application assets exceed the 64 MiB export limit.")
+                        output.write(payload)
+                        copied += len(payload)
+
+        if copied == 0:
+            raise BuildError("Application asset is empty: " + str(source))
+        os.replace(temporary_path, target)
+        temporary_path = None
+        return copied
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def copy_application_assets(source_value: str, destination: Path) -> int:
-    """Copy a bounded, symlink-free asset directory into the generated APK assets."""
+    """Copy assets safely with bounded streaming and checked *.png.b64 decoding."""
     source = Path(source_value).expanduser().resolve()
     if not source.is_dir():
         raise BuildError("--assets-dir must point to an existing directory: " + str(source))
     copied_bytes = 0
     copied_files = 0
+    written_paths: set[str] = set()
     for item in sorted(source.rglob("*")):
         if item.is_symlink():
             raise BuildError("Symlinks are not allowed in --assets-dir: " + str(item))
@@ -140,15 +215,22 @@ def copy_application_assets(source_value: str, destination: Path) -> int:
             raise BuildError("Asset path contains unsupported characters: " + str(relative))
         if relative.as_posix() == "main.room":
             raise BuildError("The asset directory cannot replace the generated main.room.")
-        copied_bytes += item.stat().st_size
-        copied_files += 1
-        if copied_bytes > 64 * 1024 * 1024 or copied_files > 2048:
-            raise BuildError("--assets-dir exceeds the 64 MiB / 2048 file export limit.")
-        target = destination.joinpath(*parts)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item, target)
-    return copied_files
+        if copied_files >= MAX_ASSET_FILES:
+            raise BuildError("Application assets exceed the 2048 file export limit.")
 
+        is_encoded_png = relative.as_posix().endswith(".png.b64")
+        target_relative = Path(relative.as_posix()[:-4]) if is_encoded_png else relative
+        target_name = target_relative.as_posix()
+        if target_name in written_paths:
+            raise BuildError("Duplicate application asset target: " + target_name)
+        written_paths.add(target_name)
+
+        remaining_bytes = MAX_ASSET_BYTES - copied_bytes
+        copied = _copy_asset_payload(item, destination.joinpath(*target_relative.parts),
+                                     remaining_bytes, is_encoded_png)
+        copied_bytes += copied
+        copied_files += 1
+    return copied_files
 
 def require_elf_arch(data: bytes, abi: str) -> None:
     if len(data) < 20 or data[:4] != b"\x7fELF":
@@ -317,7 +399,7 @@ def build(args: argparse.Namespace) -> Path:
         output_path = (ROOT / output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(built_apk, output_path)
-    digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    digest = sha256_file(output_path)
     print("")
     print("APK generated: " + str(output_path))
     print("Package ID: " + application_id)

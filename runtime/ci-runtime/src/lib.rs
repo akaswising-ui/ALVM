@@ -375,12 +375,12 @@ fn verify(program: &Program) -> RtResult<()> {
                     need = 1;
                 }
                 UI_CALL => {
-                    if !(0..=6).contains(&arg) {
+                    if !(0..=8).contains(&arg) {
                         return error("Invalid UI call argument count");
                     }
                     need = arg;
                     delta = (if matches!(instruction.text.as_str(),
-                        "getInt" | "collides"
+                        "getInt" | "collides" | "collides3D"
                         | "AL.Math.abs" | "AL.Math.min" | "AL.Math.max"
                         | "AL.Math.sqrt" | "AL.Math.pow" | "AL.Math.floor"
                         | "AL.Math.ceil" | "AL.Math.round"
@@ -481,17 +481,48 @@ struct ObjectValue {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct UiElement {
     kind: String,
     #[serde(rename = "id")]
     element_id: String,
     text: String,
     callback: String,
+    parent: String,
     x: i64,
     y: i64,
     w: i64,
     h: i64,
     color: u32,
+    z: i64,
+    rotation: f64,
+    scale_x: f64,
+    scale_y: f64,
+    rotation_x: f64,
+    rotation_y: f64,
+    rotation_z: f64,
+    scale_3d: f64,
+    columns: i64,
+    rows: i64,
+    frame: i64,
+    frame_count: i64,
+    animation_fps: i64,
+    animation_loop: bool,
+    light: f64,
+}
+impl Default for UiElement {
+    fn default() -> Self {
+        Self { kind:String::new(), element_id:String::new(), text:String::new(), callback:String::new(), parent:String::new(),
+            x:0,y:0,w:0,h:0,color:0xFFFFFFFF,z:0,rotation:0.0,scale_x:1.0,scale_y:1.0,
+            rotation_x:0.0,rotation_y:0.0,rotation_z:0.0,scale_3d:1.0,
+            columns:1,rows:1,frame:0,frame_count:1,animation_fps:0,animation_loop:true,light:1.0 }
+    }
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Camera3D { x:i64,y:i64,z:i64,yaw:i64,pitch:i64,focal:i64 }
+impl Default for Camera3D {
+    fn default()->Self { Self { x:0,y:0,z:-300,yaw:0,pitch:0,focal:240 } }
 }
 
 #[derive(Default)]
@@ -504,11 +535,18 @@ struct UiState {
     frame_rate: u32,
     velocity_y: HashMap<String, f64>,
     physics_y: HashMap<String, f64>,
+    body_mass: HashMap<String,f64>,
+    body_velocity_x: HashMap<String,f64>,
+    body_velocity_y: HashMap<String,f64>,
+    body_position_x: HashMap<String,f64>,
+    body_position_y: HashMap<String,f64>,
+    camera_3d: Camera3D,
 }
-
 impl UiState {
     fn new() -> Self {
-        Self { title: "AL Application".into(), visible: false, elements: Vec::new(), ints: HashMap::new(), frame_callback: String::new(), frame_rate: 0, velocity_y: HashMap::new(), physics_y: HashMap::new() }
+        Self { title:"AL Application".into(),visible:false,elements:Vec::new(),ints:HashMap::new(),frame_callback:String::new(),frame_rate:0,
+            velocity_y:HashMap::new(),physics_y:HashMap::new(),body_mass:HashMap::new(),body_velocity_x:HashMap::new(),
+            body_velocity_y:HashMap::new(),body_position_x:HashMap::new(),body_position_y:HashMap::new(),camera_3d:Camera3D::default() }
     }
 
     fn find(&self, id: &str) -> Option<usize> {
@@ -664,6 +702,85 @@ fn ui_elements_collide(left: &UiElement, right: &UiElement) -> bool {
     lx1 < rx2 && lx2 > rx1 && ly1 < ry2 && ly2 > ry1
 }
 
+fn cube_aabb_extent_3d(cube:&UiElement)->[f64;3] {
+    let half=(cube.w.max(1) as f64)*0.5*cube.scale_3d;
+    let rx=cube.rotation_x.to_radians();let ry=cube.rotation_y.to_radians();let rz=cube.rotation_z.to_radians();
+    let (sx,cx)=rx.sin_cos();let (sy,cy)=ry.sin_cos();let (sz,cz)=rz.sin_cos();
+    let r00=cz*cy;let r01=cz*sy*sx-sz*cx;let r02=cz*sy*cx+sz*sx;
+    let r10=sz*cy;let r11=sz*sy*sx+cz*cx;let r12=sz*sy*cx-cz*sx;
+    let r20=-sy;let r21=cy*sx;let r22=cy*cx;
+    [half*(r00.abs()+r01.abs()+r02.abs()),
+     half*(r10.abs()+r11.abs()+r12.abs()),
+     half*(r20.abs()+r21.abs()+r22.abs())]
+}
+fn ui_elements_collide_3d(left:&UiElement,right:&UiElement)->bool {
+    if left.kind!="cube3D"||right.kind!="cube3D"{return false;}
+    let a=cube_aabb_extent_3d(left);let b=cube_aabb_extent_3d(right);
+    (left.x as f64-right.x as f64).abs()<a[0]+b[0]
+        &&(left.y as f64-right.y as f64).abs()<a[1]+b[1]
+        &&(left.z as f64-right.z as f64).abs()<a[2]+b[2]
+}
+
+fn physics_world_step_2d(dt:f64,gx:f64,gy:f64,restitution:f64,state:&mut UiState)->RtResult<()> {
+    let limit=-(i64::MIN as f64);
+    let round_checked=|v:f64|->RtResult<i64>{if !v.is_finite()||v<i64::MIN as f64||v>=limit{return error("UI.physicsWorldStep position overflow");}Ok(v.round() as i64)};
+    let snapshots=state.elements.clone();
+    for item in &snapshots {
+        if !state.body_mass.contains_key(&item.element_id)||!matches!(item.kind.as_str(),"rect"|"circle"|"sprite"){continue;}
+        let mass=*state.body_mass.get(&item.element_id).unwrap_or(&0.0);
+        let id=item.element_id.clone();
+        let px=state.body_position_x.entry(id.clone()).or_insert(item.x as f64);
+        let py=state.body_position_y.entry(id.clone()).or_insert(item.y as f64);
+        let vx=state.body_velocity_x.entry(id.clone()).or_insert(0.0);
+        let vy=state.body_velocity_y.entry(id.clone()).or_insert(0.0);
+        if mass>0.0{*vx+=gx*dt;*vy+=gy*dt;*px+=*vx*dt;*py+=*vy*dt;}
+        if !vx.is_finite()||!vy.is_finite()||vx.abs()>1.0e9||vy.abs()>1.0e9{return error("UI.physicsWorldStep velocity overflow");}
+    }
+    for i in 0..snapshots.len() {
+        let a=&snapshots[i];let Some(ma)=state.body_mass.get(&a.element_id).copied() else{continue;};
+        if !matches!(a.kind.as_str(),"rect"|"circle"|"sprite"){continue;}
+        for b in snapshots.iter().skip(i+1) {
+            let Some(mb)=state.body_mass.get(&b.element_id).copied() else{continue;};
+            if !matches!(b.kind.as_str(),"rect"|"circle"|"sprite"){continue;}
+            let ax=*state.body_position_x.get(&a.element_id).unwrap_or(&(a.x as f64));
+            let ay=*state.body_position_y.get(&a.element_id).unwrap_or(&(a.y as f64));
+            let bx=*state.body_position_x.get(&b.element_id).unwrap_or(&(b.x as f64));
+            let by=*state.body_position_y.get(&b.element_id).unwrap_or(&(b.y as f64));
+            let center_ax=ax+if a.kind=="circle"{0.0}else{a.w as f64*0.5};
+            let center_ay=ay+if a.kind=="circle"{0.0}else{a.h as f64*0.5};
+            let center_bx=bx+if b.kind=="circle"{0.0}else{b.w as f64*0.5};
+            let center_by=by+if b.kind=="circle"{0.0}else{b.h as f64*0.5};
+            let ahx=if a.kind=="circle"{a.w as f64}else{a.w as f64*0.5};
+            let ahy=if a.kind=="circle"{a.w as f64}else{a.h as f64*0.5};
+            let bhx=if b.kind=="circle"{b.w as f64}else{b.w as f64*0.5};
+            let bhy=if b.kind=="circle"{b.w as f64}else{b.h as f64*0.5};
+            let ox=ahx+bhx-(center_ax-center_bx).abs();let oy=ahy+bhy-(center_ay-center_by).abs();if ox<=0.0||oy<=0.0{continue;}
+            let ia=if ma>0.0{1.0/ma}else{0.0};let ib=if mb>0.0{1.0/mb}else{0.0};let total=ia+ib;if total<=0.0{continue;}
+            let use_x=ox<oy;let sign=if use_x{if center_ax<center_bx{1.0}else{-1.0}}else if center_ay<center_by{1.0}else{-1.0};
+            let penetration=(if use_x{ox}else{oy})+0.001;
+            if use_x{
+                state.body_position_x.insert(a.element_id.clone(),ax-sign*penetration*ia/total);
+                state.body_position_x.insert(b.element_id.clone(),bx+sign*penetration*ib/total);
+                let av=*state.body_velocity_x.get(&a.element_id).unwrap_or(&0.0);let bv=*state.body_velocity_x.get(&b.element_id).unwrap_or(&0.0);
+                let rel=(bv-av)*sign;if rel<0.0{let impulse=-(1.0+restitution)*rel/total;state.body_velocity_x.insert(a.element_id.clone(),av-impulse*ia*sign);state.body_velocity_x.insert(b.element_id.clone(),bv+impulse*ib*sign);}
+            }else{
+                state.body_position_y.insert(a.element_id.clone(),ay-sign*penetration*ia/total);
+                state.body_position_y.insert(b.element_id.clone(),by+sign*penetration*ib/total);
+                let av=*state.body_velocity_y.get(&a.element_id).unwrap_or(&0.0);let bv=*state.body_velocity_y.get(&b.element_id).unwrap_or(&0.0);
+                let rel=(bv-av)*sign;if rel<0.0{let impulse=-(1.0+restitution)*rel/total;state.body_velocity_y.insert(a.element_id.clone(),av-impulse*ia*sign);state.body_velocity_y.insert(b.element_id.clone(),bv+impulse*ib*sign);}
+            }
+        }
+    }
+    for item in &mut state.elements {
+        if state.body_mass.contains_key(&item.element_id)&&matches!(item.kind.as_str(),"rect"|"circle"|"sprite"){
+            let x=*state.body_position_x.get(&item.element_id).unwrap_or(&(item.x as f64));
+            let y=*state.body_position_y.get(&item.element_id).unwrap_or(&(item.y as f64));
+            item.x=round_checked(x)?;item.y=round_checked(y)?;
+        }
+    }
+    Ok(())
+}
+
 fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<RuntimeValue>, state: &mut UiState) -> RtResult<()> {
     let name = instruction.text.as_str();
 
@@ -759,13 +876,15 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
             state.elements.clear();
             state.velocity_y.clear();
             state.physics_y.clear();
+            state.body_mass.clear();state.body_velocity_x.clear();state.body_velocity_y.clear();state.body_position_x.clear();state.body_position_y.clear();
+            state.camera_3d=Camera3D::default();
         }
     } else if name == "text" {
         let element_id = expect_string(args, 0)?;
         let value = expect_string(args, 1)?;
         let element = UiElement {
             kind: "text".into(), element_id: element_id.clone(), text: value,
-            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
+            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF, ..UiElement::default()
         };
         upsert_ui(state, element);
     } else if name == "textAt" {
@@ -778,7 +897,7 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         if !(6..=96).contains(&size) { return error("UI.textAt size must be between 6 and 96"); }
         let element = UiElement {
             kind: "drawText".into(), element_id: element_id.clone(), text,
-            callback: String::new(), x, y, w: size, h: 0, color,
+            callback: String::new(), x, y, w: size, h: 0, color, ..UiElement::default()
         };
         upsert_ui(state, element);
     } else if name == "sprite" {
@@ -796,8 +915,98 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         }
         upsert_ui(state, UiElement {
             kind: "sprite".into(), element_id, text: asset_path,
-            callback: String::new(), x, y, w, h, color: 0xFFFFFFFF,
+            callback: String::new(), x, y, w, h, color: 0xFFFFFFFF, ..UiElement::default()
         });
+    } else if name == "spriteSheet" {
+        let element_id=expect_string(args,0)?;let asset_path=expect_string(args,1)?;
+        let x=expect_int_arg(args,2)?;let y=expect_int_arg(args,3)?;let w=expect_int_arg(args,4)?;let h=expect_int_arg(args,5)?;
+        let columns=expect_int_arg(args,6)?;let rows=expect_int_arg(args,7)?;
+        if !valid_ui_asset_path(&asset_path){return error("UI.spriteSheet requires a safe relative asset path");}
+        if !(1..=3200).contains(&w)||!(1..=3200).contains(&h)||!(1..=64).contains(&columns)||!(1..=64).contains(&rows)||columns*rows>1024{return error("Invalid sprite sheet size or grid");}
+        upsert_ui(state,UiElement{kind:"sprite".into(),element_id,text:asset_path,x,y,w,h,columns,rows,frame_count:columns*rows,..UiElement::default()});
+    } else if name == "animateSprite" {
+        let id=expect_string(args,0)?;let frames=expect_int_arg(args,1)?;let fps=expect_int_arg(args,2)?;
+        let looping=match args.get(3){Some(RuntimeValue::Bool(value))=>*value,_=>return error("UI.animateSprite loop must be boolean")};
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.animateSprite requires an existing sprite".into()))?;
+        let sprite=&mut state.elements[index];
+        if sprite.kind!="sprite"||frames<1||frames>sprite.columns*sprite.rows||!(1..=60).contains(&fps){return error("Invalid sprite animation frame count or FPS");}
+        sprite.frame_count=frames;sprite.animation_fps=fps;sprite.animation_loop=looping;
+    } else if name == "setSpriteFrame" {
+        let id=expect_string(args,0)?;let frame=expect_int_arg(args,1)?;
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.setSpriteFrame requires an existing sprite".into()))?;
+        let sprite=&mut state.elements[index];
+        if sprite.kind!="sprite"||frame<0||frame>=sprite.columns*sprite.rows{return error("Invalid UI.setSpriteFrame target or frame");}
+        sprite.frame=frame;sprite.animation_fps=0;
+    } else if name == "node" {
+        let id=expect_string(args,0)?;if id.is_empty(){return error("UI.node id cannot be empty");}
+        if let Some(index)=state.find(&id){if state.elements[index].kind!="node"{return error("UI.node id is already used by a drawable");}}
+        else{upsert_ui(state,UiElement{kind:"node".into(),element_id:id,..UiElement::default()});}
+    } else if name == "attach" {
+        let child_id=expect_string(args,0)?;let parent_id=expect_string(args,1)?;
+        let child_index=state.find(&child_id).ok_or_else(||RuntimeError("UI.attach child does not exist".into()))?;
+        let parent_index=state.find(&parent_id).ok_or_else(||RuntimeError("UI.attach parent node does not exist".into()))?;
+        if state.elements[parent_index].kind!="node"||child_id==parent_id{return error("UI.attach requires an existing child and parent node");}
+        let mut cursor=parent_id.clone();
+        for depth in 0..64{if cursor.is_empty(){break;}if cursor==child_id{return error("UI.attach would create a scene graph cycle");}
+            let index=state.find(&cursor).ok_or_else(||RuntimeError("UI.attach parent chain is broken".into()))?;
+            cursor=state.elements[index].parent.clone();if depth==63&&!cursor.is_empty(){return error("UI scene graph depth exceeds 64");}}
+        state.elements[child_index].parent=parent_id;
+    } else if name == "detach" {
+        let id=expect_string(args,0)?;let index=state.find(&id).ok_or_else(||RuntimeError("UI.detach unknown scene item".into()))?;
+        state.elements[index].parent.clear();
+    } else if name == "transform" {
+        let id=expect_string(args,0)?;let x=expect_int_arg(args,1)?;let y=expect_int_arg(args,2)?;
+        let sx=match args.get(3){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.transform scaleX must be double")};
+        let sy=match args.get(4){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.transform scaleY must be double")};
+        let rotation=match args.get(5){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.transform rotation must be double")};
+        if !sx.is_finite()||!sy.is_finite()||!rotation.is_finite()||!(0.05..=20.0).contains(&sx)||!(0.05..=20.0).contains(&sy)||rotation.abs()>36000.0{return error("UI.transform values are outside the supported range");}
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.transform unknown scene item".into()))?;
+        let item=&mut state.elements[index];item.x=x;item.y=y;item.scale_x=sx;item.scale_y=sy;item.rotation=rotation;
+    } else if name == "transform3D" {
+        let id=expect_string(args,0)?;
+        let x=expect_int_arg(args,1)?;let y=expect_int_arg(args,2)?;let z=expect_int_arg(args,3)?;
+        let rx=expect_int_arg(args,4)?;let ry=expect_int_arg(args,5)?;let rz=expect_int_arg(args,6)?;
+        let scale=match args.get(7){Some(RuntimeValue::Double(value))=>*value,_=>return error("UI.transform3D scale must be double")};
+        if !scale.is_finite()||!(0.05..=20.0).contains(&scale){return error("UI.transform3D scale must be between 0.05 and 20");}
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.transform3D target cube does not exist".into()))?;
+        let cube=&mut state.elements[index];
+        if cube.kind!="cube3D"{return error("UI.transform3D requires an existing cube3D");}
+        cube.x=x;cube.y=y;cube.z=z;cube.rotation_x=rx as f64;cube.rotation_y=ry as f64;cube.rotation_z=rz as f64;cube.scale_3d=scale;
+    } else if name == "keyArea" {
+        let id=expect_string(args,0)?;let key=expect_string(args,1)?;let callback=expect_string(args,2)?;
+        let valid=matches!(key.as_str(),"ANY"|"LEFT"|"RIGHT"|"UP"|"DOWN"|"SPACE"|"ENTER"|"ESCAPE")||(key.len()==1&&key.as_bytes()[0].is_ascii_uppercase());
+        if !valid{return error("UI.keyArea key must be ANY, a direction, SPACE, ENTER, ESCAPE or A-Z");}
+        upsert_ui(state,UiElement{kind:"keyArea".into(),element_id:id,text:key,callback,..UiElement::default()});
+    } else if name == "physicsBody" {
+        let id=expect_string(args,0)?;
+        let mass=match args.get(1){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.physicsBody mass must be double")};
+        let vx=match args.get(2){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.physicsBody velocity X must be double")};
+        let vy=match args.get(3){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.physicsBody velocity Y must be double")};
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.physicsBody requires an existing drawable".into()))?;
+        if !matches!(state.elements[index].kind.as_str(),"rect"|"circle"|"sprite"){return error("UI.physicsBody requires an existing rect, circle or sprite");}
+        if !mass.is_finite()||!(0.0..=100000.0).contains(&mass)||!vx.is_finite()||!vy.is_finite()||vx.abs()>100000.0||vy.abs()>100000.0{return error("Invalid UI.physicsBody mass or velocity");}
+        state.body_mass.insert(id.clone(),mass);state.body_velocity_x.insert(id.clone(),vx);state.body_velocity_y.insert(id.clone(),vy);
+        state.body_position_x.insert(id.clone(),state.elements[index].x as f64);state.body_position_y.insert(id,state.elements[index].y as f64);
+    } else if name == "physicsWorldStep" {
+        let d=|n:usize|->RtResult<f64>{match args.get(n){Some(RuntimeValue::Double(v))=>Ok(*v),_=>error("UI.physicsWorldStep expects double arguments")}};
+        let dt=d(0)?;let gx=d(1)?;let gy=d(2)?;let restitution=d(3)?;
+        if !dt.is_finite()||!(0.0..=0.1).contains(&dt)||!gx.is_finite()||!gy.is_finite()||gx.abs()>10000.0||gy.abs()>10000.0||!restitution.is_finite()||!(0.0..=1.0).contains(&restitution){return error("Invalid UI.physicsWorldStep timestep, gravity or restitution");}
+        physics_world_step_2d(dt,gx,gy,restitution,state)?;
+    } else if name == "camera3D" {
+        let mut camera=Camera3D::default();camera.x=expect_int_arg(args,0)?;camera.y=expect_int_arg(args,1)?;camera.z=expect_int_arg(args,2)?;
+        camera.yaw=expect_int_arg(args,3)?;camera.pitch=expect_int_arg(args,4)?;camera.focal=expect_int_arg(args,5)?;
+        if !(-180..=180).contains(&camera.yaw)||!(-89..=89).contains(&camera.pitch)||!(32..=2000).contains(&camera.focal){return error("Invalid UI.camera3D rotation or focal length");}
+        state.camera_3d=camera;
+    } else if name == "cube3D" {
+        let id=expect_string(args,0)?;let x=expect_int_arg(args,1)?;let y=expect_int_arg(args,2)?;let z=expect_int_arg(args,3)?;
+        let size=expect_int_arg(args,4)?;let color=expect_int_arg(args,5)? as u32;
+        if id.is_empty()||!(1..=10000).contains(&size){return error("UI.cube3D size must be between 1 and 10000");}
+        upsert_ui(state,UiElement{kind:"cube3D".into(),element_id:id,x,y,z,w:size,color,..UiElement::default()});
+    } else if name == "material3D" {
+        let id=expect_string(args,0)?;let light=match args.get(1){Some(RuntimeValue::Double(v))=>*v,_=>return error("UI.material3D light intensity must be double")};
+        let index=state.find(&id).ok_or_else(||RuntimeError("UI.material3D target cube does not exist".into()))?;
+        if state.elements[index].kind!="cube3D"||!light.is_finite()||!(0.0..=1.0).contains(&light){return error("UI.material3D requires a cube3D and light intensity from 0 to 1");}
+        state.elements[index].light=light;
     } else if name == "setVelocityY" {
         let id = expect_string(args, 0)?;
         let velocity = match args.get(1) { Some(RuntimeValue::Double(value)) => *value, _ => return error("UI.setVelocityY velocity must be double") };
@@ -846,14 +1055,14 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         let callback = expect_string(args, 2)?;
         let element = UiElement {
             kind: "button".into(), element_id: element_id.clone(), text: label,
-            callback, x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
+            callback, x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF, ..UiElement::default()
         };
         upsert_ui(state, element);
     } else if matches!(name, "rect" | "circle" | "line") {
         let element_id = expect_string(args, 0)?;
         let mut shape = UiElement {
             kind: name.into(), element_id: element_id.clone(), text: String::new(),
-            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF,
+            callback: String::new(), x: 0, y: 0, w: 0, h: 0, color: 0xFFFFFFFF, ..UiElement::default()
         };
         if name == "rect" {
             shape.x = expect_int_arg(args, 1)?;
@@ -885,6 +1094,8 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         state.elements.retain(|item| item.element_id != element_id);
         state.velocity_y.remove(&element_id);
         state.physics_y.remove(&element_id);
+        state.body_mass.remove(&element_id);state.body_velocity_x.remove(&element_id);state.body_velocity_y.remove(&element_id);state.body_position_x.remove(&element_id);state.body_position_y.remove(&element_id);
+        for item in &mut state.elements { if item.parent == element_id { item.parent.clear(); } }
     } else if name == "setText" {
         let element_id = expect_string(args, 0)?;
         let value = args.get(1).map(show_value).unwrap_or_default();
@@ -907,7 +1118,7 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
         if w <= 0 || h <= 0 { return error("UI.touchArea width and height must be positive"); }
         upsert_ui(state, UiElement {
             kind: "touchArea".into(), element_id: id, text: String::new(), callback,
-            x, y, w, h, color: 0,
+            x, y, w, h, color: 0, ..UiElement::default()
         });
     } else if name == "frameLoop" {
         let callback = expect_string(args, 0)?;
@@ -927,11 +1138,18 @@ fn ui_call(instruction: &Instruction, args: &[RuntimeValue], stack: &mut Vec<Run
             (Some(left), Some(right)) => ui_elements_collide(left, right),
             _ => false,
         }));
+    } else if name == "collides3D" {
+        let left_id=expect_string(args,0)?;let right_id=expect_string(args,1)?;
+        let left=state.find(&left_id).and_then(|index|state.elements.get(index));
+        let right=state.find(&right_id).and_then(|index|state.elements.get(index));
+        stack.push(RuntimeValue::Bool(match(left,right){(Some(a),Some(b))=>ui_elements_collide_3d(a,b),_=>false}));
     } else if name == "clear" {
         state.elements.clear();
         state.ints.clear();
         state.velocity_y.clear();
         state.physics_y.clear();
+        state.body_mass.clear();state.body_velocity_x.clear();state.body_velocity_y.clear();state.body_position_x.clear();state.body_position_y.clear();
+        state.camera_3d=Camera3D::default();
         state.frame_callback.clear();
         state.frame_rate = 0;
     } else {
@@ -1039,7 +1257,7 @@ fn execute(program: &Program, entry_name: &str, event_value: &str, state: &mut U
                 POP => { pop(&mut stack)?; }
                 UI_CALL => {
                     let count = usize::try_from(arg).map_err(|_| RuntimeError("Invalid UI call argument count".into()))?;
-                    if count > 6 || stack.len() < count {
+                    if count > 8 || stack.len() < count {
                         return error("Invalid UI call argument count");
                     }
                     let args = if count == 0 { Vec::new() } else { stack.split_off(stack.len() - count) };
@@ -1326,13 +1544,19 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             frame_rate: state.frame_rate,
             velocity_y: state.velocity_y.clone(),
             physics_y: state.physics_y.clone(),
+            body_mass: state.body_mass.clone(),
+            body_velocity_x: state.body_velocity_x.clone(),
+            body_velocity_y: state.body_velocity_y.clone(),
+            body_position_x: state.body_position_x.clone(),
+            body_position_y: state.body_position_y.clone(),
+            camera_3d: state.camera_3d.clone(),
             visible: state.visible,
         }))
     })();
     match result {
         Ok((output, state)) => json!({
             "ok": true, "output": output,
-            "ui": { "title": state.title, "visible": state.visible, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate },
+            "ui": { "title": state.title, "visible": state.visible, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate, "camera3D": state.camera_3d },
             "runtimeVersion": version,
         }),
         Err(error) => {
@@ -1340,7 +1564,7 @@ fn run_room_bytes(data: &[u8], entry_name: &str, event_value: &str, version: &st
             json!({
                 "ok": false, "output": "",
                 "error": format!("CI Runtime error: {}", error.0),
-                "ui": { "title": state.title, "visible": state.visible, "elements": state.elements },
+                "ui": { "title": state.title, "visible": state.visible, "elements": state.elements, "camera3D": state.camera_3d },
                 "runtimeVersion": version,
             })
         }
@@ -1369,7 +1593,7 @@ fn run_room_file(room_path: &str, entry_name: &str, event_value: &str, version: 
 
 fn current_ui_json() -> JsonValue {
     let state = lock_ui();
-    json!({ "title": state.title, "visible": state.visible, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate })
+    json!({ "title": state.title, "visible": state.visible, "elements": state.elements, "frameCallback": state.frame_callback, "frameRate": state.frame_rate, "camera3D": state.camera_3d })
 }
 
 pub fn run_room(room_path: &str, entry_name: &str, event_value: &str) -> JsonValue {
@@ -2337,7 +2561,7 @@ mod tests {
     fn ui_collision_detects_overlapping_rectangles() {
         let rect = |id: &str, x: i64, y: i64, w: i64, h: i64| UiElement {
             kind: "rect".into(), element_id: id.into(), text: String::new(), callback: String::new(),
-            x, y, w, h, color: 0,
+            x, y, w, h, color: 0, ..UiElement::default()
         };
         assert!(ui_elements_collide(&rect("a", 0, 0, 30, 30), &rect("b", 20, 20, 30, 30)));
         assert!(!ui_elements_collide(&rect("a", 0, 0, 10, 10), &rect("b", 10, 0, 10, 10)));
@@ -2347,11 +2571,11 @@ mod tests {
     fn ui_collision_detects_circle_rectangle_overlap() {
         let circle = UiElement {
             kind: "circle".into(), element_id: "ball".into(), text: String::new(), callback: String::new(),
-            x: 20, y: 20, w: 10, h: 0, color: 0,
+            x: 20, y: 20, w: 10, h: 0, color: 0, ..UiElement::default()
         };
         let rect = UiElement {
             kind: "rect".into(), element_id: "wall".into(), text: String::new(), callback: String::new(),
-            x: 25, y: 10, w: 20, h: 20, color: 0,
+            x: 25, y: 10, w: 20, h: 20, color: 0, ..UiElement::default()
         };
         assert!(ui_elements_collide(&circle, &rect));
     }
@@ -2447,4 +2671,141 @@ mod tests {
         assert_eq!(compare_versions("1.10.0", "1.9.9"), std::cmp::Ordering::Greater);
         assert_eq!(compare_versions("2.0.0", "2.0.0"), std::cmp::Ordering::Equal);
     }
+
+    #[test]
+    fn scene_graph_rejects_cycles_and_records_parent_links() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        for id in ["root","child"] {
+            ui_call(&Instruction{op:UI_CALL,arg:1,text:"node".into()},&[RuntimeValue::String(id.into())],&mut stack,&mut state).unwrap();
+        }
+        ui_call(&Instruction{op:UI_CALL,arg:2,text:"attach".into()},&[RuntimeValue::String("child".into()),RuntimeValue::String("root".into())],&mut stack,&mut state).unwrap();
+        assert_eq!(state.elements[state.find("child").unwrap()].parent,"root");
+        let cycle=ui_call(&Instruction{op:UI_CALL,arg:2,text:"attach".into()},&[RuntimeValue::String("root".into()),RuntimeValue::String("child".into())],&mut stack,&mut state);
+        assert!(cycle.unwrap_err().0.contains("cycle"));
+    }
+
+    #[test]
+    fn sprite_sheet_animation_validates_grid_and_tracks_frame_metadata() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        ui_call(&Instruction{op:UI_CALL,arg:8,text:"spriteSheet".into()},&[
+            RuntimeValue::String("hero".into()),RuntimeValue::String("sprites/hero.png".into()),
+            RuntimeValue::Int(10),RuntimeValue::Int(20),RuntimeValue::Int(32),RuntimeValue::Int(32),
+            RuntimeValue::Int(4),RuntimeValue::Int(2),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:4,text:"animateSprite".into()},&[
+            RuntimeValue::String("hero".into()),RuntimeValue::Int(8),RuntimeValue::Int(12),RuntimeValue::Bool(true),
+        ],&mut stack,&mut state).unwrap();
+        let hero=&state.elements[state.find("hero").unwrap()];
+        assert_eq!((hero.columns,hero.rows,hero.frame_count,hero.animation_fps),(4,2,8,12));
+        assert!(hero.animation_loop);
+    }
+
+    #[test]
+    fn rigid_body_step_resolves_overlap_and_applies_restitution() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        for (id,x) in [("dynamic",20),("static",42)] {
+            ui_call(&Instruction{op:UI_CALL,arg:6,text:"rect".into()},&[
+                RuntimeValue::String(id.into()),RuntimeValue::Int(x),RuntimeValue::Int(100),
+                RuntimeValue::Int(30),RuntimeValue::Int(30),RuntimeValue::Int(0xFFFFFFFFu32 as i64),
+            ],&mut stack,&mut state).unwrap();
+        }
+        for (id,mass,vx) in [("dynamic",1.0,20.0),("static",0.0,0.0)] {
+            ui_call(&Instruction{op:UI_CALL,arg:4,text:"physicsBody".into()},&[
+                RuntimeValue::String(id.into()),RuntimeValue::Double(mass),RuntimeValue::Double(vx),RuntimeValue::Double(0.0),
+            ],&mut stack,&mut state).unwrap();
+        }
+        ui_call(&Instruction{op:UI_CALL,arg:4,text:"physicsWorldStep".into()},&[
+            RuntimeValue::Double(0.016),RuntimeValue::Double(0.0),RuntimeValue::Double(0.0),RuntimeValue::Double(0.25),
+        ],&mut stack,&mut state).unwrap();
+        let dynamic=&state.elements[state.find("dynamic").unwrap()];
+        assert!(dynamic.x<20,"overlapping dynamic body should be separated from the static body");
+    }
+
+    #[test]
+    fn cube3d_camera_material_and_collision_are_supported() {
+        let mut state=UiState::new();let mut stack=Vec::new();
+        ui_call(&Instruction{op:UI_CALL,arg:6,text:"camera3D".into()},&[
+            RuntimeValue::Int(0),RuntimeValue::Int(0),RuntimeValue::Int(-300),
+            RuntimeValue::Int(0),RuntimeValue::Int(0),RuntimeValue::Int(240),
+        ],&mut stack,&mut state).unwrap();
+        for (id,x) in [("left",-35),("right",0)] {
+            ui_call(&Instruction{op:UI_CALL,arg:6,text:"cube3D".into()},&[
+                RuntimeValue::String(id.into()),RuntimeValue::Int(x),RuntimeValue::Int(0),RuntimeValue::Int(0),
+                RuntimeValue::Int(70),RuntimeValue::Int(0xFFFFFFFFu32 as i64),
+            ],&mut stack,&mut state).unwrap();
+        }
+        ui_call(&Instruction{op:UI_CALL,arg:2,text:"material3D".into()},&[
+            RuntimeValue::String("left".into()),RuntimeValue::Double(0.75),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:8,text:"transform3D".into()},&[
+            RuntimeValue::String("left".into()),RuntimeValue::Int(-40),RuntimeValue::Int(2),RuntimeValue::Int(0),
+            RuntimeValue::Int(10),RuntimeValue::Int(25),RuntimeValue::Int(5),RuntimeValue::Double(1.25),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:2,text:"collides3D".into()},&[
+            RuntimeValue::String("left".into()),RuntimeValue::String("right".into()),
+        ],&mut stack,&mut state).unwrap();
+        assert!(matches!(stack.pop(),Some(RuntimeValue::Bool(true))));
+        assert_eq!(state.camera_3d.focal,240);
+        let left=&state.elements[state.find("left").unwrap()];
+        assert_eq!(left.light,0.75);
+        assert_eq!((left.rotation_x,left.rotation_y,left.rotation_z,left.scale_3d),(10.0,25.0,5.0,1.25));
+    }
+
+
+
+    #[test]
+    fn malformed_room_inputs_never_panic_the_reader_or_verifier() {
+        let mut seed = 0xA17C_9E35u32;
+        for length in 0..=512usize {
+            let mut bytes = Vec::with_capacity(length);
+            for _ in 0..length {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                bytes.push((seed & 0xFF) as u8);
+            }
+            if length >= 8 && length % 7 == 0 {
+                bytes[0..4].copy_from_slice(b"ALRM");
+                bytes[4..8].copy_from_slice(&ROOM_FORMAT_VERSION.to_le_bytes());
+            }
+
+            let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                read_room_bytes(&bytes)
+            }));
+            assert!(parsed.is_ok(), "reader panicked for input length {length}");
+
+            if let Ok(Ok(program)) = parsed {
+                let verified = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    verify(&program)
+                }));
+                assert!(verified.is_ok(), "verifier panicked for input length {length}");
+            }
+        }
+    }
+
+
+
+    #[test]
+    fn long_running_physics_step_stays_finite_and_bounded() {
+        let mut state=UiState::new();
+        let mut stack=Vec::new();
+        ui_call(&Instruction{op:UI_CALL,arg:6,text:"rect".into()},&[
+            RuntimeValue::String("falling".into()),RuntimeValue::Int(20),RuntimeValue::Int(0),
+            RuntimeValue::Int(16),RuntimeValue::Int(16),RuntimeValue::Int(0xFFFFFFFFu32 as i64),
+        ],&mut stack,&mut state).unwrap();
+        ui_call(&Instruction{op:UI_CALL,arg:4,text:"physicsBody".into()},&[
+            RuntimeValue::String("falling".into()),RuntimeValue::Double(1.0),
+            RuntimeValue::Double(0.0),RuntimeValue::Double(0.0),
+        ],&mut stack,&mut state).unwrap();
+        for _ in 0..10_000 {
+            physics_world_step_2d(0.016,0.0,9.8,0.0,&mut state).unwrap();
+        }
+        let body=&state.elements[state.find("falling").unwrap()];
+        assert!(body.y>0);
+        assert!(body.y<1_000_000);
+        assert_eq!(state.body_mass.len(),1);
+        assert_eq!(state.body_velocity_y.len(),1);
+    }
+
+
 }

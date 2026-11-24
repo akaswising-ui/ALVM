@@ -136,4 +136,80 @@ assert hero.get("text") == "sprites/hero.png", hero
 assert (hero.get("x"), hero.get("y"), hero.get("w"), hero.get("h")) == (10, 21, 32, 32), hero
 PY
 
-echo "Rust CI Runtime game-loop/touch/collision, sprite, gravity physics, positioned canvas text and .AL package end-to-end tests passed."
+"$ALVM_BIN" compile "$ROOT/examples/multi_module_link.al" -o "$WORK/multi-module.room"
+MODULE_LINK="$("$RUST_RUNNER" run "$WORK/multi-module.room")"
+printf '%s\n' "$MODULE_LINK" | grep -q '"ok":true'
+printf '%s\n' "$MODULE_LINK" | grep -q '"output":"42"'
+
+"$ALVM_BIN" compile "$ROOT/examples/game_engine_foundation.al" -o "$WORK/game-engine.room"
+ENGINE_INITIAL="$("$RUST_RUNNER" run "$WORK/game-engine.room")"
+ENGINE_CPP_OUTPUT="$("$ALVM_BIN" run "$WORK/game-engine.room")"
+ENGINE_CPP_UI="$("$ALVM_BIN" ui "$WORK/game-engine.room")"
+python3 - "$ENGINE_INITIAL" "$ENGINE_CPP_OUTPUT" "$ENGINE_CPP_UI" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+cpp_output = sys.argv[2]
+cpp_ui = json.loads(sys.argv[3])
+assert cpp_output == result.get("output"), {
+    "cpp_output": cpp_output,
+    "rust_output": result.get("output"),
+}
+assert cpp_ui == result.get("ui"), {
+    "cpp_ui": cpp_ui,
+    "rust_ui": result.get("ui"),
+}
+assert result.get("ok") is True, result
+ui = result.get("ui", {})
+items = ui.get("elements", [])
+by_id = {item.get("id"): item for item in items}
+assert by_id["world"]["kind"] == "node", by_id.get("world")
+assert by_id["hero"]["parent"] == "world", by_id.get("hero")
+assert (by_id["hero"]["columns"], by_id["hero"]["rows"], by_id["hero"]["frameCount"]) == (4, 2, 8), by_id["hero"]
+assert by_id["hero"]["animationFps"] == 12, by_id["hero"]
+assert by_id["cubeA"]["kind"] == "cube3D", by_id.get("cubeA")
+assert by_id["cubeA"]["rotationY"] == 25.0, by_id["cubeA"]
+assert by_id["cubeA"]["scale3D"] == 1.25, by_id["cubeA"]
+assert ui["camera3D"]["focal"] == 240, ui
+assert ui["frameRate"] == 30, ui
+assert result.get("output") == "true", result
+PY
+ENGINE_KEY="$("$RUST_RUNNER" run "$WORK/game-engine.room" --event onKey LEFT)"
+python3 - "$ENGINE_KEY" <<'PY'
+import json
+import sys
+result = json.loads(sys.argv[1])
+assert result.get("ok") is True, result
+items = result.get("ui", {}).get("elements", [])
+label = next((item for item in items if item.get("id") == "keyLabel"), None)
+assert label and label.get("text") == "LEFT", result
+PY
+
+"$ALVM_BIN" compile "$ROOT/examples/neon_runner.al" -o "$WORK/neon-runner.room"
+NEON_INITIAL="$("$RUST_RUNNER" run "$WORK/neon-runner.room")"
+NEON_CPP_OUTPUT="$("$ALVM_BIN" run "$WORK/neon-runner.room")"
+NEON_CPP_UI="$("$ALVM_BIN" ui "$WORK/neon-runner.room")"
+NEON_EVENTS="$("$RUST_RUNNER" run "$WORK/neon-runner.room" --event onKey SPACE --event update frame --event onTouch '@touch|jumpZone|120|160')"
+NEON_CPP_EVENTS="$("$ALVM_BIN" ui-event "$WORK/neon-runner.room" onKey SPACE update frame onTouch '@touch|jumpZone|120|160')"
+python3 - "$NEON_INITIAL" "$NEON_CPP_OUTPUT" "$NEON_CPP_UI" "$NEON_EVENTS" "$NEON_CPP_EVENTS" <<'PY'
+import json
+import sys
+
+initial = json.loads(sys.argv[1])
+cpp_output = sys.argv[2]
+cpp_ui = json.loads(sys.argv[3])
+rust_events = json.loads(sys.argv[4])
+cpp_events = json.loads(sys.argv[5])
+assert initial.get("ok") is True, initial
+assert initial.get("output") == cpp_output, (initial.get("output"), cpp_output)
+assert initial.get("ui") == cpp_ui, "Initial C++/Rust engine UI mismatch"
+assert rust_events.get("ok") is True, rust_events
+assert rust_events.get("ui") == cpp_events, "C++/Rust event state mismatch"
+items = {item.get("id"): item for item in rust_events.get("ui", {}).get("elements", [])}
+assert items["status"]["text"] == "TOUCH JUMP!", items.get("status")
+assert items["frameLabel"]["text"] == "1", items.get("frameLabel")
+assert rust_events.get("output") == "true", rust_events
+PY
+
+echo "Rust CI Runtime multi-module compiler link, scene graph, sprite-sheet animation, rigid-body collisions, keyboard callback and 3D foundation tests passed."

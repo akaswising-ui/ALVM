@@ -2,6 +2,12 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <filesystem>
+
+namespace al {
+std::string loadSourceWithImports(const std::filesystem::path& sourcePath);
+}
+
 
 #define main alvm_cli_main
 #include "../../../../src/alvm.cpp"
@@ -26,7 +32,27 @@ Java_com_alvmstudio_MainActivity_nativeCompile(
     const std::string source = fromJava(env, sourceValue);
     const std::string filesDir = fromJava(env, filesDirValue);
     try {
-        al::Program program = al::Parser(source).parse();
+        if (filesDir.empty()) throw al::Error("Android compile project directory is empty");
+        const std::filesystem::path projectRoot = std::filesystem::weakly_canonical(filesDir);
+        std::filesystem::create_directories(projectRoot);
+        const std::filesystem::path entryPath = projectRoot / ".alvm_compile_entry.al";
+        {
+            std::ofstream entry(entryPath, std::ios::binary | std::ios::trunc);
+            if (!entry) throw al::Error("Cannot create temporary AL compile entry");
+            entry.write(source.data(), static_cast<std::streamsize>(source.size()));
+            if (!entry) throw al::Error("Cannot write temporary AL compile entry");
+        }
+        std::string expandedSource;
+        try {
+            expandedSource = al::loadSourceWithImports(entryPath);
+            std::error_code ignored;
+            std::filesystem::remove(entryPath, ignored);
+        } catch (...) {
+            std::error_code ignored;
+            std::filesystem::remove(entryPath, ignored);
+            throw;
+        }
+        al::Program program = al::Parser(expandedSource).parse();
         al::SemanticAnalyzer().analyze(program);
         auto ir = al::IRGenerator().generate(program);
         auto bytecode = al::BytecodeLowerer().lower(ir);

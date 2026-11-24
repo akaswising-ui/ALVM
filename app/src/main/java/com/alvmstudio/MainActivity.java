@@ -94,6 +94,10 @@ public class MainActivity extends Activity {
     private String pendingSource = "";
     private boolean compiled = false;
     private Dialog nativeUiDialog;
+    private LinearLayout nativeUiContent;
+    private TextView nativeUiHeading;
+    private Game2DView activeGame2DView;
+    private String nativeUiShape = "";
     private byte[] pendingAlPackage;
     private byte[] pendingAndroidProject;
     private final Handler gameLoopHandler = new Handler(Looper.getMainLooper());
@@ -414,7 +418,7 @@ public class MainActivity extends Activity {
                 ? "{\"title\":\"AL Application\",\"visible\":false,\"elements\":[]}"
                 : ui.toString();
         if (renderNativeUi && runtimeOk) publishNativeUi();
-        else hideNativeProgramUi();
+        else if (!runtimeOk || (ui != null && !ui.optBoolean("visible", false))) hideNativeProgramUi();
         if (!runtimeOk) {
             return "✕ " + result.optString("error", "CI Runtime execution failed.");
         }
@@ -1361,10 +1365,23 @@ public class MainActivity extends Activity {
             if (!root.optBoolean("visible", false)) {
                 if (nativeUiDialog != null && nativeUiDialog.isShowing()) nativeUiDialog.dismiss();
                 nativeUiDialog = null;
+                nativeUiContent = null;
+                nativeUiHeading = null;
+                activeGame2DView = null;
+                nativeUiShape = "";
                 return;
             }
             JSONArray elements = root.optJSONArray("elements");
             if (elements == null) elements = new JSONArray();
+            String nextShape = nativeUiShape(elements);
+            if (nativeUiDialog != null && nativeUiDialog.isShowing()
+                    && nextShape.equals(nativeUiShape) && nativeUiContent != null) {
+                if (nativeUiHeading != null) nativeUiHeading.setText(root.optString("title", "AL Application"));
+                if (activeGame2DView != null) activeGame2DView.updateRuntimeUi(root.toString());
+                updateNativeUiText(elements);
+                configureGameLoop(root);
+                return;
+            }
             LinearLayout content = new LinearLayout(this);
             content.setOrientation(LinearLayout.VERTICAL);
             content.setPadding(dp(18), dp(16), dp(18), dp(18));
@@ -1379,6 +1396,7 @@ public class MainActivity extends Activity {
             heading.setTextColor(Color.WHITE);
             heading.setTextSize(21);
             heading.setTypeface(null, android.graphics.Typeface.BOLD);
+            heading.setTag("__al_title");
             heading.setPadding(0, 0, 0, dp(14));
             content.addView(heading, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1389,28 +1407,51 @@ public class MainActivity extends Activity {
                 if (item != null) {
                     String kind = item.optString("kind", "");
                     if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
-                            || "drawText".equals(kind) || "sprite".equals(kind)) {
+                            || "drawText".equals(kind) || "sprite".equals(kind) || "cube3D".equals(kind) || "touchArea".equals(kind)
+                        || "keyArea".equals(kind)) {
                         hasGameCanvas = true;
                         break;
                     }
                 }
             }
             if (hasGameCanvas) {
-                Game2DView gameView = new Game2DView(this, elements, (callback, id, x, y) -> {
-                    try {
-                        String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y);
-                        if (result != null && result.trim().length() > 0) {
-                            showOutputInWeb(result, result.toLowerCase().contains("error")
-                                    ? "RUNTIME ERROR" : "SUCCESS");
+                Game2DView gameView = new Game2DView(this, elements, root.optJSONObject("camera3D"),
+                        new Game2DView.TouchHandler() {
+                    @Override
+                    public void onTouch(String callback, String id, int x, int y) {
+                        try {
+                            String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y, false);
+                            if (result != null && result.trim().length() > 0) {
+                                showOutputInWeb(result, result.toLowerCase().contains("error")
+                                        ? "RUNTIME ERROR" : "SUCCESS");
+                            }
+                            refreshNativeUiAfterInput();
+                        } catch (Exception error) {
+                            showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
-                    } catch (Exception error) {
-                        showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
+                    }
+
+                    @Override
+                    public void onKey(String callback, String key) {
+                        try {
+                            String result = runCiRuntime(callback, key, false);
+                            if (result != null && result.trim().length() > 0) {
+                                showOutputInWeb(result, result.toLowerCase().contains("error")
+                                        ? "RUNTIME ERROR" : "SUCCESS");
+                            }
+                            refreshNativeUiAfterInput();
+                        } catch (Exception error) {
+                            showOutputInWeb("AL keyboard event error: " + error.getMessage(), "RUNTIME ERROR");
+                        }
                     }
                 });
+                activeGame2DView = gameView;
                 LinearLayout.LayoutParams gameParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(480));
                 gameParams.bottomMargin = dp(12);
                 content.addView(gameView, gameParams);
+            } else {
+                activeGame2DView = null;
             }
 
             for (int index = 0; index < elements.length(); index++) {
@@ -1420,7 +1461,8 @@ public class MainActivity extends Activity {
                 String id = element.optString("id", "");
                 String text = element.optString("text", "");
                 if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
-                        || "drawText".equals(kind) || "sprite".equals(kind)) {
+                        || "drawText".equals(kind) || "sprite".equals(kind)
+                        || "cube3D".equals(kind) || "node".equals(kind) || "keyArea".equals(kind)) {
                     continue;
                 } else if ("text".equals(kind)) {
                     TextView label = new TextView(this);
@@ -1435,6 +1477,7 @@ public class MainActivity extends Activity {
                 } else if ("button".equals(kind)) {
                     String callback = element.optString("callback", "");
                     Button button = new Button(this);
+                    button.setTag(id);
                     button.setText(text);
                     button.setAllCaps(false);
                     button.setTextColor(Color.WHITE);
@@ -1478,8 +1521,17 @@ public class MainActivity extends Activity {
             scroll.addView(content);
             if (nativeUiDialog == null) nativeUiDialog = new Dialog(this);
             nativeUiDialog.setContentView(scroll);
+            nativeUiContent = content;
+            nativeUiHeading = heading;
+            nativeUiShape = nextShape;
             nativeUiDialog.setCancelable(true);
-            nativeUiDialog.setOnDismissListener(dialog -> stopGameLoop());
+            nativeUiDialog.setOnDismissListener(dialog -> {
+                stopGameLoop();
+                nativeUiContent = null;
+                nativeUiHeading = null;
+                activeGame2DView = null;
+                nativeUiShape = "";
+            });
             if (!nativeUiDialog.isShowing()) nativeUiDialog.show();
             if (nativeUiDialog.getWindow() != null) {
                 nativeUiDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
@@ -1495,6 +1547,44 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private void refreshNativeUiAfterInput() {
+        if (lastRuntimeUiJson == null || lastRuntimeUiJson.trim().isEmpty()) return;
+        try {
+            JSONObject ui = new JSONObject(lastRuntimeUiJson);
+            JSONArray elements = ui.optJSONArray("elements");
+            if (activeGame2DView != null) activeGame2DView.updateRuntimeUi(lastRuntimeUiJson);
+            if (elements != null) updateNativeUiText(elements);
+        } catch (Exception ignored) {
+            // Invalid UI payloads are surfaced by the runtime result, not allowed to crash input dispatch.
+        }
+    }
+
+    private String nativeUiShape(JSONArray elements) {
+        StringBuilder shape = new StringBuilder();
+        for (int i = 0; i < elements.length(); i++) {
+            JSONObject item = elements.optJSONObject(i);
+            if (item == null) continue;
+            shape.append(item.optString("kind", "")).append(':')
+                    .append(item.optString("id", "")).append(':')
+                    .append(item.optString("callback", "")).append(';');
+        }
+        return shape.toString();
+    }
+
+    private void updateNativeUiText(JSONArray elements) {
+        if (nativeUiContent == null) return;
+        for (int i = 0; i < elements.length(); i++) {
+            JSONObject item = elements.optJSONObject(i);
+            if (item == null) continue;
+            String kind = item.optString("kind", "");
+            if (!"text".equals(kind) && !"button".equals(kind)) continue;
+            View existing = nativeUiContent.findViewWithTag(item.optString("id", ""));
+            if (existing instanceof TextView) {
+                ((TextView) existing).setText(item.optString("text", ""));
+            }
+        }
+    }
 
     private void configureGameLoop(JSONObject root) {
         String callback = root.optString("frameCallback", "");

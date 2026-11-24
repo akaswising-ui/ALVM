@@ -6,6 +6,9 @@
 #include <cstring>
 #include <iomanip>
 #include <fstream>
+#include <filesystem>
+#include <regex>
+#include <set>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -297,6 +300,21 @@ class SemanticAnalyzer {
           }
           else if(e.text=="stopLoop"){require(0);e.inferred=Type::Void;}
           else if(e.text=="collides"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Bool;}
+          else if(e.text=="node"){require(1);stringAt(0);e.inferred=Type::Void;}
+          else if(e.text=="attach"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Void;}
+          else if(e.text=="detach"){require(1);stringAt(0);e.inferred=Type::Void;}
+          else if(e.text=="transform"){require(6);stringAt(0);if(actual[1]!=Type::Int||actual[2]!=Type::Int||actual[3]!=Type::Double||actual[4]!=Type::Double||actual[5]!=Type::Double)throw Error("UI.transform expects id, int x/y and double scaleX/scaleY/rotation");e.inferred=Type::Void;}
+          else if(e.text=="transform3D"){require(8);stringAt(0);for(size_t n=1;n<7;++n)if(actual[n]!=Type::Int)throw Error("UI.transform3D expects integer position and Euler rotation values");if(actual[7]!=Type::Double)throw Error("UI.transform3D scale must be double");e.inferred=Type::Void;}
+          else if(e.text=="spriteSheet"){require(8);stringAt(0);stringAt(1);for(size_t n=2;n<8;++n)if(actual[n]!=Type::Int)throw Error("UI.spriteSheet position, size, columns and rows must be int");e.inferred=Type::Void;}
+          else if(e.text=="animateSprite"){require(4);stringAt(0);if(actual[1]!=Type::Int||actual[2]!=Type::Int||actual[3]!=Type::Bool)throw Error("UI.animateSprite expects id, int frameCount, int FPS and boolean loop");e.inferred=Type::Void;}
+          else if(e.text=="setSpriteFrame"){require(2);stringAt(0);if(actual[1]!=Type::Int)throw Error("UI.setSpriteFrame frame must be int");e.inferred=Type::Void;}
+          else if(e.text=="keyArea"){require(3);stringAt(0);stringAt(1);stringAt(2);if(e.elements[2]->kind!=Expr::String)throw Error("UI.keyArea callback must be a string literal");auto callback=functionOverloads.find(e.elements[2]->text);if(callback==functionOverloads.end()||std::none_of(callback->second.begin(),callback->second.end(),[](const Signature& sig){return sig.result==Type::Void&&sig.params.size()==1&&sig.params[0]==Type::String;}))throw Error("UI.keyArea callback must name a void function with one string parameter: "+e.elements[2]->text);e.inferred=Type::Void;}
+          else if(e.text=="physicsBody"){require(4);stringAt(0);for(size_t n=1;n<4;++n)if(actual[n]!=Type::Double)throw Error("UI.physicsBody mass and velocity values must be double");e.inferred=Type::Void;}
+          else if(e.text=="physicsWorldStep"){require(4);for(size_t n=0;n<4;++n)if(actual[n]!=Type::Double)throw Error("UI.physicsWorldStep expects double dt, gravityX, gravityY and restitution");e.inferred=Type::Void;}
+          else if(e.text=="camera3D"){require(6);for(size_t n=0;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.camera3D expects six int values");e.inferred=Type::Void;}
+          else if(e.text=="cube3D"){require(6);stringAt(0);for(size_t n=1;n<6;++n)if(actual[n]!=Type::Int)throw Error("UI.cube3D position, size and color must be int");e.inferred=Type::Void;}
+          else if(e.text=="material3D"){require(2);stringAt(0);if(actual[1]!=Type::Double)throw Error("UI.material3D light intensity must be double");e.inferred=Type::Void;}
+          else if(e.text=="collides3D"){require(2);stringAt(0);stringAt(1);e.inferred=Type::Bool;}
           else if(e.text=="clear"){require(0);e.inferred=Type::Void;}
           else throw Error("Unknown AL UI API: UI."+e.text);
           e.resolvedFunction="UI."+e.text;break;
@@ -584,7 +602,7 @@ static void verify(const BytecodeProgram& program){
         case Op::ArraySet:need=3;break;
         case Op::NewArray:if(i.arg<0||i.arg>100000)throw Error("Invalid array literal size");need=(int)i.arg;delta=1-(int)i.arg;break;
         case Op::NewArraySized:if(i.arg!=(int64_t)Type::Int&&i.arg!=(int64_t)Type::String&&i.arg!=(int64_t)Type::Bool&&i.arg!=(int64_t)Type::Float&&i.arg!=(int64_t)Type::Double)throw Error("Invalid sized-array element type");need=1;delta=0;break;
-        case Op::UiCall:if(i.arg<0||i.arg>6)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=(i.text=="getInt"||i.text=="collides"||i.text=="AL.Math.abs"||i.text=="AL.Math.min"||i.text=="AL.Math.max"||i.text=="AL.Math.sqrt"||i.text=="AL.Math.pow"||i.text=="AL.Math.floor"||i.text=="AL.Math.ceil"||i.text=="AL.Math.round"||i.text=="AL.String.length"||i.text=="AL.String.upper"||i.text=="AL.String.lower"||i.text=="AL.String.contains"||i.text=="AL.String.startsWith"||i.text=="AL.String.endsWith"||i.text=="AL.String.replace")?1-(int)i.arg:-(int)i.arg;break;
+        case Op::UiCall:if(i.arg<0||i.arg>8)throw Error("Invalid UI call argument count");need=(int)i.arg;delta=(i.text=="getInt"||i.text=="collides"||i.text=="collides3D"||i.text=="AL.Math.abs"||i.text=="AL.Math.min"||i.text=="AL.Math.max"||i.text=="AL.Math.sqrt"||i.text=="AL.Math.pow"||i.text=="AL.Math.floor"||i.text=="AL.Math.ceil"||i.text=="AL.Math.round"||i.text=="AL.String.length"||i.text=="AL.String.upper"||i.text=="AL.String.lower"||i.text=="AL.String.contains"||i.text=="AL.String.startsWith"||i.text=="AL.String.endsWith"||i.text=="AL.String.replace")?1-(int)i.arg:-(int)i.arg;break;
         case Op::Call:{
           if(i.arg<=0||(uint64_t)i.arg>=functions.size())throw Error("Invalid call target");
           const auto& target=functions[(size_t)i.arg];need=(int)target.parameterCount+(target.ownerClassId>=0?1:0);delta=(target.returnType==Type::Void?0:1)-need;break;
@@ -625,9 +643,18 @@ static bool boolean(const Value& v){if(auto x=std::get_if<bool>(&v))return *x;th
 static int64_t checkedAdd(int64_t a,int64_t b){int64_t r;if(__builtin_add_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedSub(int64_t a,int64_t b){int64_t r;if(__builtin_sub_overflow(a,b,&r))throw Error("Integer overflow");return r;}
 static int64_t checkedMul(int64_t a,int64_t b){int64_t r;if(__builtin_mul_overflow(a,b,&r))throw Error("Integer overflow");return r;}
-struct UiElement { std::string kind,id,text,callback; int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF; };
+struct UiElement {
+  std::string kind,id,text,callback,parent;
+  int64_t x=0,y=0,w=0,h=0,color=0xFFFFFFFF;
+  int64_t z=0,columns=1,rows=1,frame=0,frameCount=1,animationFps=0;
+  bool animationLoop=true;
+  double rotation=0.0,scaleX=1.0,scaleY=1.0,rotationX=0.0,rotationY=0.0,rotationZ=0.0,scale3D=1.0,light=1.0;
+};
+struct Camera3D { int64_t x=0,y=0,z=-300,yaw=0,pitch=0,focal=240; };
+static Camera3D activeUiCamera3D;
 static std::map<std::string,double> activeUiVelocityY;
 static std::map<std::string,double> activeUiPhysicsY;
+static std::map<std::string,double> activeUiBodyMass,activeUiBodyVelocityX,activeUiBodyVelocityY,activeUiBodyPositionX,activeUiBodyPositionY;
 static std::string activeUiTitle="AL Application";
 static bool activeUiVisible=false;
 static std::vector<UiElement> activeUiElements;
@@ -642,9 +669,10 @@ static std::string jsonEscape(const std::string& value){
   }}return out;
 }
 static std::string uiJson(){
-  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"visible\":"+(activeUiVisible?"true":"false")+",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate)+",\"elements\":[";
+  std::string out="{\"title\":\""+jsonEscape(activeUiTitle)+"\",\"visible\":"+(activeUiVisible?"true":"false")+",\"frameCallback\":\""+jsonEscape(activeFrameCallback)+"\",\"frameRate\":"+std::to_string(activeFrameRate);
+  out+=",\"camera3D\":{\"x\":"+std::to_string(activeUiCamera3D.x)+",\"y\":"+std::to_string(activeUiCamera3D.y)+",\"z\":"+std::to_string(activeUiCamera3D.z)+",\"yaw\":"+std::to_string(activeUiCamera3D.yaw)+",\"pitch\":"+std::to_string(activeUiCamera3D.pitch)+",\"focal\":"+std::to_string(activeUiCamera3D.focal)+"},\"elements\":[";
   for(size_t i=0;i<activeUiElements.size();++i){const auto& e=activeUiElements[i];if(i)out+=",";
-    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+"}";
+    out+="{\"kind\":\""+jsonEscape(e.kind)+"\",\"id\":\""+jsonEscape(e.id)+"\",\"text\":\""+jsonEscape(e.text)+"\",\"callback\":\""+jsonEscape(e.callback)+"\",\"parent\":\""+jsonEscape(e.parent)+"\",\"x\":"+std::to_string(e.x)+",\"y\":"+std::to_string(e.y)+",\"z\":"+std::to_string(e.z)+",\"w\":"+std::to_string(e.w)+",\"h\":"+std::to_string(e.h)+",\"color\":"+std::to_string(e.color)+",\"rotation\":"+std::to_string(e.rotation)+",\"scaleX\":"+std::to_string(e.scaleX)+",\"scaleY\":"+std::to_string(e.scaleY)+",\"rotationX\":"+std::to_string(e.rotationX)+",\"rotationY\":"+std::to_string(e.rotationY)+",\"rotationZ\":"+std::to_string(e.rotationZ)+",\"scale3D\":"+std::to_string(e.scale3D)+",\"columns\":"+std::to_string(e.columns)+",\"rows\":"+std::to_string(e.rows)+",\"frame\":"+std::to_string(e.frame)+",\"frameCount\":"+std::to_string(e.frameCount)+",\"animationFps\":"+std::to_string(e.animationFps)+",\"animationLoop\":"+(e.animationLoop?"true":"false")+",\"light\":"+std::to_string(e.light)+"}";
   }return out+"]}";
 }
 static bool uiElementsCollide(const UiElement& a,const UiElement& b){
@@ -657,13 +685,84 @@ static bool uiElementsCollide(const UiElement& a,const UiElement& b){
   if(!bounds(a,left)||!bounds(b,right))return false;
   return left[0]<right[2]&&left[2]>right[0]&&left[1]<right[3]&&left[3]>right[1];
 }
+static std::array<double,3> cubeAabbExtent3D(const UiElement& cube){
+  const double half=std::max<int64_t>(1,cube.w)*0.5*cube.scale3D;
+  const double rx=cube.rotationX*3.14159265358979323846/180.0;
+  const double ry=cube.rotationY*3.14159265358979323846/180.0;
+  const double rz=cube.rotationZ*3.14159265358979323846/180.0;
+  const double sx=std::sin(rx),cx=std::cos(rx),sy=std::sin(ry),cy=std::cos(ry),sz=std::sin(rz),cz=std::cos(rz);
+  const double r00=cz*cy,r01=cz*sy*sx-sz*cx,r02=cz*sy*cx+sz*sx;
+  const double r10=sz*cy,r11=sz*sy*sx+cz*cx,r12=sz*sy*cx-cz*sx;
+  const double r20=-sy,r21=cy*sx,r22=cy*cx;
+  return {half*(std::fabs(r00)+std::fabs(r01)+std::fabs(r02)),
+          half*(std::fabs(r10)+std::fabs(r11)+std::fabs(r12)),
+          half*(std::fabs(r20)+std::fabs(r21)+std::fabs(r22))};
+}
+static bool uiElementsCollide3D(const UiElement& a,const UiElement& b){
+  if(a.kind!="cube3D"||b.kind!="cube3D")return false;
+  const auto ae=cubeAabbExtent3D(a),be=cubeAabbExtent3D(b);
+  return std::fabs((double)a.x-(double)b.x)<ae[0]+be[0]
+      && std::fabs((double)a.y-(double)b.y)<ae[1]+be[1]
+      && std::fabs((double)a.z-(double)b.z)<ae[2]+be[2];
+}
+static bool physicsDrawable(const UiElement& e){return e.kind=="rect"||e.kind=="circle"||e.kind=="sprite";}
+static void physicsWorldStep2D(double dt,double gravityX,double gravityY,double restitution){
+  const double limit=9223372036854775808.0;
+  auto checkedRound=[&](double value)->int64_t{
+    if(!std::isfinite(value)||value < -limit || value >= limit)throw Error("UI.physicsWorldStep position overflow");
+    return (int64_t)std::llround(value);
+  };
+  for(auto& e:activeUiElements){
+    auto body=activeUiBodyMass.find(e.id);
+    if(body==activeUiBodyMass.end()||!physicsDrawable(e))continue;
+    if(!activeUiBodyPositionX.count(e.id))activeUiBodyPositionX[e.id]=(double)e.x;
+    if(!activeUiBodyPositionY.count(e.id))activeUiBodyPositionY[e.id]=(double)e.y;
+    double& px=activeUiBodyPositionX[e.id];double& py=activeUiBodyPositionY[e.id];
+    double& vx=activeUiBodyVelocityX[e.id];double& vy=activeUiBodyVelocityY[e.id];
+    if(body->second>0.0){vx+=gravityX*dt;vy+=gravityY*dt;px+=vx*dt;py+=vy*dt;}
+    if(!std::isfinite(vx)||!std::isfinite(vy)||std::fabs(vx)>1.0e9||std::fabs(vy)>1.0e9)throw Error("UI.physicsWorldStep velocity overflow");
+    e.x=checkedRound(px);e.y=checkedRound(py);
+  }
+  for(size_t i=0;i<activeUiElements.size();++i){
+    UiElement& a=activeUiElements[i];auto ma=activeUiBodyMass.find(a.id);
+    if(ma==activeUiBodyMass.end()||!physicsDrawable(a))continue;
+    for(size_t j=i+1;j<activeUiElements.size();++j){
+      UiElement& b=activeUiElements[j];auto mb=activeUiBodyMass.find(b.id);
+      if(mb==activeUiBodyMass.end()||!physicsDrawable(b))continue;
+      const double apx=activeUiBodyPositionX[a.id],apy=activeUiBodyPositionY[a.id];
+      const double bpx=activeUiBodyPositionX[b.id],bpy=activeUiBodyPositionY[b.id];
+      const double ax=apx+(a.kind=="circle"?0.0:a.w*0.5);
+      const double ay=apy+(a.kind=="circle"?0.0:a.h*0.5);
+      const double bx=bpx+(b.kind=="circle"?0.0:b.w*0.5);
+      const double by=bpy+(b.kind=="circle"?0.0:b.h*0.5);
+      const double ahx=(a.kind=="circle"?a.w:a.w*0.5),ahy=(a.kind=="circle"?a.w:a.h*0.5);
+      const double bhx=(b.kind=="circle"?b.w:b.w*0.5),bhy=(b.kind=="circle"?b.w:b.h*0.5);
+      double overlapX=ahx+bhx-std::fabs(ax-bx);
+      double overlapY=ahy+bhy-std::fabs(ay-by);
+      if(overlapX<=0.0||overlapY<=0.0)continue;
+      const double invA=ma->second>0.0?1.0/ma->second:0.0,invB=mb->second>0.0?1.0/mb->second:0.0;
+      const double inverseSum=invA+invB;if(inverseSum<=0.0)continue;
+      const bool useX=overlapX<overlapY;
+      const double sign=useX?((ax<bx)?1.0:-1.0):((ay<by)?1.0:-1.0);
+      const double penetration=(useX?overlapX:overlapY)+0.001;
+      if(useX){activeUiBodyPositionX[a.id]-=sign*penetration*invA/inverseSum;activeUiBodyPositionX[b.id]+=sign*penetration*invB/inverseSum;}
+      else{activeUiBodyPositionY[a.id]-=sign*penetration*invA/inverseSum;activeUiBodyPositionY[b.id]+=sign*penetration*invB/inverseSum;}
+      double& av=useX?activeUiBodyVelocityX[a.id]:activeUiBodyVelocityY[a.id];
+      double& bv=useX?activeUiBodyVelocityX[b.id]:activeUiBodyVelocityY[b.id];
+      const double relative=(bv-av)*sign;
+      if(relative<0.0){const double impulse=-(1.0+restitution)*relative/inverseSum;av-=impulse*invA*sign;bv+=impulse*invB*sign;}
+      a.x=checkedRound(activeUiBodyPositionX[a.id]);a.y=checkedRound(activeUiBodyPositionY[a.id]);
+      b.x=checkedRound(activeUiBodyPositionX[b.id]);b.y=checkedRound(activeUiBodyPositionY[b.id]);
+    }
+  }
+}
 static void execute(const BytecodeProgram& program,const std::string& entryName="main",const std::string& eventValue=""){
   verify(program);const auto& functions=program.functions;const auto& classes=program.classes;
   struct Frame{size_t function=0,pc=0;std::vector<std::optional<Value>> locals;size_t stackBase=0;};
   std::vector<Value> stack;
   auto pop=[&](){if(stack.empty())throw Error("Runtime stack underflow");Value v=std::move(stack.back());stack.pop_back();return v;};
   size_t entryIndex=0;
-  if(entryName=="main"){activeUiTitle="AL Application";activeUiVisible=false;activeUiElements.clear();activeUiInts.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeFrameCallback.clear();activeFrameRate=0;}
+  if(entryName=="main"){activeUiTitle="AL Application";activeUiVisible=false;activeUiElements.clear();activeUiInts.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeUiBodyMass.clear();activeUiBodyVelocityX.clear();activeUiBodyVelocityY.clear();activeUiBodyPositionX.clear();activeUiBodyPositionY.clear();activeUiCamera3D=Camera3D{};activeFrameCallback.clear();activeFrameRate=0;}
   else {
     bool found=false;for(size_t index=1;index<functions.size();++index){const auto& candidate=functions[index];if((candidate.name==entryName||candidate.name.rfind(entryName+"$",0)==0)&&candidate.ownerClassId<0&&candidate.parameterCount==1&&candidate.returnType==Type::Void){if(found)throw Error("Ambiguous UI event handler: "+entryName);entryIndex=index;found=true;}}
     if(!found)throw Error("Unknown UI event handler: "+entryName);
@@ -759,7 +858,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
         auto asDouble=[&](size_t n)->double{if(n>=args.size()||!std::holds_alternative<double>(args[n]))throw Error("UI API expected double argument");return std::get<double>(args[n]);};
         auto findElement=[&](const std::string& id)->UiElement*{for(auto& e:activeUiElements)if(e.id==id)return &e;return nullptr;};
         if(i.text=="openWindow"){std::string title=asString(0);if(!validWindowName(title))throw Error("invalid window name in .room bytecode");activeUiTitle=std::move(title);activeUiVisible=true;}
-        else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game"){activeUiElements.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();}}
+        else if(i.text=="screen"||i.text=="game"){activeUiTitle=asString(0);if(i.text=="game"){activeUiElements.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeUiBodyMass.clear();activeUiBodyVelocityX.clear();activeUiBodyVelocityY.clear();activeUiBodyPositionX.clear();activeUiBodyPositionY.clear();}}
         else if(i.text=="text"){std::string id=asString(0),value=asString(1);if(auto* e=findElement(id)){e->kind="text";e->text=value;}else activeUiElements.push_back({"text",id,value,{}});}
         else if(i.text=="textAt"){UiElement label;label.kind="drawText";label.id=asString(0);label.text=asString(1);label.x=asInt(2);label.y=asInt(3);label.w=asInt(4);label.color=asInt(5);if(label.w<6||label.w>96)throw Error("UI.textAt size must be between 6 and 96");if(auto* old=findElement(label.id))*old=label;else activeUiElements.push_back(label);}
         else if(i.text=="sprite"){
@@ -787,9 +886,86 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
           if(!std::isfinite(position->second)||position->second < -int64Limit || position->second >= int64Limit)throw Error("UI.physicsStep position overflow");
           element->y=(int64_t)std::llround(position->second);
         }
+        else if(i.text=="spriteSheet"){
+          UiElement image;image.kind="sprite";image.id=asString(0);image.text=asString(1);image.x=asInt(2);image.y=asInt(3);image.w=asInt(4);image.h=asInt(5);image.columns=asInt(6);image.rows=asInt(7);
+          if(!validUiAssetPath(image.text))throw Error("UI.spriteSheet requires a safe relative asset path");
+          if(image.w<=0||image.h<=0||image.w>3200||image.h>3200||image.columns<1||image.columns>64||image.rows<1||image.rows>64||image.columns*image.rows>1024)throw Error("Invalid sprite sheet size or grid");
+          image.frameCount=image.columns*image.rows;if(auto* old=findElement(image.id))*old=image;else activeUiElements.push_back(image);
+        }
+        else if(i.text=="animateSprite"){
+          std::string id=asString(0);UiElement* sprite=findElement(id);if(!sprite||sprite->kind!="sprite")throw Error("UI.animateSprite requires an existing sprite");
+          int64_t frames=asInt(1),fps=asInt(2);if(frames<1||frames>sprite->columns*sprite->rows||fps<1||fps>60)throw Error("Invalid sprite animation frame count or FPS");
+          if(!std::holds_alternative<bool>(args[3]))throw Error("UI.animateSprite loop must be boolean");
+          sprite->frameCount=frames;sprite->animationFps=fps;sprite->animationLoop=std::get<bool>(args[3]);
+        }
+        else if(i.text=="setSpriteFrame"){
+          std::string id=asString(0);UiElement* sprite=findElement(id);int64_t frame=asInt(1);
+          if(!sprite||sprite->kind!="sprite"||frame<0||frame>=sprite->columns*sprite->rows)throw Error("Invalid UI.setSpriteFrame target or frame");
+          sprite->frame=frame;sprite->animationFps=0;
+        }
+        else if(i.text=="node"){
+          std::string id=asString(0);if(id.empty())throw Error("UI.node id cannot be empty");UiElement* old=findElement(id);
+          if(old&&old->kind!="node")throw Error("UI.node id is already used by a drawable");
+          if(!old){UiElement node;node.kind="node";node.id=id;activeUiElements.push_back(node);}
+        }
+        else if(i.text=="attach"){
+          std::string childId=asString(0),parentId=asString(1);UiElement* child=findElement(childId);UiElement* parent=findElement(parentId);
+          if(!child||!parent||parent->kind!="node"||childId==parentId)throw Error("UI.attach requires an existing child and parent node");
+          std::string cursor=parentId;for(int depth=0;depth<64&&!cursor.empty();++depth){if(cursor==childId)throw Error("UI.attach would create a scene graph cycle");UiElement* ancestor=findElement(cursor);if(!ancestor)throw Error("UI.attach parent chain is broken");cursor=ancestor->parent;if(depth==63&&!cursor.empty())throw Error("UI scene graph depth exceeds 64");}
+          child->parent=parentId;
+        }
+        else if(i.text=="detach"){std::string id=asString(0);UiElement* child=findElement(id);if(!child)throw Error("UI.detach unknown scene item");child->parent.clear();}
+        else if(i.text=="transform"){
+          std::string id=asString(0);UiElement* item=findElement(id);if(!item)throw Error("UI.transform unknown scene item");
+          double sx=asDouble(3),sy=asDouble(4),rotation=asDouble(5);
+          if(!std::isfinite(sx)||!std::isfinite(sy)||!std::isfinite(rotation)||sx<0.05||sx>20.0||sy<0.05||sy>20.0||std::fabs(rotation)>36000.0)throw Error("UI.transform values are outside the supported range");
+          item->x=asInt(1);item->y=asInt(2);item->scaleX=sx;item->scaleY=sy;item->rotation=rotation;
+        }
+        else if(i.text=="transform3D"){
+          std::string id=asString(0);UiElement* item=findElement(id);
+          if(!item||item->kind!="cube3D")throw Error("UI.transform3D requires an existing cube3D");
+          double scale=asDouble(7);if(!std::isfinite(scale)||scale<0.05||scale>20.0)throw Error("UI.transform3D scale must be between 0.05 and 20");
+          item->x=asInt(1);item->y=asInt(2);item->z=asInt(3);item->rotationX=asInt(4);item->rotationY=asInt(5);item->rotationZ=asInt(6);item->scale3D=scale;
+        }
+        else if(i.text=="keyArea"){
+          UiElement key;key.kind="keyArea";key.id=asString(0);key.text=asString(1);key.callback=asString(2);
+          const std::string& k=key.text;bool valid=k=="ANY"||k=="LEFT"||k=="RIGHT"||k=="UP"||k=="DOWN"||k=="SPACE"||k=="ENTER"||k=="ESCAPE"||(k.size()==1&&k[0]>='A'&&k[0]<='Z');
+          if(!valid)throw Error("UI.keyArea key must be ANY, a direction, SPACE, ENTER, ESCAPE or A-Z");
+          if(auto* old=findElement(key.id))*old=key;else activeUiElements.push_back(key);
+        }
+        else if(i.text=="physicsBody"){
+          std::string id=asString(0);UiElement* item=findElement(id);double mass=asDouble(1),vx=asDouble(2),vy=asDouble(3);
+          if(!item||!physicsDrawable(*item))throw Error("UI.physicsBody requires an existing rect, circle or sprite");
+          if(!std::isfinite(mass)||mass<0.0||mass>100000.0||!std::isfinite(vx)||!std::isfinite(vy)||std::fabs(vx)>100000.0||std::fabs(vy)>100000.0)throw Error("Invalid UI.physicsBody mass or velocity");
+          activeUiBodyMass[id]=mass;activeUiBodyVelocityX[id]=vx;activeUiBodyVelocityY[id]=vy;activeUiBodyPositionX[id]=(double)item->x;activeUiBodyPositionY[id]=(double)item->y;
+        }
+        else if(i.text=="physicsWorldStep"){
+          double dt=asDouble(0),gx=asDouble(1),gy=asDouble(2),restitution=asDouble(3);
+          if(!std::isfinite(dt)||dt<0.0||dt>0.1||!std::isfinite(gx)||!std::isfinite(gy)||std::fabs(gx)>10000.0||std::fabs(gy)>10000.0||!std::isfinite(restitution)||restitution<0.0||restitution>1.0)throw Error("Invalid UI.physicsWorldStep timestep, gravity or restitution");
+          physicsWorldStep2D(dt,gx,gy,restitution);
+        }
+        else if(i.text=="camera3D"){
+          Camera3D camera;camera.x=asInt(0);camera.y=asInt(1);camera.z=asInt(2);camera.yaw=asInt(3);camera.pitch=asInt(4);camera.focal=asInt(5);
+          if(camera.yaw < -180||camera.yaw>180||camera.pitch < -89||camera.pitch>89||camera.focal<32||camera.focal>2000)throw Error("Invalid UI.camera3D rotation or focal length");
+          activeUiCamera3D=camera;
+        }
+        else if(i.text=="cube3D"){
+          UiElement cube;cube.kind="cube3D";cube.id=asString(0);cube.x=asInt(1);cube.y=asInt(2);cube.z=asInt(3);cube.w=asInt(4);cube.color=(uint32_t)asInt(5);
+          if(cube.id.empty()||cube.w<1||cube.w>10000)throw Error("UI.cube3D size must be between 1 and 10000");
+          if(auto* old=findElement(cube.id))*old=cube;else activeUiElements.push_back(cube);
+        }
+        else if(i.text=="material3D"){
+          std::string id=asString(0);UiElement* cube=findElement(id);double light=asDouble(1);
+          if(!cube||cube->kind!="cube3D"||!std::isfinite(light)||light<0.0||light>1.0)throw Error("UI.material3D requires a cube3D and light intensity from 0 to 1");
+          cube->light=light;
+        }
+        else if(i.text=="collides3D"){
+          UiElement* left=findElement(asString(0));UiElement* right=findElement(asString(1));
+          stack.emplace_back(left&&right&&uiElementsCollide3D(*left,*right));
+        }
         else if(i.text=="button"){std::string id=asString(0),label=asString(1),callback=asString(2);if(auto* e=findElement(id)){e->kind="button";e->text=label;e->callback=callback;}else activeUiElements.push_back({"button",id,label,callback});}
         else if(i.text=="rect"||i.text=="circle"||i.text=="line"){std::string id=asString(0);UiElement shape;shape.kind=i.text;shape.id=id;if(i.text=="rect"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);if(shape.w<0||shape.h<0)throw Error("UI.rect width and height cannot be negative");}else if(i.text=="circle"){shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.color=asInt(4);if(shape.w<0)throw Error("UI.circle radius cannot be negative");}else{shape.x=asInt(1);shape.y=asInt(2);shape.w=asInt(3);shape.h=asInt(4);shape.color=asInt(5);}if(auto* e=findElement(id))*e=shape;else activeUiElements.push_back(shape);}
-        else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());activeUiVelocityY.erase(id);activeUiPhysicsY.erase(id);}
+        else if(i.text=="remove"){std::string id=asString(0);activeUiElements.erase(std::remove_if(activeUiElements.begin(),activeUiElements.end(),[&](const UiElement& e){return e.id==id;}),activeUiElements.end());activeUiVelocityY.erase(id);activeUiPhysicsY.erase(id);activeUiBodyMass.erase(id);activeUiBodyVelocityX.erase(id);activeUiBodyVelocityY.erase(id);activeUiBodyPositionX.erase(id);activeUiBodyPositionY.erase(id);for(auto& e:activeUiElements)if(e.parent==id)e.parent.clear();}
         else if(i.text=="setText"){std::string id=asString(0),value=show(args[1]);if(auto* e=findElement(id))e->text=value;else throw Error("UI.setText unknown element: "+id);}
         else if(i.text=="setInt")activeUiInts[asString(0)]=asInt(1);
         else if(i.text=="getInt"){auto it=activeUiInts.find(asString(0));stack.emplace_back(it==activeUiInts.end()?asInt(1):it->second);}
@@ -807,7 +983,7 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
           UiElement* left=findElement(asString(0));UiElement* right=findElement(asString(1));
           stack.emplace_back(left&&right&&uiElementsCollide(*left,*right));
         }
-        else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeFrameCallback.clear();activeFrameRate=0;}
+        else if(i.text=="clear"){activeUiElements.clear();activeUiInts.clear();activeUiVelocityY.clear();activeUiPhysicsY.clear();activeUiBodyMass.clear();activeUiBodyVelocityX.clear();activeUiBodyVelocityY.clear();activeUiBodyPositionX.clear();activeUiBodyPositionY.clear();activeUiCamera3D=Camera3D{};activeFrameCallback.clear();activeFrameRate=0;}
         else throw Error("Unknown UI opcode: "+i.text);
         }
         break;
@@ -870,6 +1046,43 @@ static void execute(const BytecodeProgram& program,const std::string& entryName=
     }
   }
 }
+static std::string expandImportsText(const std::string& source,const std::filesystem::path& currentDir,const std::filesystem::path& root,std::set<std::filesystem::path>& active,std::set<std::filesystem::path>& loaded,size_t& totalBytes,int depth){
+  if(depth>16)throw Error("AL import depth exceeds 16");
+  std::regex importPattern(R"ALIMPORT(^[ \t]*import[ \t]+"([^"]+)"[ \t]*;[ \t]*(?://.*)?$)ALIMPORT");
+  std::istringstream input(source);std::ostringstream output;std::string line;
+  while(std::getline(input,line)){
+    if(!line.empty()&&line.back()=='\r')line.pop_back();
+    std::smatch match;
+    if(!std::regex_match(line,match,importPattern)){output<<line<<'\n';continue;}
+    std::filesystem::path requested(match[1].str());
+    if(requested.is_absolute()||requested.empty()||requested.has_root_name())throw Error("AL import path must be relative");
+    for(const auto& part:requested)if(part==".."||part==".")throw Error("AL import path traversal is not allowed");
+    if(requested.extension()!=".al")throw Error("AL imports must reference .al source files");
+    std::error_code ec;auto target=std::filesystem::canonical(currentDir/requested,ec);
+    if(ec||!std::filesystem::is_regular_file(target))throw Error("Cannot open imported AL module: "+requested.generic_string());
+    auto relative=target.lexically_relative(root);
+    if(relative.empty()||relative.is_absolute()||*relative.begin()=="..")throw Error("AL import escapes the project source folder");
+    if(active.count(target))throw Error("Circular AL import: "+requested.generic_string());
+    if(loaded.count(target))continue;
+    const auto size=std::filesystem::file_size(target,ec);
+    if(ec||size>1024*1024||totalBytes+size>4*1024*1024)throw Error("AL imported source exceeds the 4 MiB project limit");
+    std::ifstream file(target,std::ios::binary);if(!file)throw Error("Cannot read imported AL module");
+    std::string module((std::istreambuf_iterator<char>(file)),{});totalBytes+=module.size();
+    active.insert(target);
+    output<<expandImportsText(module,target.parent_path(),root,active,loaded,totalBytes,depth+1)<<'\n';
+    active.erase(target);loaded.insert(target);
+  }
+  return output.str();
+}
+std::string loadSourceWithImports(const std::filesystem::path& sourcePath){
+  std::error_code ec;auto source=std::filesystem::canonical(sourcePath,ec);
+  if(ec||!std::filesystem::is_regular_file(source))throw Error("Cannot open AL source file");
+  auto root=source.parent_path();std::ifstream file(source,std::ios::binary);if(!file)throw Error("Cannot open AL source file");
+  std::string mainSource((std::istreambuf_iterator<char>(file)),{});
+  if(mainSource.size()>4*1024*1024)throw Error("AL source exceeds the 4 MiB project limit");
+  std::set<std::filesystem::path> active{source},loaded;size_t totalBytes=mainSource.size();
+  return expandImportsText(mainSource,root,root,active,loaded,totalBytes,0);
+}
 } // namespace al
 
-int main(int argc,char** argv){try{if(argc<3){std::cerr<<"Usage: alvm compile <file.al> [-o file.room] | run <file.room> | disasm <file.room>\n";return 2;}std::string command=argv[1],input=argv[2];if(command=="compile"){std::ifstream f(input);if(!f)throw al::Error("Cannot open source file");std::string source((std::istreambuf_iterator<char>(f)),{});al::Program program=al::Parser(source).parse();al::SemanticAnalyzer().analyze(program);auto ir=al::IRGenerator().generate(program);auto bc=al::BytecodeLowerer().lower(ir);std::string output=input;auto dot=output.find_last_of('.');if(dot!=std::string::npos)output.resize(dot);output+=".room";for(int i=3;i+1<argc;++i)if(std::string(argv[i])=="-o")output=argv[i+1];al::saveRoom(output,bc);std::cout<<"Compiled "<<output<<" ("<<bc.functions.size()<<" functions, "<<bc.classes.size()<<" classes)\n";}else if(command=="run"){al::execute(al::loadRoom(input));}else if(command=="ui"){auto program=al::loadRoom(input);al::execute(program);std::cout<<al::uiJson()<<'\\n';}else if(command=="ui-event"){if(argc<5||((argc-3)%2)!=0)throw al::Error("Usage: alvm ui-event <file.room> <handler> <button-id> [<handler> <button-id> ...]");auto program=al::loadRoom(input);al::execute(program);for(int event=3;event+1<argc;event+=2)al::execute(program,argv[event],argv[event+1]);std::cout<<al::uiJson()<<'\\n';}else if(command=="disasm"){auto bc=al::loadRoom(input);al::verify(bc);for(const auto& cls:bc.classes)std::cout<<"class "<<cls.name<<" fields="<<cls.fieldTypes.size()<<'\n';for(const auto& fn:bc.functions){std::cout<<"function "<<fn.name<<" locals="<<fn.localCount<<" params="<<fn.parameterCount<<'\n';for(size_t i=0;i<fn.code.size();++i)std::cout<<i<<": op="<<(int)fn.code[i].op<<" arg="<<fn.code[i].arg<<(fn.code[i].text.empty()?"":" text=\""+fn.code[i].text+"\"")<<'\n';}}else throw al::Error("Unknown command: "+command);return 0;}catch(const std::exception& e){std::cerr<<"AL error: "<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{if(argc<3){std::cerr<<"Usage: alvm compile <file.al> [-o file.room] | run <file.room> | disasm <file.room>\n";return 2;}std::string command=argv[1],input=argv[2];if(command=="compile"){std::string source=al::loadSourceWithImports(input);al::Program program=al::Parser(source).parse();al::SemanticAnalyzer().analyze(program);auto ir=al::IRGenerator().generate(program);auto bc=al::BytecodeLowerer().lower(ir);std::string output=input;auto dot=output.find_last_of('.');if(dot!=std::string::npos)output.resize(dot);output+=".room";for(int i=3;i+1<argc;++i)if(std::string(argv[i])=="-o")output=argv[i+1];al::saveRoom(output,bc);std::cout<<"Compiled "<<output<<" ("<<bc.functions.size()<<" functions, "<<bc.classes.size()<<" classes)\n";}else if(command=="run"){al::execute(al::loadRoom(input));}else if(command=="ui"){auto program=al::loadRoom(input);al::execute(program);std::cout<<al::uiJson()<<'\n';}else if(command=="ui-event"){if(argc<5||((argc-3)%2)!=0)throw al::Error("Usage: alvm ui-event <file.room> <handler> <button-id> [<handler> <button-id> ...]");auto program=al::loadRoom(input);al::execute(program);for(int event=3;event+1<argc;event+=2)al::execute(program,argv[event],argv[event+1]);std::cout<<al::uiJson()<<'\n';}else if(command=="disasm"){auto bc=al::loadRoom(input);al::verify(bc);for(const auto& cls:bc.classes)std::cout<<"class "<<cls.name<<" fields="<<cls.fieldTypes.size()<<'\n';for(const auto& fn:bc.functions){std::cout<<"function "<<fn.name<<" locals="<<fn.localCount<<" params="<<fn.parameterCount<<'\n';for(size_t i=0;i<fn.code.size();++i)std::cout<<i<<": op="<<(int)fn.code[i].op<<" arg="<<fn.code[i].arg<<(fn.code[i].text.empty()?"":" text=\""+fn.code[i].text+"\"")<<'\n';}}else throw al::Error("Unknown command: "+command);return 0;}catch(const std::exception& e){std::cerr<<"AL error: "<<e.what()<<'\n';return 1;}}
