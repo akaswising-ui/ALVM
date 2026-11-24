@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 
@@ -103,6 +104,62 @@ class AndroidApkBuilderTests(unittest.TestCase):
             (source / "broken.png.b64").write_text("not base64!", encoding="ascii")
             with self.assertRaises(BUILDER.BuildError):
                 BUILDER.copy_application_assets(str(source), root / "output")
+
+
+    def test_base64_png_is_decoded_across_stream_chunks(self) -> None:
+        import base64
+
+        png_bytes = b"\x89PNG\r\n\x1a\n" + (b"pixel" * 20)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "runner.png.b64").write_bytes(base64.b64encode(png_bytes))
+            output = root / "output"
+            with patch.object(BUILDER, "ASSET_IO_CHUNK_BYTES", 4):
+                copied = BUILDER.copy_application_assets(str(source), output)
+            self.assertEqual(copied, 1)
+            self.assertEqual((output / "runner.png").read_bytes(), png_bytes)
+
+
+    def test_rejects_asset_size_over_limit_without_publishing_partial_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "large.bin").write_bytes(b"123456789")
+            output = root / "output"
+            with patch.object(BUILDER, "MAX_ASSET_BYTES", 8):
+                with self.assertRaises(BUILDER.BuildError):
+                    BUILDER.copy_application_assets(str(source), output)
+            self.assertFalse((output / "large.bin").exists())
+
+
+    def test_rejects_duplicate_png_and_encoded_png_targets(self) -> None:
+        import base64
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "runner.png").write_bytes(b"original")
+            (source / "runner.png.b64").write_bytes(
+                base64.b64encode(b"\x89PNG\r\n\x1a\nimage")
+            )
+            with self.assertRaises(BUILDER.BuildError):
+                BUILDER.copy_application_assets(str(source), root / "output")
+
+
+    def test_rejects_asset_file_count_over_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "one.bin").write_bytes(b"1")
+            (source / "two.bin").write_bytes(b"2")
+            with patch.object(BUILDER, "MAX_ASSET_FILES", 1):
+                with self.assertRaises(BUILDER.BuildError):
+                    BUILDER.copy_application_assets(str(source), root / "output")
 
     def test_rejects_unsafe_asset_path_characters(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
