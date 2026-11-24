@@ -32,8 +32,8 @@ public final class Game2DView extends View {
         default void onKey(String callback, String key) { }
     }
 
-    private final JSONArray elements;
-    private final JSONObject camera;
+    private volatile JSONArray elements;
+    private volatile JSONObject camera;
     private final TouchHandler touchHandler;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<String, Bitmap> spriteCache = new HashMap<>();
@@ -49,6 +49,23 @@ public final class Game2DView extends View {
         setFocusable(true);
         setFocusableInTouchMode(true);
         requestFocus();
+    }
+
+    /** Refresh the existing native canvas without replacing its View or losing keyboard focus. */
+    public void updateRuntimeUi(String json) {
+        if (json == null || json.trim().isEmpty()) return;
+        try {
+            JSONObject ui = new JSONObject(json);
+            JSONObject nested = ui.optJSONObject("ui");
+            if (nested != null) ui = nested;
+            JSONArray next = ui.optJSONArray("elements");
+            if (next != null) elements = next;
+            JSONObject nextCamera = ui.optJSONObject("camera3D");
+            if (nextCamera != null) camera = nextCamera;
+            invalidate();
+        } catch (Exception ignored) {
+            // Invalid event output must not crash the game canvas.
+        }
     }
 
     private JSONObject findElement(String id) {
@@ -258,9 +275,16 @@ public final class Game2DView extends View {
 
     private void drawCube3D(Canvas canvas, JSONObject item) {
         final double half = Math.max(1, item.optInt("w", 1)) * 0.5;
+        final double objectScale = Math.max(0.05, Math.min(20.0, item.optDouble("scale3D", 1.0)));
         final double[] xs = {-half, half, half, -half, -half, half, half, -half};
         final double[] ys = {-half, -half, half, half, -half, -half, half, half};
         final double[] zs = {-half, -half, -half, -half, half, half, half, half};
+        final double rx = Math.toRadians(item.optDouble("rotationX", 0.0));
+        final double ry = Math.toRadians(item.optDouble("rotationY", 0.0));
+        final double rz = Math.toRadians(item.optDouble("rotationZ", 0.0));
+        final double crx = Math.cos(rx), srx = Math.sin(rx);
+        final double cry = Math.cos(ry), sry = Math.sin(ry);
+        final double crz = Math.cos(rz), srz = Math.sin(rz);
         final double camX = camera.optDouble("x", 0.0);
         final double camY = camera.optDouble("y", 0.0);
         final double camZ = camera.optDouble("z", -300.0);
@@ -272,9 +296,20 @@ public final class Game2DView extends View {
         float[] px = new float[8], py = new float[8];
         double[] depth = new double[8];
         for (int i = 0; i < 8; i++) {
-            double dx = item.optInt("x", 0) + xs[i] - camX;
-            double dy = item.optInt("y", 0) + ys[i] - camY;
-            double dz = item.optInt("z", 0) + zs[i] - camZ;
+            double lx = xs[i] * objectScale;
+            double ly = ys[i] * objectScale;
+            double lz = zs[i] * objectScale;
+            double afterX = lx;
+            double afterY = crx * ly - srx * lz;
+            double afterZ = srx * ly + crx * lz;
+            double afterY2 = cry * afterY + sry * afterZ;
+            double afterZ2 = -sry * afterY + cry * afterZ;
+            double objectX = crz * afterX - srz * afterY2;
+            double objectY = srz * afterX + crz * afterY2;
+            double objectZ = afterZ2;
+            double dx = item.optInt("x", 0) + objectX - camX;
+            double dy = item.optInt("y", 0) + objectY - camY;
+            double dz = item.optInt("z", 0) + objectZ - camZ;
             double cameraX = cy * dx - sy * dz;
             double yawZ = sy * dx + cy * dz;
             double cameraY = cp * dy - sp * yawZ;
