@@ -685,12 +685,25 @@ static bool uiElementsCollide(const UiElement& a,const UiElement& b){
   if(!bounds(a,left)||!bounds(b,right))return false;
   return left[0]<right[2]&&left[2]>right[0]&&left[1]<right[3]&&left[3]>right[1];
 }
+static std::array<double,3> cubeAabbExtent3D(const UiElement& cube){
+  const double half=std::max<int64_t>(1,cube.w)*0.5*cube.scale3D;
+  const double rx=cube.rotationX*3.14159265358979323846/180.0;
+  const double ry=cube.rotationY*3.14159265358979323846/180.0;
+  const double rz=cube.rotationZ*3.14159265358979323846/180.0;
+  const double sx=std::sin(rx),cx=std::cos(rx),sy=std::sin(ry),cy=std::cos(ry),sz=std::sin(rz),cz=std::cos(rz);
+  const double r00=cz*cy,r01=cz*sy*sx-sz*cx,r02=cz*sy*cx+sz*sx;
+  const double r10=sz*cy,r11=sz*sy*sx+cz*cx,r12=sz*sy*cx-cz*sx;
+  const double r20=-sy,r21=cy*sx,r22=cy*cx;
+  return {half*(std::fabs(r00)+std::fabs(r01)+std::fabs(r02)),
+          half*(std::fabs(r10)+std::fabs(r11)+std::fabs(r12)),
+          half*(std::fabs(r20)+std::fabs(r21)+std::fabs(r22))};
+}
 static bool uiElementsCollide3D(const UiElement& a,const UiElement& b){
   if(a.kind!="cube3D"||b.kind!="cube3D")return false;
-  const double ah=std::max<int64_t>(1,a.w)*0.5,bh=std::max<int64_t>(1,b.w)*0.5;
-  return std::fabs((double)a.x-(double)b.x)<ah+bh
-      && std::fabs((double)a.y-(double)b.y)<ah+bh
-      && std::fabs((double)a.z-(double)b.z)<ah+bh;
+  const auto ae=cubeAabbExtent3D(a),be=cubeAabbExtent3D(b);
+  return std::fabs((double)a.x-(double)b.x)<ae[0]+be[0]
+      && std::fabs((double)a.y-(double)b.y)<ae[1]+be[1]
+      && std::fabs((double)a.z-(double)b.z)<ae[2]+be[2];
 }
 static bool physicsDrawable(const UiElement& e){return e.kind=="rect"||e.kind=="circle"||e.kind=="sprite";}
 static void physicsWorldStep2D(double dt,double gravityX,double gravityY,double restitution){
