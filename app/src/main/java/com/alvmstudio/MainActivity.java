@@ -1389,22 +1389,41 @@ public class MainActivity extends Activity {
                 if (item != null) {
                     String kind = item.optString("kind", "");
                     if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
-                            || "drawText".equals(kind) || "sprite".equals(kind)) {
+                            || "drawText".equals(kind) || "sprite".equals(kind) || "cube3D".equals(kind)) {
                         hasGameCanvas = true;
                         break;
                     }
                 }
             }
             if (hasGameCanvas) {
-                Game2DView gameView = new Game2DView(this, elements, (callback, id, x, y) -> {
-                    try {
-                        String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y);
-                        if (result != null && result.trim().length() > 0) {
-                            showOutputInWeb(result, result.toLowerCase().contains("error")
-                                    ? "RUNTIME ERROR" : "SUCCESS");
+                Game2DView gameView = new Game2DView(this, elements, root.optJSONObject("camera3D"),
+                        new Game2DView.TouchHandler() {
+                    @Override
+                    public void onTouch(String callback, String id, int x, int y) {
+                        try {
+                            String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y);
+                            if (result != null && result.trim().length() > 0) {
+                                showOutputInWeb(result, result.toLowerCase().contains("error")
+                                        ? "RUNTIME ERROR" : "SUCCESS");
+                            }
+                            if (!lastRuntimeUiJson.isEmpty()) showNativeUi(lastRuntimeUiJson);
+                        } catch (Exception error) {
+                            showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
-                    } catch (Exception error) {
-                        showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
+                    }
+
+                    @Override
+                    public void onKey(String callback, String key) {
+                        try {
+                            String result = runCiRuntime(callback, key);
+                            if (result != null && result.trim().length() > 0) {
+                                showOutputInWeb(result, result.toLowerCase().contains("error")
+                                        ? "RUNTIME ERROR" : "SUCCESS");
+                            }
+                            if (!lastRuntimeUiJson.isEmpty()) showNativeUi(lastRuntimeUiJson);
+                        } catch (Exception error) {
+                            showOutputInWeb("AL keyboard event error: " + error.getMessage(), "RUNTIME ERROR");
+                        }
                     }
                 });
                 LinearLayout.LayoutParams gameParams = new LinearLayout.LayoutParams(
@@ -1420,7 +1439,8 @@ public class MainActivity extends Activity {
                 String id = element.optString("id", "");
                 String text = element.optString("text", "");
                 if ("rect".equals(kind) || "circle".equals(kind) || "line".equals(kind)
-                        || "drawText".equals(kind) || "sprite".equals(kind)) {
+                        || "drawText".equals(kind) || "sprite".equals(kind)
+                        || "cube3D".equals(kind) || "node".equals(kind) || "keyArea".equals(kind)) {
                     continue;
                 } else if ("text".equals(kind)) {
                     TextView label = new TextView(this);
