@@ -223,6 +223,12 @@ def copy_application_assets(source_value: str, destination: Path) -> int:
         target_name = target_relative.as_posix()
         if target_name in written_paths:
             raise BuildError("Duplicate application asset target: " + target_name)
+        parent_names = [parent.as_posix() for parent in target_relative.parents
+                        if parent.as_posix() != "."]
+        if any(parent in written_paths for parent in parent_names):
+            raise BuildError("Asset file conflicts with a parent directory: " + target_name)
+        if any(existing.startswith(target_name + "/") for existing in written_paths):
+            raise BuildError("Asset file conflicts with a child path: " + target_name)
         written_paths.add(target_name)
 
         remaining_bytes = MAX_ASSET_BYTES - copied_bytes
