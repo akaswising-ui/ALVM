@@ -414,7 +414,7 @@ public class MainActivity extends Activity {
                 ? "{\"title\":\"AL Application\",\"visible\":false,\"elements\":[]}"
                 : ui.toString();
         if (renderNativeUi && runtimeOk) publishNativeUi();
-        else hideNativeProgramUi();
+        else if (!runtimeOk) hideNativeProgramUi();
         if (!runtimeOk) {
             return "✕ " + result.optString("error", "CI Runtime execution failed.");
         }
@@ -1396,17 +1396,18 @@ public class MainActivity extends Activity {
                 }
             }
             if (hasGameCanvas) {
+                final Game2DView[] gameViewRef = new Game2DView[1];
                 Game2DView gameView = new Game2DView(this, elements, root.optJSONObject("camera3D"),
                         new Game2DView.TouchHandler() {
                     @Override
                     public void onTouch(String callback, String id, int x, int y) {
                         try {
-                            String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y);
+                            String result = runCiRuntime(callback, "@touch|" + id + "|" + x + "|" + y, false);
                             if (result != null && result.trim().length() > 0) {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            if (!lastRuntimeUiJson.isEmpty()) showNativeUi(lastRuntimeUiJson);
+                            if (!lastRuntimeUiJson.isEmpty()) gameViewRef[0].updateRuntimeUi(lastRuntimeUiJson);
                         } catch (Exception error) {
                             showOutputInWeb("AL touch event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
@@ -1415,17 +1416,18 @@ public class MainActivity extends Activity {
                     @Override
                     public void onKey(String callback, String key) {
                         try {
-                            String result = runCiRuntime(callback, key);
+                            String result = runCiRuntime(callback, key, false);
                             if (result != null && result.trim().length() > 0) {
                                 showOutputInWeb(result, result.toLowerCase().contains("error")
                                         ? "RUNTIME ERROR" : "SUCCESS");
                             }
-                            if (!lastRuntimeUiJson.isEmpty()) showNativeUi(lastRuntimeUiJson);
+                            if (!lastRuntimeUiJson.isEmpty()) gameViewRef[0].updateRuntimeUi(lastRuntimeUiJson);
                         } catch (Exception error) {
                             showOutputInWeb("AL keyboard event error: " + error.getMessage(), "RUNTIME ERROR");
                         }
                     }
                 });
+                gameViewRef[0] = gameView;
                 LinearLayout.LayoutParams gameParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(480));
                 gameParams.bottomMargin = dp(12);
